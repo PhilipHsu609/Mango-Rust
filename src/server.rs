@@ -3,6 +3,8 @@ use axum::{
     routing::get,
     Router,
 };
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
 use tower_sessions::{Expiry, SessionManagerLayer};
 use tower_sessions_sqlx_store::SqliteStore;
@@ -11,9 +13,17 @@ use crate::{
     auth::require_auth,
     config::Config,
     error::Result,
-    routes::{get_login, home, logout, post_login},
+    library::Library,
+    routes::{get_library, get_login, get_page, get_stats, get_title, home, logout, post_login},
     Storage,
 };
+
+/// Shared application state
+#[derive(Clone)]
+pub struct AppState {
+    pub storage: Storage,
+    pub library: Arc<RwLock<Library>>,
+}
 
 /// Build and run the Axum server
 pub async fn run(config: Config) -> Result<()> {
@@ -28,6 +38,19 @@ pub async fn run(config: Config) -> Result<()> {
     tracing::info!("Connecting to database: {}", database_url);
     let storage = Storage::new(&database_url).await?;
     tracing::info!("Database initialized at {}", config.db_path.display());
+
+    // Initialize library scanner
+    tracing::info!("Initializing library scanner");
+    let mut library = Library::new(config.library_path.clone(), storage.clone());
+    library.scan().await?;
+    let library = Arc::new(RwLock::new(library));
+    tracing::info!("Library scan complete");
+
+    // Create application state
+    let app_state = AppState {
+        storage: storage.clone(),
+        library,
+    };
 
     // Create session store (uses same database)
     let session_store = SqliteStore::new(storage.pool().clone());
@@ -47,11 +70,16 @@ pub async fn run(config: Config) -> Result<()> {
         // Protected routes (auth required)
         .route("/", get(home))
         .route("/logout", get(logout))
+        // API routes
+        .route("/api/library", get(get_library))
+        .route("/api/title/:id", get(get_title))
+        .route("/api/page/:tid/:eid/:page", get(get_page))
+        .route("/api/stats", get(get_stats))
         // Add state and middleware
-        .layer(middleware::from_fn_with_state(storage.clone(), require_auth))
+        .layer(middleware::from_fn_with_state(app_state.clone(), require_auth))
         .layer(session_layer)
         .layer(TraceLayer::new_for_http())
-        .with_state(storage);
+        .with_state(app_state);
 
     // Bind and serve
     let addr = format!("{}:{}", config.host, config.port);

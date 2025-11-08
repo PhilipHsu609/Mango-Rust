@@ -6,7 +6,7 @@ use axum::{
 };
 use tower_sessions::Session;
 
-use crate::Storage;
+use crate::AppState;
 
 /// Session key for storing username
 pub const SESSION_USERNAME_KEY: &str = "username";
@@ -17,7 +17,7 @@ pub const SESSION_TOKEN_KEY: &str = "token";
 /// Authentication middleware that checks if user is logged in
 /// Matches original Mango's AuthHandler
 pub async fn require_auth(
-    State(storage): State<Storage>,
+    State(state): State<AppState>,
     session: Session,
     mut request: Request,
     next: Next,
@@ -31,7 +31,7 @@ pub async fn require_auth(
     // Check if user has valid session
     if let Ok(Some(token)) = session.get::<String>(SESSION_TOKEN_KEY).await {
         // Verify token in database
-        match storage.verify_token(&token).await {
+        match state.storage.verify_token(&token).await {
             Ok(Some(username)) => {
                 // Add username to request extensions for handlers to use
                 request.extensions_mut().insert(username.clone());
@@ -53,14 +53,14 @@ pub async fn require_auth(
 
 /// Admin authorization middleware - requires authenticated user to be admin
 pub async fn require_admin(
-    State(storage): State<Storage>,
+    State(state): State<AppState>,
     session: Session,
     request: Request,
     next: Next,
 ) -> Response {
     // First check if authenticated
     if let Ok(Some(token)) = session.get::<String>(SESSION_TOKEN_KEY).await {
-        match storage.verify_admin(&token).await {
+        match state.storage.verify_admin(&token).await {
             Ok(true) => {
                 // User is admin, proceed
                 return next.run(request).await;

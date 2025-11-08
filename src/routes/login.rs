@@ -9,7 +9,7 @@ use tower_sessions::Session;
 use crate::{
     auth::{SESSION_TOKEN_KEY, SESSION_USERNAME_KEY},
     error::{Error, Result},
-    Storage,
+    AppState,
 };
 
 /// Login page template
@@ -31,12 +31,12 @@ pub async fn get_login() -> Html<String> {
 
 /// POST /login - Process login
 pub async fn post_login(
-    State(storage): State<Storage>,
+    State(state): State<AppState>,
     session: Session,
     Form(form): Form<LoginForm>,
 ) -> Result<impl IntoResponse> {
     // Verify credentials
-    match storage.verify_user(&form.username, &form.password).await? {
+    match state.storage.verify_user(&form.username, &form.password).await? {
         Some(token) => {
             // Store token and username in session
             session

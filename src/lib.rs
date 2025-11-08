@@ -6,10 +6,13 @@ pub mod storage;
 pub mod auth;
 pub mod server;
 pub mod routes;
+pub mod library;
 
 // Re-exports
 pub use config::Config;
 pub use storage::Storage;
+pub use library::Library;
+pub use server::AppState;
 
 // Common types and utilities
 pub mod error {
@@ -27,6 +30,9 @@ pub mod error {
 
         #[error("IO error: {0}")]
         Io(#[from] std::io::Error),
+
+        #[error("Archive error: {0}")]
+        Archive(#[from] zip::result::ZipError),
 
         #[error("Config error: {0}")]
         Config(String),
@@ -46,7 +52,7 @@ pub mod error {
             let status = match &self {
                 Error::AuthFailed => StatusCode::UNAUTHORIZED,
                 Error::NotFound => StatusCode::NOT_FOUND,
-                Error::Database(_) | Error::Io(_) | Error::Internal(_) => {
+                Error::Database(_) | Error::Io(_) | Error::Internal(_) | Error::Archive(_) => {
                     StatusCode::INTERNAL_SERVER_ERROR
                 }
                 Error::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
