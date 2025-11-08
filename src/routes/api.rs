@@ -37,7 +37,7 @@ pub async fn get_title(
 
     let title = lib
         .get_title(&title_id)
-        .ok_or(crate::error::Error::NotFound)?;
+        .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {}", title_id)))?;
 
     let entries: Vec<EntryInfo> = title
         .entries
@@ -68,7 +68,7 @@ pub async fn get_page(
 
     let entry = lib
         .get_entry(&title_id, &entry_id)
-        .ok_or(crate::error::Error::NotFound)?;
+        .ok_or_else(|| crate::error::Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id)))?;
 
     // Pages are 1-indexed in the API, but 0-indexed internally
     let page_idx = page.saturating_sub(1);

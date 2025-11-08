@@ -34,14 +34,17 @@ pub mod error {
         #[error("Archive error: {0}")]
         Archive(#[from] zip::result::ZipError),
 
+        #[error("JSON error: {0}")]
+        Json(#[from] serde_json::Error),
+
         #[error("Config error: {0}")]
         Config(String),
 
         #[error("Authentication failed")]
         AuthFailed,
 
-        #[error("Not found")]
-        NotFound,
+        #[error("Not found: {0}")]
+        NotFound(String),
 
         #[error("Internal server error: {0}")]
         Internal(String),
@@ -51,8 +54,8 @@ pub mod error {
         fn into_response(self) -> Response {
             let status = match &self {
                 Error::AuthFailed => StatusCode::UNAUTHORIZED,
-                Error::NotFound => StatusCode::NOT_FOUND,
-                Error::Database(_) | Error::Io(_) | Error::Internal(_) | Error::Archive(_) => {
+                Error::NotFound(_) => StatusCode::NOT_FOUND,
+                Error::Database(_) | Error::Io(_) | Error::Internal(_) | Error::Archive(_) | Error::Json(_) => {
                     StatusCode::INTERNAL_SERVER_ERROR
                 }
                 Error::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,

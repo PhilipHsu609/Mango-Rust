@@ -1,6 +1,6 @@
 use axum::{
     middleware,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use std::sync::Arc;
@@ -14,7 +14,10 @@ use crate::{
     config::Config,
     error::Result,
     library::Library,
-    routes::{get_library, get_login, get_page, get_stats, get_title, home, logout, post_login},
+    routes::{
+        get_library, get_login, get_page, get_stats, get_title, home, logout, post_login,
+        reader, get_progress, save_progress, get_all_progress,
+    },
     Storage,
 };
 
@@ -70,11 +73,16 @@ pub async fn run(config: Config) -> Result<()> {
         // Protected routes (auth required)
         .route("/", get(home))
         .route("/logout", get(logout))
+        // Reader routes
+        .route("/reader/:tid/:eid/:page", get(reader))
         // API routes
         .route("/api/library", get(get_library))
         .route("/api/title/:id", get(get_title))
         .route("/api/page/:tid/:eid/:page", get(get_page))
         .route("/api/stats", get(get_stats))
+        // Progress API
+        .route("/api/progress/:tid/:eid", get(get_progress).post(save_progress))
+        .route("/api/progress", get(get_all_progress))
         // Add state and middleware
         .layer(middleware::from_fn_with_state(app_state.clone(), require_auth))
         .layer(session_layer)

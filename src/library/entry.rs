@@ -62,7 +62,11 @@ impl Entry {
     /// Get page image data from archive
     pub async fn get_page(&self, page: usize) -> Result<Vec<u8>> {
         if page >= self.pages {
-            return Err(crate::error::Error::NotFound);
+            return Err(crate::error::Error::NotFound(format!(
+                "Page {} out of range (0-{})",
+                page,
+                self.pages - 1
+            )));
         }
 
         let image_name = &self.image_files[page];
