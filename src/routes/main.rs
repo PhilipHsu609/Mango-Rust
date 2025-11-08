@@ -24,16 +24,23 @@ pub async fn home(
     // Build title list HTML
     let mut titles_html = String::new();
     for title in titles {
+        // Get first entry ID for the "Read" link
+        let read_link = if let Some(first_entry) = title.entries.first() {
+            format!("/reader/{}/{}/1", title.id, first_entry.id)
+        } else {
+            format!("/api/title/{}", title.id)  // Fallback to details if no entries
+        };
+
         titles_html.push_str(&format!(
             r#"<div class="title-card">
                 <h3>{}</h3>
                 <p>{} entries • {} pages</p>
-                <a href="/api/title/{}">View</a>
+                <a href="{}">Read</a>
               </div>"#,
             title.title,
             title.entries.len(),
             title.total_pages(),
-            title.id
+            read_link
         ));
     }
 

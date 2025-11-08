@@ -24,8 +24,10 @@ pub struct LoginForm {
 
 /// GET /login - Show login page
 pub async fn get_login() -> Html<String> {
-    // Render template without error
-    let html = LOGIN_PAGE.replace("{% if error %}", "{% if false %}");
+    // Render template without error - remove error block entirely
+    let html = LOGIN_PAGE
+        .replace("{% if error %}", "<!--")
+        .replace("{% endif %}", "-->");
     Html(html)
 }
 
