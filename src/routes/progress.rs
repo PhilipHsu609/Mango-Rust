@@ -5,9 +5,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-use crate::{AppState, error::{Error, Result}};
+use crate::{AppState, error::{Error, Result}, library::Library};
 
 #[derive(Debug, Deserialize)]
 pub struct SaveProgressRequest {
@@ -143,4 +144,35 @@ pub async fn get_all_progress(
     }
 
     Ok(Json(all_progress))
+}
+
+/// Helper function to load progress for a user and entry
+/// Returns the saved page number, or 1 if no progress found
+pub async fn load_progress_for_user(
+    library: &Arc<RwLock<Library>>,
+    title_id: &str,
+    entry_id: &str,
+    username: &str,
+) -> Option<usize> {
+    // Get library read lock to find the title path
+    let lib = library.read().await;
+    let title = lib.get_title(title_id)?;
+    let title_path = title.path.clone();
+    drop(lib); // Release lock before file I/O
+
+    // Load info.json
+    let info_path = title_path.join("info.json");
+    if !info_path.exists() {
+        return Some(1); // No progress file, start at page 1
+    }
+
+    let content = tokio::fs::read_to_string(&info_path).await.ok()?;
+    let info: TitleInfo = serde_json::from_str(&content).ok()?;
+
+    // Get progress for this user and entry
+    info.progress
+        .get(username)
+        .and_then(|user_progress| user_progress.get(entry_id))
+        .copied()
+        .or(Some(1)) // Default to page 1 if no progress
 }
