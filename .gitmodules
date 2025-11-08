@@ -1,0 +1,3 @@
+[submodule "Mango"]
+	path = Mango
+	url = https://github.com/getmango/Mango.git
