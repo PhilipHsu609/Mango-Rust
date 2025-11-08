@@ -42,7 +42,66 @@
             padding: 2rem;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             text-align: center;
+        }
+        .stat-card h3 {
+            margin: 0 0 0.5rem 0;
+            color: #667eea;
+            font-size: 2rem;
+        }
+        .stat-card p {
+            margin: 0;
+            color: #666;
+        }
+        .titles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1.5rem;
+        }
+        .title-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .title-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+        .title-card h3 {
+            margin: 0 0 0.5rem 0;
+            color: #333;
+        }
+        .title-card p {
+            margin: 0 0 1rem 0;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .title-card a {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .title-card a:hover {
+            background: #5568d3;
         }
     </style>
 </head>
@@ -56,9 +115,26 @@
     </nav>
     <div class="container">
         <div class="welcome">
-            <h2>Welcome to Mango Rust!</h2>
-            <p>Tier 1 MVP - Authentication working! 🎉</p>
-            <p>Next: Library scanning and reader implementation</p>
+            <h2>📚 Your Manga Library</h2>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <h3>{{ title_count }}</h3>
+                <p>Titles</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ entry_count }}</h3>
+                <p>Chapters</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ page_count }}</h3>
+                <p>Pages</p>
+            </div>
+        </div>
+
+        <div class="titles-grid">
+            {{ titles }}
         </div>
     </div>
 </body>
