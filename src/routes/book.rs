@@ -39,6 +39,8 @@ struct BookTemplate {
     sort_title_desc: bool,
     sort_modified_asc: bool,
     sort_modified_desc: bool,
+    sort_progress_asc: bool,
+    sort_progress_desc: bool,
     entries: Vec<EntryData>,
 }
 
@@ -57,7 +59,7 @@ pub async fn get_book(
     );
 
     // Get title and its entries
-    let (title_name, entries) = {
+    let (title_name, mut entries) = {
         let lib = state.library.read().await;
 
         // Get the title
@@ -67,8 +69,13 @@ pub async fn get_book(
 
         let title_name = title.title.clone();
 
-        // Get all entries, sorted
-        let all_entries = title.get_entries_sorted(sort_method, ascending);
+        // For progress sorting, we need to calculate progress first, then sort
+        // For other methods, use the title's built-in sorting
+        let all_entries = if matches!(sort_method, SortMethod::Progress) {
+            title.get_entries_sorted(SortMethod::Name, true)  // Get name-sorted as base
+        } else {
+            title.get_entries_sorted(sort_method, ascending)
+        };
 
         // Build entry data
         let mut entries = Vec::new();
@@ -103,6 +110,19 @@ pub async fn get_book(
         (title_name, entries)
     }; // Lock is released here
 
+    // Sort by progress if requested (after calculating progress)
+    if matches!(sort_method, SortMethod::Progress) {
+        entries.sort_by(|a, b| {
+            let a_progress: f32 = a.progress.parse().unwrap_or(0.0);
+            let b_progress: f32 = b.progress.parse().unwrap_or(0.0);
+            if ascending {
+                a_progress.partial_cmp(&b_progress).unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                b_progress.partial_cmp(&a_progress).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
+    }
+
     let entry_count = entries.len();
 
     // Determine which sort option is selected
@@ -110,6 +130,8 @@ pub async fn get_book(
     let sort_title_desc = matches!(sort_method, SortMethod::Name) && !ascending;
     let sort_modified_asc = matches!(sort_method, SortMethod::TimeModified) && ascending;
     let sort_modified_desc = matches!(sort_method, SortMethod::TimeModified) && !ascending;
+    let sort_progress_asc = matches!(sort_method, SortMethod::Progress) && ascending;
+    let sort_progress_desc = matches!(sort_method, SortMethod::Progress) && !ascending;
 
     let template = BookTemplate {
         home_active: false,
@@ -121,6 +143,8 @@ pub async fn get_book(
         sort_title_desc,
         sort_modified_asc,
         sort_modified_desc,
+        sort_progress_asc,
+        sort_progress_desc,
         entries,
     };
 
