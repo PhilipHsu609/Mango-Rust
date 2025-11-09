@@ -157,7 +157,9 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ## License
 
-This project follows the same license as the original Mango project. Please refer to the [original Mango repository](https://github.com/getmango/Mango) for license details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+This is a port of the original [Mango](https://github.com/getmango/Mango) project, which is also MIT licensed. Both the original copyright (Alex Ling) and the Rust port copyright are preserved in the LICENSE file.
 
 ## Acknowledgments
 
