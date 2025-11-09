@@ -4,291 +4,130 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ entry_name }} - Page {{ current_page }}</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background-color: #1a1a1a;
-            color: #ffffff;
-            overflow: hidden;
-        }
-
-        #reader-container {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-
-        #topbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 1rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            z-index: 10;
-        }
-
-        #title-info {
-            display: flex;
-            flex-direction: column;
-        }
-
-        #title-info h1 {
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
-
-        #title-info p {
-            font-size: 0.9rem;
-            opacity: 0.9;
-        }
-
-        #navigation {
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-        }
-
-        .nav-btn {
-            background: rgba(255, 255, 255, 0.2);
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            color: white;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: background 0.2s;
-        }
-
-        .nav-btn:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.3);
-        }
-
-        .nav-btn:disabled {
-            opacity: 0.3;
-            cursor: not-allowed;
-        }
-
-        #page-indicator {
-            font-size: 0.9rem;
-            padding: 0.5rem 1rem;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 4px;
-        }
-
-        #image-container {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
-            position: relative;
-        }
-
-        #manga-image {
-            max-width: 100%;
-            max-height: calc(100vh - 60px);
-            object-fit: contain;
-            cursor: pointer;
-        }
-
-        #loading {
-            position: absolute;
-            font-size: 1.2rem;
-            color: #667eea;
-        }
-
-        /* Keyboard shortcuts help */
-        #shortcuts-help {
-            position: fixed;
-            bottom: 1rem;
-            right: 1rem;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 1rem;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-        }
-
-        #shortcuts-help.show {
-            opacity: 1;
-        }
-
-        #shortcuts-help h3 {
-            margin-bottom: 0.5rem;
-            color: #667eea;
-        }
-
-        #shortcuts-help ul {
-            list-style: none;
-        }
-
-        #shortcuts-help li {
-            margin: 0.25rem 0;
-        }
-
-        .key {
-            display: inline-block;
-            padding: 0.1rem 0.3rem;
-            background: #333;
-            border-radius: 3px;
-            font-family: monospace;
-            margin-right: 0.5rem;
-        }
-
-        @media (max-width: 768px) {
-            #topbar {
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-
-            #title-info h1 {
-                font-size: 1rem;
-            }
-
-            #title-info p {
-                font-size: 0.8rem;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/css/uikit.min.css" />
+    <style>{{ page_styles }}</style>
 </head>
-<body>
+<body class="paged-mode fit-height">
     <div id="reader-container">
-        <div id="topbar">
-            <div id="title-info">
-                <h1>{{ title_name }}</h1>
-                <p>{{ entry_name }}</p>
-            </div>
-            <div id="navigation">
-                <button class="nav-btn" id="prev-btn" {% if prev_page.is_none() %}disabled{% endif %}>
-                    ← Previous
-                </button>
-                <span id="page-indicator">{{ current_page }} / {{ total_pages }}</span>
-                <button class="nav-btn" id="next-btn" {% if next_page.is_none() %}disabled{% endif %}>
-                    Next →
-                </button>
-                <button class="nav-btn" onclick="window.location.href='/'">
-                    Exit
-                </button>
-            </div>
+        <!-- Settings button -->
+        <button id="settings-btn" onclick="UIkit.modal('#settings-modal').show()">⚙️</button>
+
+        <!-- Loading indicator -->
+        <div id="loading">Loading...</div>
+
+        <!-- Continuous mode container -->
+        <div id="continuous-container">
+            <!-- Images will be inserted here by JavaScript -->
         </div>
 
-        <div id="image-container">
-            <div id="loading">Loading...</div>
-            <img id="manga-image" alt="Page {{ current_page }}" style="display: none;">
+        <!-- Paged mode container -->
+        <div id="paged-container">
+            <img id="paged-image" alt="Page {{ current_page }}">
+            <div class="click-zone click-zone-left" onclick="handleLeftClick()"></div>
+            <div class="click-zone click-zone-right" onclick="handleRightClick()"></div>
         </div>
     </div>
 
-    <div id="shortcuts-help">
-        <h3>Keyboard Shortcuts</h3>
-        <ul>
-            <li><span class="key">←</span> Previous page</li>
-            <li><span class="key">→</span> Next page</li>
-            <li><span class="key">Space</span> Next page</li>
-            <li><span class="key">?</span> Show this help</li>
-        </ul>
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="uk-flex-top" uk-modal>
+        <div class="uk-modal-dialog uk-margin-auto-vertical">
+            <button class="uk-modal-close-default" type="button" uk-close></button>
+            <div class="uk-modal-header">
+                <h3 class="uk-modal-title break-word">{{ entry_name }}</h3>
+                <p class="uk-text-meta uk-margin-remove-bottom break-word">{{ entry_path }}</p>
+            </div>
+            <div class="uk-modal-body">
+                <!-- Progress -->
+                <div class="uk-margin">
+                    <p id="progress-text">Progress: {{ current_page }}/{{ total_pages }}</p>
+                </div>
+
+                <!-- Jump to Page -->
+                <div class="uk-margin">
+                    <label class="uk-form-label" for="page-select">Jump to Page</label>
+                    <div class="uk-form-controls">
+                        <select id="page-select" class="uk-select" onchange="jumpToPage()">
+                            {{ page_options }}
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Reading Mode -->
+                <div class="uk-margin">
+                    <label class="uk-form-label" for="mode-select">Mode</label>
+                    <div class="uk-form-controls">
+                        <select id="mode-select" class="uk-select" onchange="changeMode()">
+                            <option value="continuous">Continuous</option>
+                            <option value="paged" selected>Paged</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Page Fit (paged mode only) -->
+                <div class="uk-margin" id="fit-section">
+                    <label class="uk-form-label" for="fit-select">Page Fit</label>
+                    <div class="uk-form-controls">
+                        <select id="fit-select" class="uk-select" onchange="changeFit()">
+                            <option value="height" selected>Fit Height</option>
+                            <option value="width">Fit Width</option>
+                            <option value="real">Real Size</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Page Margin (continuous mode only) -->
+                <div class="uk-margin uk-hidden" id="margin-section">
+                    <label class="uk-form-label" for="margin-range">Page Margin: <span id="margin-value">20</span>px</label>
+                    <div class="uk-form-controls">
+                        <input id="margin-range" class="uk-range" type="range" min="0" max="50" step="5" value="20" oninput="changeMargin()">
+                    </div>
+                </div>
+
+                <!-- Enable Flip Animation (paged mode only) -->
+                <div class="uk-margin" id="animation-section">
+                    <label class="uk-form-label" for="enable-flip-animation">Enable Flip Animation</label>
+                    <div class="uk-form-controls">
+                        <input id="enable-flip-animation" class="uk-checkbox" type="checkbox" checked onchange="toggleAnimation()">
+                    </div>
+                </div>
+
+                <!-- Preload Images (paged mode only) -->
+                <div class="uk-margin" id="preload-section">
+                    <label class="uk-form-label" for="preload-range">Preload: <span id="preload-value">2</span> page(s)</label>
+                    <div class="uk-form-controls">
+                        <input id="preload-range" class="uk-range" type="range" min="0" max="5" step="1" value="2" oninput="changePreload()">
+                    </div>
+                </div>
+
+                <!-- Right to Left (paged mode only) -->
+                <div class="uk-margin" id="rtl-section">
+                    <label class="uk-form-label" for="enable-rtl">Right to Left</label>
+                    <div class="uk-form-controls">
+                        <input id="enable-rtl" class="uk-checkbox" type="checkbox" onchange="toggleRTL()">
+                    </div>
+                </div>
+
+                <hr class="uk-divider-icon">
+
+                <!-- Jump to Entry -->
+                <div class="uk-margin">
+                    <label class="uk-form-label" for="entry-select">Jump to Entry</label>
+                    <div class="uk-form-controls">
+                        <select id="entry-select" class="uk-select" onchange="jumpToEntry()">
+                            {{ entry_options }}
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="uk-modal-footer uk-text-right">
+                {{ prev_entry_button }}
+                {{ next_entry_button }}
+                <a class="uk-button uk-button-danger uk-margin-small-bottom uk-margin-small-right" href="{{ exit_url }}">Exit Reader</a>
+            </div>
+        </div>
     </div>
 
-    <script>
-        const titleId = '{{ title_id }}';
-        const entryId = '{{ entry_id }}';
-        const currentPage = {{ current_page }};
-        const totalPages = {{ total_pages }};
-        const prevPage = {% if let Some(p) = prev_page %}{{ p }}{% else %}null{% endif %};
-        const nextPage = {% if let Some(n) = next_page %}{{ n }}{% else %}null{% endif %};
-
-        const imageContainer = document.getElementById('image-container');
-        const mangaImage = document.getElementById('manga-image');
-        const loading = document.getElementById('loading');
-        const prevBtn = document.getElementById('prev-btn');
-        const nextBtn = document.getElementById('next-btn');
-        const shortcutsHelp = document.getElementById('shortcuts-help');
-
-        // Load the current page image
-        function loadPage(page) {
-            loading.style.display = 'block';
-            mangaImage.style.display = 'none';
-
-            const imageUrl = `/api/page/${titleId}/${entryId}/${page}`;
-            mangaImage.src = imageUrl;
-        }
-
-        mangaImage.onload = function() {
-            loading.style.display = 'none';
-            mangaImage.style.display = 'block';
-            saveProgress();
-        };
-
-        mangaImage.onerror = function() {
-            loading.textContent = 'Error loading page';
-            loading.style.color = '#ff6b6b';
-        };
-
-        // Navigation functions
-        function goToPrevPage() {
-            if (prevPage !== null) {
-                window.location.href = `/reader/${titleId}/${entryId}/${prevPage}`;
-            }
-        }
-
-        function goToNextPage() {
-            if (nextPage !== null) {
-                window.location.href = `/reader/${titleId}/${entryId}/${nextPage}`;
-            }
-        }
-
-        // Button click handlers
-        prevBtn.addEventListener('click', goToPrevPage);
-        nextBtn.addEventListener('click', goToNextPage);
-
-        // Click on image to go to next page
-        mangaImage.addEventListener('click', goToNextPage);
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            switch(e.key) {
-                case 'ArrowLeft':
-                    goToPrevPage();
-                    break;
-                case 'ArrowRight':
-                case ' ':
-                    e.preventDefault();
-                    goToNextPage();
-                    break;
-                case '?':
-                    shortcutsHelp.classList.toggle('show');
-                    break;
-            }
-        });
-
-        // Save progress to server
-        async function saveProgress() {
-            try {
-                await fetch(`/api/progress/${titleId}/${entryId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        page: currentPage
-                    })
-                });
-            } catch (error) {
-                console.error('Failed to save progress:', error);
-            }
-        }
-
-        // Load the image on page load
-        loadPage(currentPage);
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
+    <script>{{ page_scripts }}</script>
 </body>
 </html>
