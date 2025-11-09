@@ -149,6 +149,78 @@ impl Title {
 
         all_entries
     }
+
+    /// Save reading progress for an entry
+    pub async fn save_entry_progress(&self, username: &str, entry_id: &str, page: usize) -> Result<()> {
+        use super::progress::TitleInfo;
+
+        let mut info = TitleInfo::load(&self.path).await?;
+
+        // If page is 0, remove the progress (mark as unread)
+        if page == 0 {
+            info.remove_progress(username, entry_id);
+        } else {
+            info.set_progress(username, entry_id, page);
+        }
+
+        info.save(&self.path).await?;
+        Ok(())
+    }
+
+    /// Load reading progress for an entry
+    pub async fn load_entry_progress(&self, username: &str, entry_id: &str) -> Result<usize> {
+        use super::progress::TitleInfo;
+
+        let info = TitleInfo::load(&self.path).await?;
+        Ok(info.get_progress(username, entry_id).unwrap_or(0))
+    }
+
+    /// Get progress information for an entry (percentage and page number)
+    pub async fn get_entry_progress(&self, username: &str, entry_id: &str) -> Result<(f32, usize)> {
+        // Find the entry to get its page count
+        let entry = self.entries.iter()
+            .find(|e| e.id == entry_id)
+            .ok_or_else(|| crate::error::Error::NotFound(format!("Entry not found: {}", entry_id)))?;
+
+        let page = self.load_entry_progress(username, entry_id).await?;
+        let percentage = if entry.pages > 0 {
+            (page as f32 / entry.pages as f32) * 100.0
+        } else {
+            0.0
+        };
+
+        Ok((percentage, page))
+    }
+
+    /// Mark all entries as read
+    pub async fn read_all(&self, username: &str) -> Result<()> {
+        use super::progress::TitleInfo;
+
+        let mut info = TitleInfo::load(&self.path).await?;
+
+        // Set progress to last page for all entries
+        for entry in &self.entries {
+            info.set_progress(username, &entry.id, entry.pages);
+        }
+
+        info.save(&self.path).await?;
+        Ok(())
+    }
+
+    /// Mark all entries as unread
+    pub async fn unread_all(&self, username: &str) -> Result<()> {
+        use super::progress::TitleInfo;
+
+        let mut info = TitleInfo::load(&self.path).await?;
+
+        // Remove progress for all entries
+        for entry in &self.entries {
+            info.remove_progress(username, &entry.id);
+        }
+
+        info.save(&self.path).await?;
+        Ok(())
+    }
 }
 
 /// Check if a file is a supported archive format

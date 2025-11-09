@@ -75,34 +75,11 @@ pub async fn get_book(
         // Build entry data
         let mut entries = Vec::new();
         for entry in all_entries {
-            // Try to load progress for this entry from info.json
-            let (progress_percentage, saved_page) = {
-                let info_path = title.path.join("info.json");
-                if info_path.exists() {
-                    if let Ok(content) = tokio::fs::read_to_string(&info_path).await {
-                        if let Ok(info) = serde_json::from_str::<serde_json::Value>(&content) {
-                            if let Some(page) = info
-                                .get("progress")
-                                .and_then(|p| p.get(&username))
-                                .and_then(|u| u.get(&entry.id))
-                                .and_then(|page| page.as_u64())
-                            {
-                                let page = page as usize;
-                                let percentage = (page as f32 / entry.pages as f32) * 100.0;
-                                (percentage, page)
-                            } else {
-                                (0.0, 0)
-                            }
-                        } else {
-                            (0.0, 0)
-                        }
-                    } else {
-                        (0.0, 0)
-                    }
-                } else {
-                    (0.0, 0)
-                }
-            };
+            // Load progress for this entry using Title's method
+            let (progress_percentage, saved_page) = title
+                .get_entry_progress(&username, &entry.id)
+                .await
+                .unwrap_or((0.0, 0));
 
             // Apply search filter if provided
             if let Some(ref search) = params.search {

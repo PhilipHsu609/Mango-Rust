@@ -108,6 +108,13 @@ async function saveProgress() {
     }
 }
 
+// Save progress using sendBeacon (for page unload)
+function saveProgressBeacon() {
+    const data = JSON.stringify({ page: currentPage });
+    const blob = new Blob([data], { type: 'application/json' });
+    navigator.sendBeacon(`/api/progress/${TITLE_ID}/${ENTRY_ID}`, blob);
+}
+
 // Preload images
 function preloadImages() {
     if (mode !== 'paged' || preloadCount === 0) return;
@@ -211,6 +218,7 @@ function scrollToCurrentPage() {
 // Scroll handler for continuous mode using scroll events
 function setupScrollHandler() {
     let scrollTimeout;
+    let isInitialLoad = true;
 
     function findCurrentPage() {
         const images = document.querySelectorAll('.continuous-image');
@@ -243,16 +251,23 @@ function setupScrollHandler() {
             history.replaceState(null, '', newUrl);
             document.title = `${document.title.split(' - Page')[0]} - Page ${currentPage}`;
         }
+
+        // Mark as initialized after first check (after initial scroll has settled)
+        if (isInitialLoad) {
+            isInitialLoad = false;
+            hasInteracted = true; // Now that we're at the right page, mark as interacted
+        }
     }
 
-    // Check immediately on setup
-    findCurrentPage();
-
-    // Then check on scroll with debouncing
+    // Don't check immediately - wait for initial scroll to complete
+    // Check on scroll with debouncing
     window.addEventListener('scroll', () => {
         clearTimeout(scrollTimeout);
         scrollTimeout = setTimeout(findCurrentPage, 100);
     });
+
+    // Also check after a delay to catch the position after initial scroll
+    setTimeout(findCurrentPage, 1500);
 }
 
 // Initialize paged mode
@@ -443,6 +458,35 @@ document.addEventListener('keydown', function(e) {
         case 'Escape':
             UIkit.modal('#settings-modal').hide();
             break;
+    }
+});
+
+// Save progress when page is being unloaded
+// Only save if we're actually reading (not on initial page load)
+let hasInteracted = false;
+window.addEventListener('beforeunload', function(e) {
+    // Only save if user has interacted with the page
+    if (hasInteracted) {
+        saveProgressBeacon();
+    }
+});
+
+// Mark as interacted when scrolling or changing pages
+window.addEventListener('scroll', function() {
+    hasInteracted = true;
+}, { once: true });
+
+// Also mark as interacted on page navigation in paged mode
+const originalLoadPage = loadPage;
+loadPage = function(page) {
+    hasInteracted = true;
+    return originalLoadPage(page);
+};
+
+// Also save on visibility change (mobile Safari, etc.)
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden' && hasInteracted) {
+        saveProgressBeacon();
     }
 });
 

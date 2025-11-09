@@ -5,10 +5,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
-use crate::{AppState, error::{Error, Result}, library::Library};
+use crate::{AppState, error::{Error, Result}};
 
 #[derive(Debug, Deserialize)]
 pub struct SaveProgressRequest {
@@ -20,13 +18,6 @@ pub struct ProgressResponse {
     page: usize,
 }
 
-/// info.json structure for storing metadata and progress
-#[derive(Debug, Serialize, Deserialize, Default)]
-struct TitleInfo {
-    #[serde(default)]
-    progress: HashMap<String, HashMap<String, usize>>,
-}
-
 /// Save reading progress for an entry
 pub async fn save_progress(
     State(state): State<AppState>,
@@ -36,7 +27,7 @@ pub async fn save_progress(
     // TODO: Get username from session
     let username = "admin".to_string();
 
-    // Get library read lock to find the title path
+    // Get library read lock to find the title
     let lib = state.library.read().await;
     let title = lib.get_title(&title_id)
         .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
@@ -45,59 +36,16 @@ pub async fn save_progress(
     let _entry = lib.get_entry(&title_id, &entry_id)
         .ok_or_else(|| Error::NotFound(format!("Entry not found: {}", entry_id)))?;
 
-    let title_path = title.path.clone();
-    drop(lib); // Release lock before file I/O
+    // Save progress using Title's method
+    title.save_entry_progress(&username, &entry_id, request.page).await?;
+    drop(lib); // Release lock
 
-    // Load or create info.json
-    let info_path = title_path.join("info.json");
-    let mut info: TitleInfo = if info_path.exists() {
-        let content = tokio::fs::read_to_string(&info_path).await?;
-        serde_json::from_str(&content).unwrap_or_default()
-    } else {
-        TitleInfo::default()
-    };
-
-    // Update progress - if page is 0, remove the progress entry
-    if request.page == 0 {
-        // Remove progress entry
-        if let Some(user_progress) = info.progress.get_mut(&username) {
-            user_progress.remove(&entry_id);
-            // If user has no more progress entries, remove the user
-            if user_progress.is_empty() {
-                info.progress.remove(&username);
-            }
-        }
-        tracing::debug!(
-            "Deleted progress: {} / {}",
-            title_id,
-            entry_id
-        );
-    } else {
-        // Save progress
-        info.progress
-            .entry(username)
-            .or_insert_with(HashMap::new)
-            .insert(entry_id.clone(), request.page);
-        tracing::debug!(
-            "Saved progress: {} / {} = page {}",
-            title_id,
-            entry_id,
-            request.page
-        );
-    }
-
-    // Save info.json (or delete if empty)
-    if info.progress.is_empty() {
-        // No progress left, delete the file
-        if info_path.exists() {
-            tokio::fs::remove_file(&info_path).await?;
-            tracing::debug!("Deleted empty info.json for title {}", title_id);
-        }
-    } else {
-        // Save updated progress
-        let json = serde_json::to_string_pretty(&info)?;
-        tokio::fs::write(&info_path, json).await?;
-    }
+    tracing::debug!(
+        "Saved progress: {} / {} = page {}",
+        title_id,
+        entry_id,
+        request.page
+    );
 
     Ok(StatusCode::OK)
 }
@@ -110,32 +58,16 @@ pub async fn get_progress(
     // TODO: Get username from session
     let username = "admin".to_string();
 
-    // Get library read lock to find the title path
+    // Get library read lock to find the title
     let lib = state.library.read().await;
     let title = lib.get_title(&title_id)
         .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
 
-    let title_path = title.path.clone();
-    drop(lib); // Release lock before file I/O
+    // Load progress using Title's method
+    let page = title.load_entry_progress(&username, &entry_id).await?;
+    drop(lib);
 
-    // Load info.json
-    let info_path = title_path.join("info.json");
-    let info: TitleInfo = if info_path.exists() {
-        let content = tokio::fs::read_to_string(&info_path).await?;
-        serde_json::from_str(&content).unwrap_or_default()
-    } else {
-        TitleInfo::default()
-    };
-
-    // Get progress for this user and entry
-    let page = info
-        .progress
-        .get(&username)
-        .and_then(|user_progress| user_progress.get(&entry_id))
-        .copied()
-        .unwrap_or(1); // Default to page 1
-
-    Ok(Json(ProgressResponse { page }))
+    Ok(Json(ProgressResponse { page: page.max(1) })) // Default to page 1
 }
 
 /// Get all progress for a user across all titles
@@ -150,54 +82,17 @@ pub async fn get_all_progress(
 
     // Iterate through all titles
     for title in lib.get_titles() {
-        let info_path = title.path.join("info.json");
-
-        if info_path.exists() {
-            if let Ok(content) = tokio::fs::read_to_string(&info_path).await {
-                if let Ok(info) = serde_json::from_str::<TitleInfo>(&content) {
-                    if let Some(user_progress) = info.progress.get(&username) {
-                        for (entry_id, page) in user_progress {
-                            all_progress.insert(
-                                format!("{}:{}", title.id, entry_id),
-                                *page
-                            );
-                        }
-                    }
+        for entry in &title.entries {
+            if let Ok(page) = title.load_entry_progress(&username, &entry.id).await {
+                if page > 0 {
+                    all_progress.insert(
+                        format!("{}:{}", title.id, entry.id),
+                        page
+                    );
                 }
             }
         }
     }
 
     Ok(Json(all_progress))
-}
-
-/// Helper function to load progress for a user and entry
-/// Returns the saved page number, or 1 if no progress found
-pub async fn load_progress_for_user(
-    library: &Arc<RwLock<Library>>,
-    title_id: &str,
-    entry_id: &str,
-    username: &str,
-) -> Option<usize> {
-    // Get library read lock to find the title path
-    let lib = library.read().await;
-    let title = lib.get_title(title_id)?;
-    let title_path = title.path.clone();
-    drop(lib); // Release lock before file I/O
-
-    // Load info.json
-    let info_path = title_path.join("info.json");
-    if !info_path.exists() {
-        return Some(1); // No progress file, start at page 1
-    }
-
-    let content = tokio::fs::read_to_string(&info_path).await.ok()?;
-    let info: TitleInfo = serde_json::from_str(&content).ok()?;
-
-    // Get progress for this user and entry
-    info.progress
-        .get(username)
-        .and_then(|user_progress| user_progress.get(entry_id))
-        .copied()
-        .or(Some(1)) // Default to page 1 if no progress
 }
