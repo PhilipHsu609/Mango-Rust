@@ -1,6 +1,7 @@
 use axum::{
-    extract::{Request, State},
-    http::StatusCode,
+    async_trait,
+    extract::{FromRequestParts, Request, State},
+    http::{request::Parts, StatusCode},
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
@@ -94,4 +95,25 @@ fn is_public_path(path: &str) -> bool {
 /// Injected by require_auth middleware
 pub fn get_username(request: &Request) -> Option<String> {
     request.extensions().get::<String>().cloned()
+}
+
+/// Username extractor that can be used as a handler parameter
+/// Extracts username from request extensions (set by require_auth middleware)
+pub struct Username(pub String);
+
+#[async_trait]
+impl<S> FromRequestParts<S> for Username
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<String>()
+            .cloned()
+            .map(Username)
+            .ok_or(StatusCode::UNAUTHORIZED)
+    }
 }

@@ -6,7 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{AppState, error::{Error, Result}};
+use crate::{auth::Username, AppState, error::{Error, Result}};
 
 #[derive(Debug, Deserialize)]
 pub struct SaveProgressRequest {
@@ -22,10 +22,9 @@ pub struct ProgressResponse {
 pub async fn save_progress(
     State(state): State<AppState>,
     Path((title_id, entry_id)): Path<(String, String)>,
+    Username(username): Username,
     Json(request): Json<SaveProgressRequest>,
 ) -> Result<impl IntoResponse> {
-    // TODO: Get username from session
-    let username = "admin".to_string();
 
     // Get library read lock to find the title
     let lib = state.library.read().await;
@@ -54,9 +53,8 @@ pub async fn save_progress(
 pub async fn get_progress(
     State(state): State<AppState>,
     Path((title_id, entry_id)): Path<(String, String)>,
+    Username(username): Username,
 ) -> Result<impl IntoResponse> {
-    // TODO: Get username from session
-    let username = "admin".to_string();
 
     // Get library read lock to find the title
     let lib = state.library.read().await;
@@ -73,9 +71,8 @@ pub async fn get_progress(
 /// Get all progress for a user across all titles
 pub async fn get_all_progress(
     State(state): State<AppState>,
+    Username(username): Username,
 ) -> Result<impl IntoResponse> {
-    // TODO: Get username from session
-    let username = "admin".to_string();
 
     let lib = state.library.read().await;
     let mut all_progress = HashMap::new();
