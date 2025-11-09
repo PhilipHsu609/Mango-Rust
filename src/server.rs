@@ -15,7 +15,7 @@ use crate::{
     error::Result,
     library::Library,
     routes::{
-        get_library, get_login, get_page, get_stats, get_title, home, library as library_page, logout, post_login,
+        get_cover, get_library, get_login, get_page, get_stats, get_title, home, library as library_page, logout, post_login,
         get_book, reader, get_progress, save_progress, get_all_progress,
     },
     Storage,
@@ -83,6 +83,7 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/library", get(get_library))
         .route("/api/title/:id", get(get_title))
         .route("/api/page/:tid/:eid/:page", get(get_page))
+        .route("/api/cover/:tid/:eid", get(get_cover))
         .route("/api/stats", get(get_stats))
         // Progress API
         .route("/api/progress/:tid/:eid", get(get_progress).post(save_progress))
