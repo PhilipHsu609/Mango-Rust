@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Result, library::SortMethod, AppState};
+use crate::{error::Result, library::{Entry, SortMethod}, AppState};
 
 /// API route: GET /api/library?sort=title|modified|auto&ascend=0|1
 /// Returns list of all manga titles with optional sorting
@@ -109,6 +109,54 @@ pub async fn get_stats(State(state): State<AppState>) -> Result<impl IntoRespons
     };
 
     Ok(Json(response))
+}
+
+/// GET /api/cover/:tid/:eid - Get manga entry cover/thumbnail
+pub async fn get_cover(
+    State(state): State<AppState>,
+    Path((title_id, entry_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let lib = state.library.read().await;
+
+    // Get entry
+    let entry = match lib.get_entry(&title_id, &entry_id) {
+        Some(entry) => entry,
+        None => {
+            return (StatusCode::NOT_FOUND, "Entry not found").into_response();
+        }
+    };
+
+    let db = state.storage.pool();
+
+    // Try to get thumbnail first
+    match Entry::get_thumbnail(&entry_id, db).await {
+        Ok(Some((data, mime))) => {
+            return ([(header::CONTENT_TYPE, mime.as_str())], data).into_response();
+        }
+        Ok(None) => {
+            // No thumbnail exists, try to generate one
+            if let Ok(Some((data, mime, _size))) = entry.generate_thumbnail(db).await {
+                return ([(header::CONTENT_TYPE, mime.as_str())], data).into_response();
+            }
+            // Fall through to return first page
+        }
+        Err(e) => {
+            tracing::warn!("Error getting thumbnail for {}: {}", entry_id, e);
+            // Fall through to return first page
+        }
+    }
+
+    // Fallback: return first page directly
+    match entry.get_page(0).await {
+        Ok(data) => {
+            let mime = guess_mime_type(&data);
+            ([(header::CONTENT_TYPE, mime)], data).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to get page for entry {}: {}", entry_id, e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get cover").into_response()
+        }
+    }
 }
 
 // Request and response types
