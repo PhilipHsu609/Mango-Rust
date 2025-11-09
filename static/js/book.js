@@ -33,25 +33,40 @@ if (sortSelect) {
     }
 }
 
-// Search entries
-const searchInput = document.getElementById('search-input');
-if (searchInput) {
-    // Set search value from URL
-    const currentSearch = urlParams.get('search') || '';
-    if (currentSearch) {
-        searchInput.value = currentSearch;
-    }
+// Search entries (client-side filtering)
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('search-input');
+    const items = document.querySelectorAll('.item');
+    const entryNames = [];
 
-    searchInput.addEventListener('input', function(e) {
-        const url = new URL(window.location.href);
-        if (e.target.value) {
-            url.searchParams.set('search', e.target.value);
-        } else {
-            url.searchParams.delete('search');
-        }
-        window.location.href = url.toString();
+    // Collect all entry names
+    document.querySelectorAll('.uk-card-title').forEach(function(el) {
+        entryNames.push(el.textContent);
     });
-}
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            const input = e.target.value.trim();
+            const regex = new RegExp(input, 'i');
+
+            if (input === '') {
+                // Show all items
+                items.forEach(function(item) {
+                    item.removeAttribute('hidden');
+                });
+            } else {
+                // Filter items
+                items.forEach(function(item, i) {
+                    if (entryNames[i] && entryNames[i].match(regex)) {
+                        item.removeAttribute('hidden');
+                    } else {
+                        item.setAttribute('hidden', '');
+                    }
+                });
+            }
+        });
+    }
+});
 
 // Open entry modal when clicking on entry card
 document.querySelectorAll('.entry-card').forEach(card => {

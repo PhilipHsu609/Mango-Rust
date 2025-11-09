@@ -1,3 +1,38 @@
+// Search functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.querySelector('.uk-search-input');
+    const items = document.querySelectorAll('.item');
+    const titles = [];
+
+    // Collect all title texts
+    document.querySelectorAll('.uk-card-title').forEach(function(el) {
+        titles.push(el.textContent);
+    });
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            const input = e.target.value.trim();
+            const regex = new RegExp(input, 'i');
+
+            if (input === '') {
+                // Show all items
+                items.forEach(function(item) {
+                    item.removeAttribute('hidden');
+                });
+            } else {
+                // Filter items
+                items.forEach(function(item, i) {
+                    if (titles[i] && titles[i].match(regex)) {
+                        item.removeAttribute('hidden');
+                    } else {
+                        item.setAttribute('hidden', '');
+                    }
+                });
+            }
+        });
+    }
+});
+
 // Handle sort dropdown change
 const sortSelect = document.getElementById('sort-select');
 if (sortSelect) {
