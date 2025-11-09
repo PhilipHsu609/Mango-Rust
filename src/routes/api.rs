@@ -8,15 +8,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{error::Result, library::SortMethod, AppState};
 
-/// API route: GET /api/library?sort=name|time|time-reverse|auto
+/// API route: GET /api/library?sort=title|modified|auto&ascend=0|1
 /// Returns list of all manga titles with optional sorting
 pub async fn get_library(
     State(state): State<AppState>,
     Query(params): Query<SortParams>,
 ) -> Result<impl IntoResponse> {
     let lib = state.library.read().await;
-    let sort_method = params.sort.map(|s| SortMethod::from_str(&s)).unwrap_or_default();
-    let titles = lib.get_titles_sorted(sort_method);
+    let (sort_method, ascending) = SortMethod::from_params(
+        params.sort.as_deref(),
+        params.ascend.as_deref(),
+    );
+    let titles = lib.get_titles_sorted(sort_method, ascending);
 
     let response: Vec<TitleInfo> = titles
         .iter()
@@ -31,7 +34,7 @@ pub async fn get_library(
     Ok(Json(response))
 }
 
-/// API route: GET /api/title/:id?sort=name|time|time-reverse|auto
+/// API route: GET /api/title/:id?sort=title|modified|auto&ascend=0|1
 /// Returns details of a specific manga title including all its entries with optional sorting
 pub async fn get_title(
     State(state): State<AppState>,
@@ -44,9 +47,12 @@ pub async fn get_title(
         .get_title(&title_id)
         .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {}", title_id)))?;
 
-    let sort_method = params.sort.map(|s| SortMethod::from_str(&s)).unwrap_or_default();
+    let (sort_method, ascending) = SortMethod::from_params(
+        params.sort.as_deref(),
+        params.ascend.as_deref(),
+    );
     let entries: Vec<EntryInfo> = title
-        .get_entries_sorted(sort_method)
+        .get_entries_sorted(sort_method, ascending)
         .iter()
         .map(|e| EntryInfo {
             id: e.id.clone(),
@@ -110,8 +116,10 @@ pub async fn get_stats(State(state): State<AppState>) -> Result<impl IntoRespons
 /// Query parameters for sorting
 #[derive(Deserialize)]
 pub struct SortParams {
-    /// Optional sort method (name, time, time-reverse, auto)
+    /// Optional sort method (title, modified, auto)
     pub sort: Option<String>,
+    /// Optional ascend flag (1 for ascending, 0 for descending)
+    pub ascend: Option<String>,
 }
 
 #[derive(Serialize)]

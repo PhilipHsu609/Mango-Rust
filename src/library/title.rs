@@ -98,29 +98,35 @@ impl Title {
         self.entries.iter().map(|e| e.pages).sum()
     }
 
-    /// Get entries sorted by specified method
-    pub fn get_entries_sorted(&self, method: SortMethod) -> Vec<&Entry> {
+    /// Get entries sorted by specified method and order
+    pub fn get_entries_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Entry> {
         let mut entries: Vec<&Entry> = self.entries.iter().collect();
 
         match method {
             SortMethod::Name => {
-                entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
-            }
-            SortMethod::NameReverse => {
-                entries.sort_by(|a, b| natord::compare(&b.title, &a.title));
+                if ascending {
+                    entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
+                } else {
+                    entries.sort_by(|a, b| natord::compare(&b.title, &a.title));
+                }
             }
             SortMethod::TimeModified => {
-                // Newest first
-                entries.sort_by(|a, b| b.mtime.cmp(&a.mtime));
-            }
-            SortMethod::TimeModifiedReverse => {
-                // Oldest first
-                entries.sort_by(|a, b| a.mtime.cmp(&b.mtime));
+                if ascending {
+                    // Oldest first
+                    entries.sort_by(|a, b| a.mtime.cmp(&b.mtime));
+                } else {
+                    // Newest first
+                    entries.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+                }
             }
             SortMethod::Auto => {
-                // For now, use name sorting
+                // For now, use name sorting with natural ordering
                 // Future: smart chapter detection
-                entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
+                if ascending {
+                    entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
+                } else {
+                    entries.sort_by(|a, b| natord::compare(&b.title, &a.title));
+                }
             }
         }
 

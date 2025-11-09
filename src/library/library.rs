@@ -198,32 +198,38 @@ impl Library {
 
     /// Get all titles (sorted by name)
     pub fn get_titles(&self) -> Vec<&Title> {
-        self.get_titles_sorted(SortMethod::default())
+        self.get_titles_sorted(SortMethod::default(), true)
     }
 
     /// Get all titles sorted by specified method
-    pub fn get_titles_sorted(&self, method: SortMethod) -> Vec<&Title> {
+    pub fn get_titles_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Title> {
         let mut titles: Vec<&Title> = self.titles.values().collect();
 
         match method {
             SortMethod::Name => {
-                titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
-            }
-            SortMethod::NameReverse => {
-                titles.sort_by(|a, b| natord::compare(&b.title, &a.title));
+                if ascending {
+                    titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
+                } else {
+                    titles.sort_by(|a, b| natord::compare(&b.title, &a.title));
+                }
             }
             SortMethod::TimeModified => {
-                // Newest first
-                titles.sort_by(|a, b| b.mtime.cmp(&a.mtime));
-            }
-            SortMethod::TimeModifiedReverse => {
-                // Oldest first
-                titles.sort_by(|a, b| a.mtime.cmp(&b.mtime));
+                if ascending {
+                    // Oldest first
+                    titles.sort_by(|a, b| a.mtime.cmp(&b.mtime));
+                } else {
+                    // Newest first
+                    titles.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+                }
             }
             SortMethod::Auto => {
-                // For now, use name sorting
+                // For now, use name sorting with natural ordering
                 // Future: smart chapter detection
-                titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
+                if ascending {
+                    titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
+                } else {
+                    titles.sort_by(|a, b| natord::compare(&b.title, &a.title));
+                }
             }
         }
 
@@ -261,14 +267,10 @@ impl Library {
 /// Sorting methods for titles and entries
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortMethod {
-    /// Sort alphabetically by name (natural ordering A-Z)
+    /// Sort alphabetically by name/title
     Name,
-    /// Sort reverse alphabetically by name (Z-A)
-    NameReverse,
-    /// Sort by modification time (newest first)
+    /// Sort by modification time
     TimeModified,
-    /// Sort by modification time (oldest first)
-    TimeModifiedReverse,
     /// Smart chapter detection (future enhancement)
     Auto,
 }
@@ -281,15 +283,25 @@ impl Default for SortMethod {
 
 impl SortMethod {
     /// Parse from string parameter (for API routes)
+    /// Matches original Mango API: "title", "modified", "auto"
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "name" => SortMethod::Name,
-            "name-reverse" => SortMethod::NameReverse,
-            "time" | "modified" => SortMethod::TimeModified,
-            "time-reverse" | "modified-reverse" => SortMethod::TimeModifiedReverse,
+            "title" | "name" => SortMethod::Name,
+            "modified" | "time" => SortMethod::TimeModified,
             "auto" => SortMethod::Auto,
             _ => SortMethod::default(),
         }
+    }
+
+    /// Parse sort method and ascend flag from query parameters
+    /// Returns (SortMethod, bool) where bool is true for ascending
+    pub fn from_params(sort: Option<&str>, ascend: Option<&str>) -> (Self, bool) {
+        let method = sort.map(Self::from_str).unwrap_or_default();
+        let ascending = ascend
+            .and_then(|s| s.parse::<i32>().ok())
+            .map(|v| v != 0)
+            .unwrap_or(true); // Default to ascending
+        (method, ascending)
     }
 }
 
