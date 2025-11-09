@@ -102,33 +102,16 @@ impl Title {
     pub fn get_entries_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Entry> {
         let mut entries: Vec<&Entry> = self.entries.iter().collect();
 
+        use super::{sort_by_name, sort_by_mtime};
+
         match method {
-            SortMethod::Name | SortMethod::Progress => {
-                // Progress sorting doesn't apply to entries (only to titles)
-                // So treat it as name sorting
-                if ascending {
-                    entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
-                } else {
-                    entries.sort_by(|a, b| natord::compare(&b.title, &a.title));
-                }
+            SortMethod::Name | SortMethod::Progress | SortMethod::Auto => {
+                // Progress sorting doesn't apply to entries (only at route level with username context)
+                // Auto uses name sorting (future: smart chapter detection)
+                sort_by_name(&mut entries, ascending);
             }
             SortMethod::TimeModified => {
-                if ascending {
-                    // Oldest first
-                    entries.sort_by(|a, b| a.mtime.cmp(&b.mtime));
-                } else {
-                    // Newest first
-                    entries.sort_by(|a, b| b.mtime.cmp(&a.mtime));
-                }
-            }
-            SortMethod::Auto => {
-                // For now, use name sorting with natural ordering
-                // Future: smart chapter detection
-                if ascending {
-                    entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
-                } else {
-                    entries.sort_by(|a, b| natord::compare(&b.title, &a.title));
-                }
+                sort_by_mtime(&mut entries, ascending);
             }
         }
 
@@ -344,4 +327,24 @@ fn file_signature(path: &Path) -> Result<u64> {
     hasher.update(&metadata.len().to_le_bytes());
 
     Ok(hasher.finalize() as u64)
+}
+
+impl super::Sortable for Title {
+    fn sort_name(&self) -> &str {
+        &self.title
+    }
+
+    fn sort_mtime(&self) -> i64 {
+        self.mtime
+    }
+}
+
+impl<'a> super::Sortable for &'a Title {
+    fn sort_name(&self) -> &str {
+        &self.title
+    }
+
+    fn sort_mtime(&self) -> i64 {
+        self.mtime
+    }
 }

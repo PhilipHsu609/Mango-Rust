@@ -149,3 +149,23 @@ fn file_signature(path: &Path) -> Result<u64> {
 
     Ok(hasher.finalize() as u64)
 }
+
+impl super::Sortable for Entry {
+    fn sort_name(&self) -> &str {
+        &self.title
+    }
+
+    fn sort_mtime(&self) -> i64 {
+        self.mtime
+    }
+}
+
+impl<'a> super::Sortable for &'a Entry {
+    fn sort_name(&self) -> &str {
+        &self.title
+    }
+
+    fn sort_mtime(&self) -> i64 {
+        self.mtime
+    }
+}

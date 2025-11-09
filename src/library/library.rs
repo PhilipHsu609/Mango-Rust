@@ -205,34 +205,16 @@ impl Library {
     pub fn get_titles_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Title> {
         let mut titles: Vec<&Title> = self.titles.values().collect();
 
+        use super::{sort_by_name, sort_by_mtime};
+
         match method {
-            SortMethod::Name | SortMethod::Progress => {
-                // Progress sorting is handled in the route handler
-                // (after calculating progress with username context)
-                // So just return name-sorted as a base
-                if ascending {
-                    titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
-                } else {
-                    titles.sort_by(|a, b| natord::compare(&b.title, &a.title));
-                }
+            SortMethod::Name | SortMethod::Progress | SortMethod::Auto => {
+                // Progress sorting is handled at route level (after calculating progress with username context)
+                // Auto uses name sorting (future: smart chapter detection)
+                sort_by_name(&mut titles, ascending);
             }
             SortMethod::TimeModified => {
-                if ascending {
-                    // Oldest first
-                    titles.sort_by(|a, b| a.mtime.cmp(&b.mtime));
-                } else {
-                    // Newest first
-                    titles.sort_by(|a, b| b.mtime.cmp(&a.mtime));
-                }
-            }
-            SortMethod::Auto => {
-                // For now, use name sorting with natural ordering
-                // Future: smart chapter detection
-                if ascending {
-                    titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
-                } else {
-                    titles.sort_by(|a, b| natord::compare(&b.title, &a.title));
-                }
+                sort_by_mtime(&mut titles, ascending);
             }
         }
 
