@@ -6,6 +6,7 @@ use askama::Template;
 use serde::Deserialize;
 
 use crate::{auth::Username, error::Result, library::SortMethod, AppState, error::Error};
+use super::{HasProgress, sort_by_progress};
 
 /// Query parameters for sorting
 #[derive(Deserialize)]
@@ -21,6 +22,12 @@ struct TitleData {
     name: String,
     entry_count: usize,
     progress: String, // Formatted with 1 decimal place
+}
+
+impl HasProgress for TitleData {
+    fn progress(&self) -> &str {
+        &self.progress
+    }
 }
 
 /// Library page template
@@ -107,15 +114,7 @@ pub async fn library(
 
     // Sort by progress if requested (after calculating progress)
     if matches!(sort_method, SortMethod::Progress) {
-        titles.sort_by(|a, b| {
-            let a_progress: f32 = a.progress.parse().unwrap_or(0.0);
-            let b_progress: f32 = b.progress.parse().unwrap_or(0.0);
-            if ascending {
-                a_progress.partial_cmp(&b_progress).unwrap_or(std::cmp::Ordering::Equal)
-            } else {
-                b_progress.partial_cmp(&a_progress).unwrap_or(std::cmp::Ordering::Equal)
-            }
-        });
+        sort_by_progress(&mut titles, ascending);
     }
 
     // Determine which sort option is selected

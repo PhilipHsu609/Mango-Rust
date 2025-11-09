@@ -6,6 +6,7 @@ use askama::Template;
 use serde::Deserialize;
 
 use crate::{auth::Username, error::{Error, Result}, library::SortMethod, AppState};
+use super::{HasProgress, sort_by_progress};
 
 /// Query parameters for book page
 #[derive(Deserialize)]
@@ -24,6 +25,12 @@ struct EntryData {
     progress: String,  // Formatted with 1 decimal place
     saved_page: usize,
     path: String,
+}
+
+impl HasProgress for EntryData {
+    fn progress(&self) -> &str {
+        &self.progress
+    }
 }
 
 /// Book page template
@@ -112,15 +119,7 @@ pub async fn get_book(
 
     // Sort by progress if requested (after calculating progress)
     if matches!(sort_method, SortMethod::Progress) {
-        entries.sort_by(|a, b| {
-            let a_progress: f32 = a.progress.parse().unwrap_or(0.0);
-            let b_progress: f32 = b.progress.parse().unwrap_or(0.0);
-            if ascending {
-                a_progress.partial_cmp(&b_progress).unwrap_or(std::cmp::Ordering::Equal)
-            } else {
-                b_progress.partial_cmp(&a_progress).unwrap_or(std::cmp::Ordering::Equal)
-            }
-        });
+        sort_by_progress(&mut entries, ascending);
     }
 
     let entry_count = entries.len();
