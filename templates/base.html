@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mango - {{ page_title }}</title>
+    <title>Mango - {% block title %}{% endblock %}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/css/uikit.min.css" />
     <style>
         body {
@@ -47,7 +47,7 @@
             padding: 0 20px;
         }
 
-        {{ page_styles }}
+        {% block styles %}{% endblock %}
     </style>
 </head>
 <body>
@@ -61,8 +61,8 @@
                 </svg>
             </a>
             <ul class="uk-navbar-nav">
-                <li{{ home_active }}><a class="nav-item" href="/">HOME</a></li>
-                <li{{ library_active }}><a class="nav-item" href="/library">LIBRARY</a></li>
+                <li{% if home_active %} class="uk-active"{% endif %}><a class="nav-item" href="/">HOME</a></li>
+                <li{% if library_active %} class="uk-active"{% endif %}><a class="nav-item" href="/library">LIBRARY</a></li>
                 <li><a class="nav-item" href="#">TAGS</a></li>
                 <li><a class="nav-item" href="#">ADMIN</a></li>
                 <li><a class="nav-item" href="#">DOWNLOAD</a></li>
@@ -82,10 +82,10 @@
 
     <!-- Main Content -->
     <div class="main-content">
-        {{ content }}
+        {% block content %}{% endblock %}
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
-    {{ page_scripts }}
+    {% block scripts %}{% endblock %}
 </body>
 </html>

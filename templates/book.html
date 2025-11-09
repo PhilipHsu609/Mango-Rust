@@ -1,3 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title_name }} - Book{% endblock %}
+
+{% block styles %}
+{% include "book_styles.css" %}
+{% endblock %}
+
+{% block content %}
 <!-- Header Section -->
 <div class="title-header">
     <h2>{{ title_name }}</h2>
@@ -6,7 +15,7 @@
     </nav>
 </div>
 
-<p class="subtitle">{{ entry_count }} entries found</p>
+<p class="subtitle">{{ entry_count }} {% if entry_count == 1 %}entry{% else %}entries{% endif %} found</p>
 
 <!-- Search and Sort Controls -->
 <div class="controls">
@@ -15,16 +24,31 @@
         <input class="uk-search-input" type="search" placeholder="Search entries" id="search-input">
     </div>
     <select class="uk-select" id="sort-select">
-        <option value="title:1" {{ sort_title_asc_selected }}>▲ Name</option>
-        <option value="title:0" {{ sort_title_desc_selected }}>▼ Name</option>
-        <option value="modified:1" {{ sort_modified_asc_selected }}>▲ Date Modified</option>
-        <option value="modified:0" {{ sort_modified_desc_selected }}>▼ Date Modified</option>
+        <option value="title:1"{% if sort_title_asc %} selected{% endif %}>▲ Name</option>
+        <option value="title:0"{% if sort_title_desc %} selected{% endif %}>▼ Name</option>
+        <option value="modified:1"{% if sort_modified_asc %} selected{% endif %}>▲ Date Modified</option>
+        <option value="modified:0"{% if sort_modified_desc %} selected{% endif %}>▼ Date Modified</option>
     </select>
 </div>
 
 <!-- Entries Grid -->
 <div class="entries-grid">
-    {{ entries }}
+    {% for entry in entries %}
+    <div class="entry-card" data-entry-id="{{ entry.entry_id }}" data-title-id="{{ title_id }}" data-entry-name="{{ entry.entry_name }}" data-pages="{{ entry.pages }}" data-progress="{{ entry.progress }}" data-saved-page="{{ entry.saved_page }}" data-path="{{ entry.path }}">
+        <div class="entry-thumbnail">
+            <div class="placeholder-icon">📖</div>
+            <div class="progress-badge">{{ entry.progress }}%</div>
+        </div>
+        <div class="entry-info">
+            <div class="entry-name">{{ entry.entry_name }}</div>
+            <div class="entry-stats">{{ entry.pages }} pages</div>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% if entries.is_empty() %}
+    <p>No entries found.</p>
+    {% endif %}
 </div>
 
 <!-- Entry Modal -->
@@ -53,3 +77,10 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% include "book_scripts.js" %}
+</script>
+{% endblock %}

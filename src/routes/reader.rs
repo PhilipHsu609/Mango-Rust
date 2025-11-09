@@ -2,24 +2,41 @@ use axum::{
     extract::{Path, State, Request},
     response::Html,
 };
+use askama::Template;
 
 use crate::{auth::get_username, AppState, error::{Error, Result}};
 
-/// Reader page HTML template
-const READER_HTML: &str = include_str!("../../templates/reader.html");
-/// Reader page styles
-const READER_STYLES: &str = include_str!("../../templates/reader_styles.css");
-/// Reader page scripts
-const READER_SCRIPTS: &str = include_str!("../../templates/reader_scripts.js");
+/// Entry option data for reader template
+#[derive(serde::Serialize)]
+struct EntryOption {
+    id: String,
+    name: String,
+}
 
-/// Reader page - displays manga pages with navigation
+/// Reader page template
+#[derive(Template)]
+#[template(path = "reader.html")]
+struct ReaderTemplate {
+    title_id: String,
+    entry_id: String,
+    entry_name: String,
+    entry_path: String,
+    current_page: usize,
+    total_pages: usize,
+    entries: Vec<EntryOption>,
+    prev_entry_url: Option<String>,
+    next_entry_url: Option<String>,
+    exit_url: String,
+}
+
+
 pub async fn reader(
     State(state): State<AppState>,
     Path((title_id, entry_id, page)): Path<(String, String, usize)>,
     request: Request,
 ) -> Result<Html<String>> {
     // Get username from request extensions (injected by auth middleware)
-    let username = get_username(&request).unwrap_or_else(|| "Unknown".to_string());
+    let _username = get_username(&request).unwrap_or_else(|| "Unknown".to_string());
 
     // Get library read lock
     let lib = state.library.read().await;
@@ -43,14 +60,13 @@ pub async fn reader(
     }
 
     // Get all entries in this title for jump functionality
-    let mut entries_options = String::new();
-    for e in &title.entries {
-        let selected = if e.id == entry_id { "selected" } else { "" };
-        entries_options.push_str(&format!(
-            "<option value=\"{}\" {}>{}</option>\n",
-            e.id, selected, e.title
-        ));
-    }
+    let entries: Vec<EntryOption> = title.entries
+        .iter()
+        .map(|e| EntryOption {
+            id: e.id.clone(),
+            name: e.title.clone(),
+        })
+        .collect();
 
     // Find current entry index to determine prev/next entry
     let current_entry_idx = title.entries.iter()
@@ -76,56 +92,20 @@ pub async fn reader(
         (None, None)
     };
 
-    let exit_url = format!("/book/{}", title_id);
-
-    // Build page options for dropdown
-    let mut page_options = String::new();
-    for p in 1..=total_pages {
-        let selected = if p == page { "selected" } else { "" };
-        page_options.push_str(&format!(
-            "<option value=\"{}\" {}>{}</option>\n",
-            p, selected, p
-        ));
-    }
-
-    // Build prev/next entry buttons
-    let prev_entry_button = if let Some(url) = &prev_entry_url {
-        format!(r#"<a class="uk-button uk-button-default uk-margin-small-bottom uk-margin-small-right" href="{}">Previous Entry</a>"#, url)
-    } else {
-        String::new()
+    let template = ReaderTemplate {
+        title_id,
+        entry_id,
+        entry_name: entry.title.clone(),
+        entry_path: entry.path.display().to_string(),
+        current_page: page,
+        total_pages,
+        entries,
+        prev_entry_url,
+        next_entry_url,
+        exit_url: format!("/book/{}", title.id),
     };
 
-    let next_entry_button = if let Some(url) = &next_entry_url {
-        format!(r#"<a class="uk-button uk-button-default uk-margin-small-bottom uk-margin-small-right" href="{}">Next Entry</a>"#, url)
-    } else {
-        String::new()
-    };
-
-    // Prepare scripts with template variables replaced
-    let scripts = READER_SCRIPTS
-        .replace("{{ title_id }}", &title_id)
-        .replace("{{ entry_id }}", &entry_id)
-        .replace("{{ current_page }}", &page.to_string())
-        .replace("{{ total_pages }}", &total_pages.to_string())
-        .replace(
-            "{% if let Some(url) = next_entry_url %}'{{ url }}'{% else %}null{% endif %}",
-            &next_entry_url.as_ref().map(|u| format!("'{}'", u)).unwrap_or_else(|| "null".to_string())
-        )
-        .replace("{{ exit_url }}", &exit_url);
-
-    // Render the HTML
-    let html = READER_HTML
-        .replace("{{ entry_name }}", &entry.title)
-        .replace("{{ current_page }}", &page.to_string())
-        .replace("{{ page_styles }}", READER_STYLES)
-        .replace("{{ entry_path }}", &entry.path.display().to_string())
-        .replace("{{ total_pages }}", &total_pages.to_string())
-        .replace("{{ page_options }}", &page_options)
-        .replace("{{ entry_options }}", &entries_options)
-        .replace("{{ prev_entry_button }}", &prev_entry_button)
-        .replace("{{ next_entry_button }}", &next_entry_button)
-        .replace("{{ exit_url }}", &exit_url)
-        .replace("{{ page_scripts }}", &scripts);
-
-    Ok(Html(html))
+    Ok(Html(template.render().map_err(|e| {
+        Error::Internal(format!("Template render error: {}", e))
+    })?))
 }

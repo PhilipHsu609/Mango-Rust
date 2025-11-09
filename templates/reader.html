@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ entry_name }} - Page {{ current_page }}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/css/uikit.min.css" />
-    <style>{{ page_styles }}</style>
+    <style>
+    {% include "reader_styles.css" %}
+    </style>
 </head>
 <body class="paged-mode fit-height">
     <div id="reader-container">
@@ -47,7 +49,9 @@
                     <label class="uk-form-label" for="page-select">Jump to Page</label>
                     <div class="uk-form-controls">
                         <select id="page-select" class="uk-select" onchange="jumpToPage()">
-                            {{ page_options }}
+                            {% for p in 1..=total_pages %}
+                            <option value="{{ p }}"{% if p == current_page %} selected{% endif %}>{{ p }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                 </div>
@@ -114,20 +118,28 @@
                     <label class="uk-form-label" for="entry-select">Jump to Entry</label>
                     <div class="uk-form-controls">
                         <select id="entry-select" class="uk-select" onchange="jumpToEntry()">
-                            {{ entry_options }}
+                            {% for entry in entries %}
+                            <option value="{{ entry.id }}"{% if entry.id == entry_id %} selected{% endif %}>{{ entry.name }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                 </div>
             </div>
             <div class="uk-modal-footer uk-text-right">
-                {{ prev_entry_button }}
-                {{ next_entry_button }}
+                {% if let Some(url) = prev_entry_url %}
+                <a class="uk-button uk-button-default uk-margin-small-bottom uk-margin-small-right" href="{{ url }}">Previous Entry</a>
+                {% endif %}
+                {% if let Some(url) = next_entry_url %}
+                <a class="uk-button uk-button-default uk-margin-small-bottom uk-margin-small-right" href="{{ url }}">Next Entry</a>
+                {% endif %}
                 <a class="uk-button uk-button-danger uk-margin-small-bottom uk-margin-small-right" href="{{ exit_url }}">Exit Reader</a>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
-    <script>{{ page_scripts }}</script>
+    <script>
+    {% include "reader_scripts.js" %}
+    </script>
 </body>
 </html>

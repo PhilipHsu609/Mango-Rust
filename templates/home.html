@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block styles %}
+{% include "home_styles.css" %}
+{% endblock %}
+
+{% block content %}
+<!-- Continue Reading Section -->
+<div class="section">
+    <h2>Continue Reading</h2>
+    <div class="cards-grid">
+        <div class="empty-state">
+            <div class="empty-state-icon">📚</div>
+            <p>No manga in progress yet. Start reading from the Library!</p>
+        </div>
+    </div>
+</div>
+
+<!-- Start Reading Section -->
+<div class="section">
+    <h2>Start Reading</h2>
+    <div class="cards-grid">
+        <div class="empty-state">
+            <div class="empty-state-icon">✨</div>
+            <p>All caught up! Check the Library for new titles.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Recently Added Section -->
+<div class="section">
+    <h2>Recently Added</h2>
+    <div class="cards-grid">
+        <div class="empty-state">
+            <div class="empty-state-icon">🆕</div>
+            <p>No recently added titles.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

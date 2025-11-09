@@ -53,9 +53,9 @@
 <body>
     <div class="login-card">
         <h3>Log In</h3>
-        {% if error %}
+        {% if let Some(err) = error %}
         <div class="uk-alert-danger" uk-alert>
-            <p>{{ error }}</p>
+            <p>{{ err }}</p>
         </div>
         {% endif %}
         <form method="POST" action="/login">

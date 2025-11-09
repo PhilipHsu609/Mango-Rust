@@ -3,6 +3,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect},
     Form,
 };
+use askama::Template;
 use serde::Deserialize;
 use tower_sessions::Session;
 
@@ -13,7 +14,11 @@ use crate::{
 };
 
 /// Login page template
-const LOGIN_PAGE: &str = include_str!("../../templates/login.html");
+#[derive(Template)]
+#[template(path = "login.html")]
+struct LoginTemplate {
+    error: Option<String>,
+}
 
 /// Login form data
 #[derive(Deserialize)]
@@ -23,12 +28,11 @@ pub struct LoginForm {
 }
 
 /// GET /login - Show login page
-pub async fn get_login() -> Html<String> {
-    // Render template without error - remove error block entirely
-    let html = LOGIN_PAGE
-        .replace("{% if error %}", "<!--")
-        .replace("{% endif %}", "-->");
-    Html(html)
+pub async fn get_login() -> Result<Html<String>> {
+    let template = LoginTemplate { error: None };
+    Ok(Html(template.render().map_err(|e| {
+        Error::Internal(format!("Template render error: {}", e))
+    })?))
 }
 
 /// POST /login - Process login
@@ -59,11 +63,10 @@ pub async fn post_login(
                 "Failed login attempt for username: {}",
                 form.username
             );
-            let _html = LOGIN_PAGE
-                .replace("{% if error %}", "{% if true %}")
-                .replace("{{ error }}", "Invalid username or password");
-            // TODO: Implement proper error display with Askama templates
-            Ok(Redirect::to("/login"))
+            let template = LoginTemplate {
+                error: Some("Invalid username or password".to_string()),
+            };
+            Ok(Redirect::to("/login")) // TODO: Return HTML with error instead of redirect
         }
     }
 }
