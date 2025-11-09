@@ -34,6 +34,8 @@ struct LibraryTemplate {
     sort_name_desc: bool,
     sort_time_asc: bool,
     sort_time_desc: bool,
+    sort_progress_asc: bool,
+    sort_progress_desc: bool,
     titles: Vec<TitleData>,
 }
 
@@ -76,10 +78,17 @@ pub async fn library(
     );
 
     // Get library statistics and title data
-    let (title_count, titles) = {
+    let (title_count, mut titles) = {
         let lib = state.library.read().await;
         let stats = lib.stats();
-        let sorted_titles = lib.get_titles_sorted(sort_method, ascending);
+
+        // For progress sorting, we need to calculate progress first, then sort
+        // For other methods, use the library's built-in sorting
+        let sorted_titles = if matches!(sort_method, SortMethod::Progress) {
+            lib.get_titles_sorted(SortMethod::Name, true)  // Get unsorted (well, name-sorted as base)
+        } else {
+            lib.get_titles_sorted(sort_method, ascending)
+        };
 
         // Calculate progress for each title
         let mut titles = Vec::new();
@@ -96,11 +105,26 @@ pub async fn library(
         (stats.titles, titles)
     }; // Lock is released here
 
+    // Sort by progress if requested (after calculating progress)
+    if matches!(sort_method, SortMethod::Progress) {
+        titles.sort_by(|a, b| {
+            let a_progress: f32 = a.progress.parse().unwrap_or(0.0);
+            let b_progress: f32 = b.progress.parse().unwrap_or(0.0);
+            if ascending {
+                a_progress.partial_cmp(&b_progress).unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                b_progress.partial_cmp(&a_progress).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
+    }
+
     // Determine which sort option is selected
     let sort_name_asc = matches!(sort_method, SortMethod::Name) && ascending;
     let sort_name_desc = matches!(sort_method, SortMethod::Name) && !ascending;
     let sort_time_asc = matches!(sort_method, SortMethod::TimeModified) && ascending;
     let sort_time_desc = matches!(sort_method, SortMethod::TimeModified) && !ascending;
+    let sort_progress_asc = matches!(sort_method, SortMethod::Progress) && ascending;
+    let sort_progress_desc = matches!(sort_method, SortMethod::Progress) && !ascending;
 
     let template = LibraryTemplate {
         home_active: false,
@@ -110,6 +134,8 @@ pub async fn library(
         sort_name_desc,
         sort_time_asc,
         sort_time_desc,
+        sort_progress_asc,
+        sort_progress_desc,
         titles,
     };
 

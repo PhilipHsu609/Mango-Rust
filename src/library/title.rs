@@ -103,7 +103,9 @@ impl Title {
         let mut entries: Vec<&Entry> = self.entries.iter().collect();
 
         match method {
-            SortMethod::Name => {
+            SortMethod::Name | SortMethod::Progress => {
+                // Progress sorting doesn't apply to entries (only to titles)
+                // So treat it as name sorting
                 if ascending {
                     entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
                 } else {

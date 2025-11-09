@@ -206,7 +206,10 @@ impl Library {
         let mut titles: Vec<&Title> = self.titles.values().collect();
 
         match method {
-            SortMethod::Name => {
+            SortMethod::Name | SortMethod::Progress => {
+                // Progress sorting is handled in the route handler
+                // (after calculating progress with username context)
+                // So just return name-sorted as a base
                 if ascending {
                     titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
                 } else {
@@ -271,6 +274,8 @@ pub enum SortMethod {
     Name,
     /// Sort by modification time
     TimeModified,
+    /// Sort by reading progress
+    Progress,
     /// Smart chapter detection (future enhancement)
     Auto,
 }
@@ -288,6 +293,7 @@ impl SortMethod {
         match s.to_lowercase().as_str() {
             "title" | "name" => SortMethod::Name,
             "modified" | "time" => SortMethod::TimeModified,
+            "progress" => SortMethod::Progress,
             "auto" => SortMethod::Auto,
             _ => SortMethod::default(),
         }
