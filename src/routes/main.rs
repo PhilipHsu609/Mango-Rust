@@ -22,6 +22,7 @@ struct TitleData {
     name: String,
     entry_count: usize,
     progress: String, // Formatted with 1 decimal place
+    first_entry_id: Option<String>, // For cover thumbnail URL
 }
 
 impl HasProgress for TitleData {
@@ -106,6 +107,7 @@ pub async fn library(
                 name: t.title.clone(),
                 entry_count: t.entries.len(),
                 progress: format!("{:.1}", progress_pct),
+                first_entry_id: t.entries.first().map(|e| e.id.clone()),
             });
         }
 
