@@ -1,11 +1,11 @@
 use axum::{
-    extract::{Query, Request, State},
+    extract::{Query, State},
     response::Html,
 };
 use askama::Template;
 use serde::Deserialize;
 
-use crate::{auth::get_username, error::Result, library::SortMethod, AppState, error::Error};
+use crate::{auth::Username, error::Result, library::SortMethod, AppState, error::Error};
 
 /// Query parameters for sorting
 #[derive(Deserialize)]
@@ -48,10 +48,8 @@ struct HomeTemplate {
 /// GET / - Home page with Continue Reading, Start Reading, Recently Added (requires authentication)
 pub async fn home(
     State(_state): State<AppState>,
-    request: Request,
+    Username(_username): Username,
 ) -> Result<Html<String>> {
-    // Get username from request extensions (injected by auth middleware)
-    let _username = get_username(&request).unwrap_or_else(|| "Unknown".to_string());
 
     // TODO: Implement Continue Reading, Start Reading, Recently Added logic
     let template = HomeTemplate {
@@ -67,10 +65,8 @@ pub async fn home(
 pub async fn library(
     State(state): State<AppState>,
     Query(params): Query<SortParams>,
-    request: Request,
+    Username(_username): Username,
 ) -> Result<Html<String>> {
-    // Get username from request extensions (injected by auth middleware)
-    let _username = get_username(&request).unwrap_or_else(|| "Unknown".to_string());
 
     // Parse sort method and ascend flag
     let (sort_method, ascending) = SortMethod::from_params(

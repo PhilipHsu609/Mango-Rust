@@ -1,10 +1,10 @@
 use axum::{
-    extract::{Path, State, Request},
+    extract::{Path, State},
     response::Html,
 };
 use askama::Template;
 
-use crate::{auth::get_username, AppState, error::{Error, Result}};
+use crate::{auth::Username, AppState, error::{Error, Result}};
 
 /// Entry option data for reader template
 #[derive(serde::Serialize)]
@@ -33,10 +33,8 @@ struct ReaderTemplate {
 pub async fn reader(
     State(state): State<AppState>,
     Path((title_id, entry_id, page)): Path<(String, String, usize)>,
-    request: Request,
+    Username(_username): Username,
 ) -> Result<Html<String>> {
-    // Get username from request extensions (injected by auth middleware)
-    let _username = get_username(&request).unwrap_or_else(|| "Unknown".to_string());
 
     // Get library read lock
     let lib = state.library.read().await;

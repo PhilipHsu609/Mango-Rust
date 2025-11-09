@@ -1,11 +1,11 @@
 use axum::{
-    extract::{Path, Query, Request, State},
+    extract::{Path, Query, State},
     response::Html,
 };
 use askama::Template;
 use serde::Deserialize;
 
-use crate::{auth::get_username, error::{Error, Result}, library::SortMethod, AppState};
+use crate::{auth::Username, error::{Error, Result}, library::SortMethod, AppState};
 
 /// Query parameters for book page
 #[derive(Deserialize)]
@@ -47,10 +47,8 @@ pub async fn get_book(
     State(state): State<AppState>,
     Path(title_id): Path<String>,
     Query(params): Query<BookParams>,
-    request: Request,
+    Username(username): Username,
 ) -> Result<Html<String>> {
-    // Get username from request extensions (injected by auth middleware)
-    let username = get_username(&request).unwrap_or_else(|| "Unknown".to_string());
 
     // Parse sort method and ascend flag
     let (sort_method, ascending) = SortMethod::from_params(
