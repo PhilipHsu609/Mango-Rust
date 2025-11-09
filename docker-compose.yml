@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  mango:
+    image: hkalexling/mango
+    container_name: mango
+    ports:
+      - 9001:9001
+    volumes:
+      - ~/mango-real:/root/mango
+      - ~/.config/mango/config-real.yml:/root/.config/mango/config.yml
+      - ~/mango/library:/library
+

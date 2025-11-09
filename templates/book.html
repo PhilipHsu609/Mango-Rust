@@ -3,7 +3,7 @@
 {% block title %}{{ title_name }} - Book{% endblock %}
 
 {% block styles %}
-{% include "book_styles.css" %}
+<link rel="stylesheet" href="/static/css/book.css">
 {% endblock %}
 
 {% block content %}
@@ -80,7 +80,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-{% include "book_scripts.js" %}
-</script>
+<script src="/static/js/book.js"></script>
 {% endblock %}

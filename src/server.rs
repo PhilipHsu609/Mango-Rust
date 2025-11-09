@@ -5,7 +5,7 @@ use axum::{
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tower_http::trace::TraceLayer;
+use tower_http::{services::ServeDir, trace::TraceLayer};
 use tower_sessions::{Expiry, SessionManagerLayer};
 use tower_sessions_sqlx_store::SqliteStore;
 
@@ -70,6 +70,8 @@ pub async fn run(config: Config) -> Result<()> {
     let app = Router::new()
         // Public routes (no auth required)
         .route("/login", get(get_login).post(post_login))
+        // Static files (no auth required)
+        .nest_service("/static", ServeDir::new("static"))
         // Protected routes (auth required)
         .route("/", get(home))
         .route("/library", get(library_page))

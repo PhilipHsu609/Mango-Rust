@@ -3,7 +3,7 @@
 {% block title %}Library{% endblock %}
 
 {% block styles %}
-{% include "library_styles.css" %}
+<link rel="stylesheet" href="/static/css/library.css">
 {% endblock %}
 
 {% block content %}
@@ -46,7 +46,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-{% include "library_scripts.js" %}
-</script>
+<script src="/static/js/library.js"></script>
 {% endblock %}
