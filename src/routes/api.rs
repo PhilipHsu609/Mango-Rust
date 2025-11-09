@@ -1,18 +1,22 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{error::Result, AppState};
+use crate::{error::Result, library::SortMethod, AppState};
 
-/// API route: GET /api/library
-/// Returns list of all manga titles
-pub async fn get_library(State(state): State<AppState>) -> Result<impl IntoResponse> {
+/// API route: GET /api/library?sort=name|time|time-reverse|auto
+/// Returns list of all manga titles with optional sorting
+pub async fn get_library(
+    State(state): State<AppState>,
+    Query(params): Query<SortParams>,
+) -> Result<impl IntoResponse> {
     let lib = state.library.read().await;
-    let titles = lib.get_titles();
+    let sort_method = params.sort.map(|s| SortMethod::from_str(&s)).unwrap_or_default();
+    let titles = lib.get_titles_sorted(sort_method);
 
     let response: Vec<TitleInfo> = titles
         .iter()
@@ -27,11 +31,12 @@ pub async fn get_library(State(state): State<AppState>) -> Result<impl IntoRespo
     Ok(Json(response))
 }
 
-/// API route: GET /api/title/:id
-/// Returns details of a specific manga title including all its entries
+/// API route: GET /api/title/:id?sort=name|time|time-reverse|auto
+/// Returns details of a specific manga title including all its entries with optional sorting
 pub async fn get_title(
     State(state): State<AppState>,
     Path(title_id): Path<String>,
+    Query(params): Query<SortParams>,
 ) -> Result<impl IntoResponse> {
     let lib = state.library.read().await;
 
@@ -39,8 +44,9 @@ pub async fn get_title(
         .get_title(&title_id)
         .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {}", title_id)))?;
 
+    let sort_method = params.sort.map(|s| SortMethod::from_str(&s)).unwrap_or_default();
     let entries: Vec<EntryInfo> = title
-        .entries
+        .get_entries_sorted(sort_method)
         .iter()
         .map(|e| EntryInfo {
             id: e.id.clone(),
@@ -99,7 +105,14 @@ pub async fn get_stats(State(state): State<AppState>) -> Result<impl IntoRespons
     Ok(Json(response))
 }
 
-// Response types
+// Request and response types
+
+/// Query parameters for sorting
+#[derive(Deserialize)]
+pub struct SortParams {
+    /// Optional sort method (name, time, time-reverse, auto)
+    pub sort: Option<String>,
+}
 
 #[derive(Serialize)]
 struct TitleInfo {

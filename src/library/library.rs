@@ -198,8 +198,35 @@ impl Library {
 
     /// Get all titles (sorted by name)
     pub fn get_titles(&self) -> Vec<&Title> {
+        self.get_titles_sorted(SortMethod::default())
+    }
+
+    /// Get all titles sorted by specified method
+    pub fn get_titles_sorted(&self, method: SortMethod) -> Vec<&Title> {
         let mut titles: Vec<&Title> = self.titles.values().collect();
-        titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
+
+        match method {
+            SortMethod::Name => {
+                titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
+            }
+            SortMethod::NameReverse => {
+                titles.sort_by(|a, b| natord::compare(&b.title, &a.title));
+            }
+            SortMethod::TimeModified => {
+                // Newest first
+                titles.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+            }
+            SortMethod::TimeModifiedReverse => {
+                // Oldest first
+                titles.sort_by(|a, b| a.mtime.cmp(&b.mtime));
+            }
+            SortMethod::Auto => {
+                // For now, use name sorting
+                // Future: smart chapter detection
+                titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
+            }
+        }
+
         titles
     }
 
@@ -227,6 +254,41 @@ impl Library {
             titles: title_count,
             entries: entry_count,
             pages: page_count,
+        }
+    }
+}
+
+/// Sorting methods for titles and entries
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortMethod {
+    /// Sort alphabetically by name (natural ordering A-Z)
+    Name,
+    /// Sort reverse alphabetically by name (Z-A)
+    NameReverse,
+    /// Sort by modification time (newest first)
+    TimeModified,
+    /// Sort by modification time (oldest first)
+    TimeModifiedReverse,
+    /// Smart chapter detection (future enhancement)
+    Auto,
+}
+
+impl Default for SortMethod {
+    fn default() -> Self {
+        SortMethod::Name
+    }
+}
+
+impl SortMethod {
+    /// Parse from string parameter (for API routes)
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "name" => SortMethod::Name,
+            "name-reverse" => SortMethod::NameReverse,
+            "time" | "modified" => SortMethod::TimeModified,
+            "time-reverse" | "modified-reverse" => SortMethod::TimeModifiedReverse,
+            "auto" => SortMethod::Auto,
+            _ => SortMethod::default(),
         }
     }
 }

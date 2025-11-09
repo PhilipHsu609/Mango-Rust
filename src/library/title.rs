@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::error::Result;
 use super::entry::Entry;
+use super::library::SortMethod;
 
 /// Represents a manga series (directory containing chapters/volumes)
 #[derive(Debug, Clone)]
@@ -95,6 +96,35 @@ impl Title {
     /// Get total number of pages across all entries
     pub fn total_pages(&self) -> usize {
         self.entries.iter().map(|e| e.pages).sum()
+    }
+
+    /// Get entries sorted by specified method
+    pub fn get_entries_sorted(&self, method: SortMethod) -> Vec<&Entry> {
+        let mut entries: Vec<&Entry> = self.entries.iter().collect();
+
+        match method {
+            SortMethod::Name => {
+                entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
+            }
+            SortMethod::NameReverse => {
+                entries.sort_by(|a, b| natord::compare(&b.title, &a.title));
+            }
+            SortMethod::TimeModified => {
+                // Newest first
+                entries.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+            }
+            SortMethod::TimeModifiedReverse => {
+                // Oldest first
+                entries.sort_by(|a, b| a.mtime.cmp(&b.mtime));
+            }
+            SortMethod::Auto => {
+                // For now, use name sorting
+                // Future: smart chapter detection
+                entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
+            }
+        }
+
+        entries
     }
 
     /// Get all entries recursively (including nested titles)
