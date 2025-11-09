@@ -4,3 +4,7 @@
 *.png
 *.jpg
 *.jpeg
+
+# Environment variables (may contain sensitive data)
+.env
+.env.local
