@@ -1,0 +1,55 @@
+<!-- Header Section -->
+<div class="title-header">
+    <h2>{{ title_name }}</h2>
+    <nav class="breadcrumb">
+        <a href="/library">Library</a> / {{ title_name }}
+    </nav>
+</div>
+
+<p class="subtitle">{{ entry_count }} entries found</p>
+
+<!-- Search and Sort Controls -->
+<div class="controls">
+    <div class="uk-search uk-search-default">
+        <span class="uk-search-icon-flip" uk-search-icon></span>
+        <input class="uk-search-input" type="search" placeholder="Search entries" id="search-input">
+    </div>
+    <select class="uk-select" id="sort-select">
+        <option value="title:1" {{ sort_title_asc_selected }}>▲ Name</option>
+        <option value="title:0" {{ sort_title_desc_selected }}>▼ Name</option>
+        <option value="modified:1" {{ sort_modified_asc_selected }}>▲ Date Modified</option>
+        <option value="modified:0" {{ sort_modified_desc_selected }}>▼ Date Modified</option>
+    </select>
+</div>
+
+<!-- Entries Grid -->
+<div class="entries-grid">
+    {{ entries }}
+</div>
+
+<!-- Entry Modal -->
+<div id="entry-modal" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <button class="uk-modal-close-default" type="button" uk-close></button>
+
+        <h3 id="modal-entry-name">Entry Name</h3>
+        <p class="modal-entry-path" id="modal-entry-path">/path/to/entry</p>
+        <p class="modal-entry-pages" id="modal-entry-pages">0 pages</p>
+
+        <div class="modal-section">
+            <h4>Read</h4>
+            <div class="button-group">
+                <a href="#" id="read-from-beginning" class="uk-button uk-button-default">From Beginning</a>
+                <a href="#" id="read-continue" class="uk-button uk-button-primary">Continue from <span id="continue-percent">0.0%</span></a>
+            </div>
+        </div>
+
+        <div class="modal-section">
+            <h4>Progress</h4>
+            <div class="button-group">
+                <button class="uk-button uk-button-default" id="mark-read" onclick="markAsRead()">Mark as read (100%)</button>
+                <button class="uk-button uk-button-default" id="mark-unread" onclick="markAsUnread()">Mark as unread (0%)</button>
+            </div>
+        </div>
+    </div>
+</div>

@@ -16,7 +16,7 @@ use crate::{
     library::Library,
     routes::{
         get_library, get_login, get_page, get_stats, get_title, home, library as library_page, logout, post_login,
-        reader, get_progress, save_progress, get_all_progress,
+        get_book, reader, get_progress, save_progress, get_all_progress,
     },
     Storage,
 };
@@ -73,6 +73,7 @@ pub async fn run(config: Config) -> Result<()> {
         // Protected routes (auth required)
         .route("/", get(home))
         .route("/library", get(library_page))
+        .route("/book/:id", get(get_book))
         .route("/logout", get(logout))
         // Reader routes
         .route("/reader/:tid/:eid/:page", get(reader))
