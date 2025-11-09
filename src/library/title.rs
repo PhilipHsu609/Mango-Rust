@@ -221,6 +221,32 @@ impl Title {
         info.save(&self.path).await?;
         Ok(())
     }
+
+    /// Get overall title progress (average across all entries)
+    pub async fn get_title_progress(&self, username: &str) -> Result<f32> {
+        if self.entries.is_empty() {
+            return Ok(0.0);
+        }
+
+        use super::progress::TitleInfo;
+        let info = TitleInfo::load(&self.path).await?;
+
+        let mut total_progress = 0.0;
+        let mut entry_count = 0;
+
+        for entry in &self.entries {
+            let page = info.get_progress(username, &entry.id).unwrap_or(0);
+            let percentage = if entry.pages > 0 {
+                (page as f32 / entry.pages as f32) * 100.0
+            } else {
+                0.0
+            };
+            total_progress += percentage;
+            entry_count += 1;
+        }
+
+        Ok(total_progress / entry_count as f32)
+    }
 }
 
 /// Check if a file is a supported archive format

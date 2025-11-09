@@ -20,6 +20,7 @@ struct TitleData {
     id: String,
     name: String,
     entry_count: usize,
+    progress: String, // Formatted with 1 decimal place
 }
 
 /// Library page template
@@ -65,7 +66,7 @@ pub async fn home(
 pub async fn library(
     State(state): State<AppState>,
     Query(params): Query<SortParams>,
-    Username(_username): Username,
+    Username(username): Username,
 ) -> Result<Html<String>> {
 
     // Parse sort method and ascend flag
@@ -78,14 +79,20 @@ pub async fn library(
     let (title_count, titles) = {
         let lib = state.library.read().await;
         let stats = lib.stats();
-        let titles: Vec<TitleData> = lib.get_titles_sorted(sort_method, ascending)
-            .iter()
-            .map(|t| TitleData {
+        let sorted_titles = lib.get_titles_sorted(sort_method, ascending);
+
+        // Calculate progress for each title
+        let mut titles = Vec::new();
+        for t in sorted_titles {
+            let progress_pct = t.get_title_progress(&username).await.unwrap_or(0.0);
+            titles.push(TitleData {
                 id: t.id.clone(),
                 name: t.title.clone(),
                 entry_count: t.entries.len(),
-            })
-            .collect();
+                progress: format!("{:.1}", progress_pct),
+            });
+        }
+
         (stats.titles, titles)
     }; // Lock is released here
 
