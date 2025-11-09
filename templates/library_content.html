@@ -1,0 +1,21 @@
+<h2>Library</h2>
+<p class="subtitle">{{ title_count }} titles found</p>
+
+<!-- Search and Sort Controls -->
+<div class="controls">
+    <div class="uk-search uk-search-default">
+        <span class="uk-search-icon-flip" uk-search-icon></span>
+        <input class="uk-search-input" type="search" placeholder="Search">
+    </div>
+    <select class="uk-select" id="sort-select" onchange="changeSort(this.value)">
+        <option value="name" {{ sort_name_selected }}>▲ Name</option>
+        <option value="name-reverse" {{ sort_name_reverse_selected }}>▼ Name</option>
+        <option value="time" {{ sort_time_selected }}>▲ Date Modified</option>
+        <option value="time-reverse" {{ sort_time_reverse_selected }}>▼ Date Modified</option>
+    </select>
+</div>
+
+<!-- Titles Grid -->
+<div class="titles-grid">
+    {{ titles }}
+</div>
