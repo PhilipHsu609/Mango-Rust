@@ -10,24 +10,29 @@ Mango-Rust is a modern reimplementation of the excellent Mango manga server, ori
 
 ## Current Status
 
-🚧 **Early Development** - Authentication system complete, library features in progress.
+🚀 **Active Development** - Core functionality complete, enhancement features in progress.
 
-### Implemented Features
+### Completed Features
 
-- ✅ User authentication with bcrypt password hashing
-- ✅ Session management with secure cookies
-- ✅ YAML configuration with environment variable overrides
-- ✅ SQLite database with automatic migrations
-- ✅ Admin user auto-creation on first run
-- ✅ Web UI with login/logout
+- ✅ User authentication and session management
+- ✅ Library scanning and indexing (ZIP/CBZ support)
+- ✅ Web-based manga reader (paged and continuous modes)
+- ✅ Reading progress tracking and resume functionality
+- ✅ Thumbnail generation and caching
+- ✅ Search and sorting
 
-### Coming Soon
+### In Progress
 
-- 📚 Library scanning (ZIP/CBZ support)
-- 📖 Manga reader interface
-- 📊 Reading progress tracking
-- 🏷️ Archive format support (RAR/CBR)
-- 🔖 Tags and metadata
+- 🚧 Admin panel
+- 🚧 Collections and tags
+- 🚧 OPDS support
+
+### Planned
+
+- ⏳ Plugin system
+- ⏳ Download queue
+- ⏳ RAR/CBR archive support
+- ⏳ Theme customization
 
 ## Prerequisites
 
@@ -137,18 +142,24 @@ mango-rust/
 - **Authentication**: bcrypt password hashing
 - **Templates**: [Askama](https://github.com/djc/askama)
 - **Configuration**: YAML with [serde_yaml](https://github.com/dtolnay/serde-yaml)
+- **Image Processing**: [image](https://github.com/image-rs/image) crate with JPEG/PNG/WebP support
+- **Archive Handling**: [zip](https://github.com/zip-rs/zip) crate for CBZ files
 
 ## Comparison with Original Mango
 
 | Feature | Original (Crystal) | Mango-Rust | Status |
 |---------|-------------------|------------|---------|
 | User Authentication | ✅ | ✅ | Complete |
-| Library Scanning | ✅ | 🚧 | In Progress |
-| ZIP/CBZ Support | ✅ | 🚧 | In Progress |
+| Library Scanning | ✅ | ✅ | Complete |
+| ZIP/CBZ Support | ✅ | ✅ | Complete |
+| Web Reader | ✅ | ✅ | Complete |
+| Progress Tracking | ✅ | ✅ | Complete |
+| Thumbnails | ✅ | ✅ | Complete |
+| Search & Sorting | ✅ | ✅ | Complete |
+| OPDS Support | ✅ | 🚧 | In Progress |
+| Admin Panel | ✅ | 🚧 | In Progress |
+| Tags/Collections | ✅ | ⏳ | Planned |
 | RAR/CBR Support | ✅ | ⏳ | Planned |
-| Web Reader | ✅ | ⏳ | Planned |
-| OPDS Support | ✅ | ⏳ | Planned |
-| Tags | ✅ | ⏳ | Planned |
 | Plugins | ✅ | ⏳ | Future |
 
 ## Contributing
