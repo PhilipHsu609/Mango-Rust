@@ -57,22 +57,47 @@ pub async fn save_progress(
         TitleInfo::default()
     };
 
-    // Update progress
-    info.progress
-        .entry(username)
-        .or_insert_with(HashMap::new)
-        .insert(entry_id.clone(), request.page);
+    // Update progress - if page is 0, remove the progress entry
+    if request.page == 0 {
+        // Remove progress entry
+        if let Some(user_progress) = info.progress.get_mut(&username) {
+            user_progress.remove(&entry_id);
+            // If user has no more progress entries, remove the user
+            if user_progress.is_empty() {
+                info.progress.remove(&username);
+            }
+        }
+        tracing::debug!(
+            "Deleted progress: {} / {}",
+            title_id,
+            entry_id
+        );
+    } else {
+        // Save progress
+        info.progress
+            .entry(username)
+            .or_insert_with(HashMap::new)
+            .insert(entry_id.clone(), request.page);
+        tracing::debug!(
+            "Saved progress: {} / {} = page {}",
+            title_id,
+            entry_id,
+            request.page
+        );
+    }
 
-    // Save info.json
-    let json = serde_json::to_string_pretty(&info)?;
-    tokio::fs::write(&info_path, json).await?;
-
-    tracing::debug!(
-        "Saved progress: {} / {} = page {}",
-        title_id,
-        entry_id,
-        request.page
-    );
+    // Save info.json (or delete if empty)
+    if info.progress.is_empty() {
+        // No progress left, delete the file
+        if info_path.exists() {
+            tokio::fs::remove_file(&info_path).await?;
+            tracing::debug!("Deleted empty info.json for title {}", title_id);
+        }
+    } else {
+        // Save updated progress
+        let json = serde_json::to_string_pretty(&info)?;
+        tokio::fs::write(&info_path, json).await?;
+    }
 
     Ok(StatusCode::OK)
 }
