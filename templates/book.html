@@ -7,78 +7,86 @@
 {% endblock %}
 
 {% block content %}
-<!-- Header Section -->
-<div class="title-header">
-    <h2>{{ title_name }}</h2>
-    <nav class="breadcrumb">
-        <a href="/library">Library</a> / {{ title_name }}
-    </nav>
-</div>
-
-<p class="subtitle">{{ entry_count }} {% if entry_count == 1 %}entry{% else %}entries{% endif %} found</p>
-
-<!-- Search and Sort Controls -->
-<div class="uk-grid-small" uk-grid>
-    <div class="uk-margin-bottom uk-width-3-4@s">
-        <form class="uk-search uk-search-default">
-            <span uk-search-icon></span>
-            <input class="uk-search-input" type="search" placeholder="Search" id="search-input">
-        </form>
+<div x-data="bookData()">
+    <!-- Header Section -->
+    <div class="title-header">
+        <h2>{{ title_name }}</h2>
+        <nav class="breadcrumb">
+            <a href="/library">Library</a> / {{ title_name }}
+        </nav>
     </div>
-    <div class="uk-margin-bottom uk-width-1-4@s">
-        <select class="uk-select" id="sort-select">
-        <option value="title:1"{% if sort_title_asc %} selected{% endif %}>▲ Name</option>
-        <option value="title:0"{% if sort_title_desc %} selected{% endif %}>▼ Name</option>
-        <option value="modified:1"{% if sort_modified_asc %} selected{% endif %}>▲ Date Modified</option>
-        <option value="modified:0"{% if sort_modified_desc %} selected{% endif %}>▼ Date Modified</option>
-        <option value="progress:1"{% if sort_progress_asc %} selected{% endif %}>▲ Progress</option>
-        <option value="progress:0"{% if sort_progress_desc %} selected{% endif %}>▼ Progress</option>
-        </select>
-    </div>
-</div>
 
-<!-- Entries Grid -->
-<div class="entries-grid">
-    {% for entry in entries %}
-    <div class="entry-card item" data-entry-id="{{ entry.entry_id }}" data-title-id="{{ title_id }}" data-entry-name="{{ entry.entry_name }}" data-pages="{{ entry.pages }}" data-progress="{{ entry.progress }}" data-saved-page="{{ entry.saved_page }}" data-path="{{ entry.path }}">
-        <div class="entry-thumbnail">
-            <img src="/api/cover/{{ title_id }}/{{ entry.entry_id }}" alt="{{ entry.entry_name }}" loading="lazy">
-            <div class="progress-badge">{{ entry.progress }}%</div>
+    <p class="subtitle">{{ entry_count }} {% if entry_count == 1 %}entry{% else %}entries{% endif %} found</p>
+
+    <!-- Search and Sort Controls -->
+    <div class="uk-grid-small" uk-grid>
+        <div class="uk-margin-bottom uk-width-3-4@s">
+            <form class="uk-search uk-search-default">
+                <span uk-search-icon></span>
+                <input class="uk-search-input" type="search" placeholder="Search" x-model="searchQuery">
+            </form>
         </div>
-        <div class="entry-info">
-            <div class="entry-name uk-card-title">{{ entry.entry_name }}</div>
-            <div class="entry-stats">{{ entry.pages }} pages</div>
+        <div class="uk-margin-bottom uk-width-1-4@s">
+            <select class="uk-select" @change="handleSortChange($event)">
+            <option value="title:1"{% if sort_title_asc %} selected{% endif %}>▲ Name</option>
+            <option value="title:0"{% if sort_title_desc %} selected{% endif %}>▼ Name</option>
+            <option value="modified:1"{% if sort_modified_asc %} selected{% endif %}>▲ Date Modified</option>
+            <option value="modified:0"{% if sort_modified_desc %} selected{% endif %}>▼ Date Modified</option>
+            <option value="progress:1"{% if sort_progress_asc %} selected{% endif %}>▲ Progress</option>
+            <option value="progress:0"{% if sort_progress_desc %} selected{% endif %}>▼ Progress</option>
+            </select>
         </div>
     </div>
-    {% endfor %}
 
-    {% if entries.is_empty() %}
-    <p>No entries found.</p>
-    {% endif %}
-</div>
-
-<!-- Entry Modal -->
-<div id="entry-modal" uk-modal>
-    <div class="uk-modal-dialog uk-modal-body">
-        <button class="uk-modal-close-default" type="button" uk-close></button>
-
-        <h3 id="modal-entry-name">Entry Name</h3>
-        <p class="modal-entry-path" id="modal-entry-path">/path/to/entry</p>
-        <p class="modal-entry-pages" id="modal-entry-pages">0 pages</p>
-
-        <div class="modal-section">
-            <h4>Read</h4>
-            <div class="button-group">
-                <a href="#" id="read-from-beginning" class="uk-button uk-button-default">From Beginning</a>
-                <a href="#" id="read-continue" class="uk-button uk-button-primary">Continue from <span id="continue-percent">0.0%</span></a>
+    <!-- Entries Grid -->
+    <div class="entries-grid">
+        {% for entry in entries %}
+        <div class="entry-card item"
+             x-show="matchesSearch('{{ entry.entry_name }}')"
+             @click="openModal('{{ title_id }}', '{{ entry.entry_id }}', '{{ entry.entry_name }}', '{{ entry.path }}', {{ entry.pages }}, {{ entry.progress }}, {{ entry.saved_page }})">
+            <div class="entry-thumbnail">
+                <img src="/api/cover/{{ title_id }}/{{ entry.entry_id }}" alt="{{ entry.entry_name }}" loading="lazy">
+                <div class="progress-badge">{{ entry.progress }}%</div>
+            </div>
+            <div class="entry-info">
+                <div class="entry-name uk-card-title">{{ entry.entry_name }}</div>
+                <div class="entry-stats">{{ entry.pages }} pages</div>
             </div>
         </div>
+        {% endfor %}
 
-        <div class="modal-section">
-            <h4>Progress</h4>
-            <div class="button-group">
-                <button class="uk-button uk-button-default" id="mark-read" onclick="markAsRead()">Mark as read (100%)</button>
-                <button class="uk-button uk-button-default" id="mark-unread" onclick="markAsUnread()">Mark as unread (0%)</button>
+        {% if entries.is_empty() %}
+        <p>No entries found.</p>
+        {% endif %}
+    </div>
+
+    <!-- Entry Modal -->
+    <div id="entry-modal" uk-modal>
+        <div class="uk-modal-dialog uk-modal-body">
+            <button class="uk-modal-close-default" type="button" uk-close></button>
+
+            <h3 x-text="modalData.entryName">Entry Name</h3>
+            <p class="modal-entry-path" x-text="modalData.entryPath">/path/to/entry</p>
+            <p class="modal-entry-pages" x-text="`${modalData.pages} pages`">0 pages</p>
+
+            <div class="modal-section">
+                <h4>Read</h4>
+                <div class="button-group">
+                    <a :href="`/reader/${modalData.titleId}/${modalData.entryId}/1`" class="uk-button uk-button-default">From Beginning</a>
+                    <a :href="`/reader/${modalData.titleId}/${modalData.entryId}/${modalData.resumePage}`"
+                       class="uk-button uk-button-primary"
+                       x-show="modalData.progress > 0 && modalData.progress < 100">
+                        Continue from <span x-text="`${modalData.progress.toFixed(1)}%`">0.0%</span>
+                    </a>
+                </div>
+            </div>
+
+            <div class="modal-section">
+                <h4>Progress</h4>
+                <div class="button-group">
+                    <button class="uk-button uk-button-default" @click="markAsRead()">Mark as read (100%)</button>
+                    <button class="uk-button uk-button-default" @click="markAsUnread()">Mark as unread (0%)</button>
+                </div>
             </div>
         </div>
     </div>
