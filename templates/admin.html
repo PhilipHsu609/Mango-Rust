@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - Mango{% endblock %}
+
+{% block content %}
+<div x-data="adminData()">
+    <h2>Admin Dashboard</h2>
+
+    <ul class="uk-list uk-list-large uk-list-divider">
+        <!-- User Management (TODO: Implement in future) -->
+        <li>
+            <a class="uk-link-reset" href="#">
+                <span style="color: grey;">User Management</span>
+                <span class="uk-text-meta"> (Coming Soon)</span>
+            </a>
+        </li>
+
+        <!-- Missing Items (TODO: Implement in future) -->
+        <li>
+            <a class="uk-link-reset" href="#">
+                <span style="color: grey;">Missing Items</span>
+                <span class="uk-text-meta"> (Coming Soon)</span>
+                {% if missing_count > 0 %}
+                <div class="uk-align-right">
+                    <span class="uk-badge">{{ missing_count }}</span>
+                </div>
+                {% endif %}
+            </a>
+        </li>
+
+        <!-- Scan Library Files (TODO: Implement API endpoint) -->
+        <li>
+            <a class="uk-link-reset" @click="scanLibrary()" style="cursor: pointer;">
+                <span :style="scanning ? 'color:grey' : ''">Scan Library Files</span>
+                <span class="uk-text-meta"> (Coming Soon)</span>
+                <div class="uk-align-right">
+                    <div uk-spinner x-show="scanning"></div>
+                    <span x-show="!scanning && scanMs > 0" x-text="`Scanned ${scanTitles} titles in ${scanMs}ms`"></span>
+                </div>
+            </a>
+        </li>
+
+        <!-- Generate Thumbnails (TODO: Implement API endpoint) -->
+        <li>
+            <a class="uk-link-reset" @click="generateThumbnails()" style="cursor: pointer;">
+                <span :style="generating ? 'color:grey' : ''">Generate Thumbnails</span>
+                <span class="uk-text-meta"> (Coming Soon)</span>
+                <div class="uk-align-right">
+                    <span x-show="generating && progress > 0" x-text="`${(progress * 100).toFixed(2)}%`"></span>
+                </div>
+            </a>
+        </li>
+    </ul>
+
+    <hr class="uk-divider-icon">
+
+    <p class="uk-text-meta">Mango-Rust - Alpha Version</p>
+    <a class="uk-button uk-button-danger" href="/logout">Log Out</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/admin.js"></script>
+{% endblock %}

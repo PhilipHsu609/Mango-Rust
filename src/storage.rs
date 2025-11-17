@@ -162,6 +162,11 @@ impl Storage {
         Ok(admin.map(|a| a == 1).unwrap_or(false))
     }
 
+    /// Alias for username_is_admin
+    pub async fn is_admin(&self, username: &str) -> Result<bool> {
+        self.username_is_admin(username).await
+    }
+
     /// Create a new user
     /// Matches original Storage#new_user
     pub async fn create_user(&self, username: &str, password: &str, is_admin: bool) -> Result<()> {

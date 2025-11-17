@@ -4,6 +4,7 @@ pub mod api;
 pub mod book;
 pub mod reader;
 pub mod progress;
+pub mod admin;
 
 pub use login::{get_login, logout, post_login};
 pub use main::{home, library};
@@ -11,6 +12,7 @@ pub use api::{get_cover, get_library, get_page, get_stats, get_title};
 pub use book::get_book;
 pub use reader::reader;
 pub use progress::{get_all_progress, get_progress, save_progress};
+pub use admin::admin_dashboard;
 
 /// Trait for types that have a progress field (as a String)
 pub trait HasProgress {
