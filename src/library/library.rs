@@ -80,6 +80,9 @@ impl Library {
 
         self.titles = new_titles;
 
+        // Mark items in database as unavailable if not found during scan
+        self.mark_unavailable().await?;
+
         tracing::info!(
             "Library scan complete: {} titles, {} entries",
             title_count,
@@ -93,7 +96,7 @@ impl Library {
     async fn find_existing_id(&self, title: &Title) -> Result<Option<String>> {
         // Tier 1: Exact match (path + signature)
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND type = 'title'"
+            "SELECT id FROM ids WHERE path = ? AND signature = ? AND type = 'title' AND unavailable = 0"
         )
         .bind(title.path.to_string_lossy().as_ref())
         .bind(title.signature as i64)
@@ -105,7 +108,7 @@ impl Library {
 
         // Tier 2: Path-only match (directory modified but not moved)
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND type = 'title'"
+            "SELECT id FROM ids WHERE path = ? AND type = 'title' AND unavailable = 0"
         )
         .bind(title.path.to_string_lossy().as_ref())
         .fetch_optional(self.storage.pool())
@@ -122,6 +125,8 @@ impl Library {
         }
 
         // Tier 3: Signature-only match (directory moved/renamed)
+        // Note: Commented out for now as we don't query by signature alone for titles
+        // If needed in future, add: AND unavailable = 0
         // For Week 2, we'll skip path similarity matching (add in Week 5)
 
         Ok(None)
@@ -131,7 +136,7 @@ impl Library {
     async fn find_existing_entry_id(&self, entry: &Entry) -> Result<Option<String>> {
         // Tier 1: Exact match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND type = 'entry'"
+            "SELECT id FROM ids WHERE path = ? AND signature = ? AND type = 'entry' AND unavailable = 0"
         )
         .bind(entry.path.to_string_lossy().as_ref())
         .bind(entry.signature as i64)
@@ -143,7 +148,7 @@ impl Library {
 
         // Tier 2: Path-only match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND type = 'entry'"
+            "SELECT id FROM ids WHERE path = ? AND type = 'entry' AND unavailable = 0"
         )
         .bind(entry.path.to_string_lossy().as_ref())
         .fetch_optional(self.storage.pool())
@@ -246,6 +251,53 @@ impl Library {
             entries: entry_count,
             pages: page_count,
         }
+    }
+
+    /// Mark database entries as unavailable if their files no longer exist
+    /// This is called after scan completes to detect missing files
+    async fn mark_unavailable(&self) -> Result<()> {
+        use std::collections::HashSet;
+
+        // Collect IDs of all found entries
+        let found_ids: HashSet<String> = self.titles
+            .values()
+            .flat_map(|title| title.entries.iter().map(|e| e.id.clone()))
+            .collect();
+
+        // Query all entry IDs from database where unavailable = 0
+        let all_ids: Vec<String> = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM ids WHERE type = 'entry' AND unavailable = 0"
+        )
+        .fetch_all(self.storage.pool())
+        .await?;
+
+        // Find entries that are in DB but not found during scan
+        let missing_ids: Vec<String> = all_ids
+            .into_iter()
+            .filter(|id| !found_ids.contains(id))
+            .collect();
+
+        if !missing_ids.is_empty() {
+            tracing::info!("Marking {} entries as unavailable", missing_ids.len());
+
+            // Mark entries as unavailable
+            for id in missing_ids {
+                sqlx::query("UPDATE ids SET unavailable = 1 WHERE id = ? AND type = 'entry'")
+                    .bind(&id)
+                    .execute(self.storage.pool())
+                    .await?;
+            }
+        }
+
+        // Mark entries as available if they were previously unavailable but now found
+        for id in found_ids {
+            sqlx::query("UPDATE ids SET unavailable = 0 WHERE id = ? AND type = 'entry' AND unavailable = 1")
+                .bind(&id)
+                .execute(self.storage.pool())
+                .await?;
+        }
+
+        Ok(())
     }
 }
 
