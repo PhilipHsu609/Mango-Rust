@@ -63,7 +63,7 @@
                 <li{% if home_active %} class="uk-active"{% endif %}><a class="nav-item" href="/">HOME</a></li>
                 <li{% if library_active %} class="uk-active"{% endif %}><a class="nav-item" href="/library">LIBRARY</a></li>
                 <li><a class="nav-item" href="#">TAGS</a></li>
-                <li><a class="nav-item" href="#">ADMIN</a></li>
+                <li{% if admin_active %} class="uk-active"{% endif %}><a class="nav-item" href="/admin">ADMIN</a></li>
                 <li><a class="nav-item" href="#">DOWNLOAD</a></li>
             </ul>
         </div>
@@ -85,6 +85,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

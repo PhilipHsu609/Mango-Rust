@@ -37,6 +37,7 @@ impl HasProgress for TitleData {
 struct LibraryTemplate {
     home_active: bool,
     library_active: bool,
+    admin_active: bool,
     title_count: usize,
     sort_name_asc: bool,
     sort_name_desc: bool,
@@ -54,6 +55,7 @@ struct LibraryTemplate {
 struct HomeTemplate {
     home_active: bool,
     library_active: bool,
+    admin_active: bool,
 }
 
 /// GET / - Home page with Continue Reading, Start Reading, Recently Added (requires authentication)
@@ -66,6 +68,7 @@ pub async fn home(
     let template = HomeTemplate {
         home_active: true,
         library_active: false,
+        admin_active: false,
     };
     
     Ok(Html(template.render().map_err(|e| {
@@ -130,6 +133,7 @@ pub async fn library(
     let template = LibraryTemplate {
         home_active: false,
         library_active: true,
+        admin_active: false,
         title_count,
         sort_name_asc,
         sort_name_desc,

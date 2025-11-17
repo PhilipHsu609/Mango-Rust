@@ -39,6 +39,7 @@ impl HasProgress for EntryData {
 struct BookTemplate {
     home_active: bool,
     library_active: bool,
+    admin_active: bool,
     title_id: String,
     title_name: String,
     entry_count: usize,
@@ -135,6 +136,7 @@ pub async fn get_book(
     let template = BookTemplate {
         home_active: false,
         library_active: true,
+        admin_active: false,
         title_id,
         title_name,
         entry_count,
