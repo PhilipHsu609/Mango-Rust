@@ -4,6 +4,16 @@ use uuid::Uuid;
 
 use crate::error::{Error, Result};
 
+/// Represents a missing (unavailable) database entry
+/// Used for displaying and managing items whose files are no longer on disk
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MissingEntry {
+    pub id: String,
+    pub path: String,
+    #[serde(rename = "type")]
+    pub entry_type: String,
+}
+
 /// Database storage layer - handles user authentication and data persistence
 /// Matches original Mango's Storage class functionality
 #[derive(Clone)]
@@ -257,6 +267,61 @@ impl Storage {
             .await?;
 
         Ok(())
+    }
+
+    /// Get all unavailable (missing) entries
+    /// Matches original Storage#get_missing
+    pub async fn get_missing_entries(&self) -> Result<Vec<MissingEntry>> {
+        let rows = sqlx::query(
+            "SELECT id, path, type FROM ids WHERE unavailable = 1 ORDER BY type, path"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let entries = rows
+            .into_iter()
+            .map(|row| MissingEntry {
+                id: row.get("id"),
+                path: row.get("path"),
+                entry_type: row.get("type"),
+            })
+            .collect();
+
+        Ok(entries)
+    }
+
+    /// Delete a specific missing entry from database
+    /// Matches original Storage#delete_missing
+    pub async fn delete_missing_entry(&self, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM ids WHERE id = ? AND unavailable = 1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        tracing::info!("Deleted missing entry: {}", id);
+        Ok(())
+    }
+
+    /// Delete all missing entries from database
+    /// Matches original Storage#delete_all_missing (custom implementation)
+    pub async fn delete_all_missing_entries(&self) -> Result<u64> {
+        let result = sqlx::query("DELETE FROM ids WHERE unavailable = 1")
+            .execute(&self.pool)
+            .await?;
+
+        let rows_affected = result.rows_affected();
+        tracing::info!("Deleted {} missing entries", rows_affected);
+        Ok(rows_affected)
+    }
+
+    /// Get count of unavailable (missing) entries
+    /// Used for admin dashboard
+    pub async fn get_missing_count(&self) -> Result<usize> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ids WHERE unavailable = 1")
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(count as usize)
     }
 
     /// Get database pool for advanced operations

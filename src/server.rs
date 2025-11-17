@@ -17,6 +17,7 @@ use crate::{
     routes::{
         get_cover, get_library, get_login, get_page, get_stats, get_title, home, library as library_page, logout, post_login,
         get_book, reader, get_progress, save_progress, get_all_progress, admin_dashboard, scan_library,
+        get_missing_entries, delete_missing_entry, delete_all_missing_entries,
     },
     Storage,
 };
@@ -81,6 +82,8 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/admin", get(admin_dashboard))
         // Admin API routes
         .route("/api/admin/scan", post(scan_library))
+        .route("/api/admin/entries/missing", get(get_missing_entries).delete(delete_all_missing_entries))
+        .route("/api/admin/entries/missing/:id", axum::routing::delete(delete_missing_entry))
         // Reader routes
         .route("/reader/:tid/:eid/:page", get(reader))
         // API routes

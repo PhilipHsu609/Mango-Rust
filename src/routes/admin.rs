@@ -1,6 +1,7 @@
 use axum::{
     response::Html,
-    extract::State,
+    extract::{State, Path},
+    http::StatusCode,
     Json,
 };
 use askama::Template;
@@ -26,14 +27,17 @@ struct AdminTemplate {
 /// - Scan Library
 /// - Generate Thumbnails
 pub async fn admin_dashboard(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
 ) -> Result<Html<String>> {
+    // Get actual missing count from database
+    let missing_count = state.storage.get_missing_count().await?;
+
     let template = AdminTemplate {
         home_active: false,
         library_active: false,
         admin_active: true,
-        missing_count: 0, // TODO: Implement missing items tracking
+        missing_count,
     };
 
     Ok(Html(template.render().map_err(|e| {
@@ -69,4 +73,37 @@ pub async fn scan_library(
         titles: stats.titles,
         milliseconds: elapsed,
     }))
+}
+
+/// GET /api/admin/entries/missing - Get all missing entries
+/// Returns list of entries marked as unavailable in the database
+pub async fn get_missing_entries(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+) -> Result<Json<Vec<crate::storage::MissingEntry>>> {
+    let entries = state.storage.get_missing_entries().await?;
+    Ok(Json(entries))
+}
+
+/// DELETE /api/admin/entries/missing/:id - Delete a specific missing entry
+/// Removes the entry from the database (cannot be undone)
+pub async fn delete_missing_entry(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+    Path(id): Path<String>,
+) -> Result<StatusCode> {
+    state.storage.delete_missing_entry(&id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE /api/admin/entries/missing - Delete all missing entries
+/// Removes all unavailable entries from the database (cannot be undone)
+pub async fn delete_all_missing_entries(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+) -> Result<Json<serde_json::Value>> {
+    let count = state.storage.delete_all_missing_entries().await?;
+    Ok(Json(serde_json::json!({
+        "deleted": count
+    })))
 }
