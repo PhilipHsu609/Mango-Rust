@@ -1,18 +1,19 @@
 // Mango-Rust Library Root
 // Tier 1 MVP modules
 
-pub mod config;
-pub mod storage;
 pub mod auth;
-pub mod server;
-pub mod routes;
+pub mod config;
 pub mod library;
+pub mod routes;
+pub mod server;
+pub mod storage;
+pub mod util;
 
 // Re-exports
 pub use config::Config;
-pub use storage::Storage;
 pub use library::Library;
 pub use server::AppState;
+pub use storage::Storage;
 
 // Common types and utilities
 pub mod error {
@@ -55,9 +56,11 @@ pub mod error {
             let status = match &self {
                 Error::AuthFailed => StatusCode::UNAUTHORIZED,
                 Error::NotFound(_) => StatusCode::NOT_FOUND,
-                Error::Database(_) | Error::Io(_) | Error::Internal(_) | Error::Archive(_) | Error::Json(_) => {
-                    StatusCode::INTERNAL_SERVER_ERROR
-                }
+                Error::Database(_)
+                | Error::Io(_)
+                | Error::Internal(_)
+                | Error::Archive(_)
+                | Error::Json(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 Error::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
             };
 

@@ -1,14 +1,14 @@
+use askama::Template;
 use axum::{
-    response::Html,
-    extract::{State, Path},
+    extract::{Path, State},
     http::StatusCode,
+    response::Html,
     Json,
 };
-use askama::Template;
 use serde::Serialize;
 use std::time::Instant;
 
-use crate::{auth::AdminOnly, error::Result, AppState};
+use crate::{auth::AdminOnly, error::Result, util::render_error, AppState};
 
 /// Admin dashboard template
 #[derive(Template)]
@@ -40,9 +40,7 @@ pub async fn admin_dashboard(
         missing_count,
     };
 
-    Ok(Html(template.render().map_err(|e| {
-        crate::error::Error::Internal(format!("Template render error: {}", e))
-    })?))
+    Ok(Html(template.render().map_err(render_error)?))
 }
 
 /// Response for library scan endpoint
@@ -67,7 +65,11 @@ pub async fn scan_library(
 
     let elapsed = start.elapsed().as_millis();
 
-    tracing::info!("Library scan completed: {} titles in {}ms", stats.titles, elapsed);
+    tracing::info!(
+        "Library scan completed: {} titles in {}ms",
+        stats.titles,
+        elapsed
+    );
 
     Ok(Json(ScanResponse {
         titles: stats.titles,
@@ -119,16 +121,12 @@ struct MissingItemsTemplate {
 
 /// GET /admin/missing-items - Missing items management page
 /// Shows list of items in database whose files no longer exist
-pub async fn missing_items_page(
-    AdminOnly(_username): AdminOnly,
-) -> Result<Html<String>> {
+pub async fn missing_items_page(AdminOnly(_username): AdminOnly) -> Result<Html<String>> {
     let template = MissingItemsTemplate {
         home_active: false,
         library_active: false,
         admin_active: true,
     };
 
-    Ok(Html(template.render().map_err(|e| {
-        crate::error::Error::Internal(format!("Template render error: {}", e))
-    })?))
+    Ok(Html(template.render().map_err(render_error)?))
 }

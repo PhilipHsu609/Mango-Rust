@@ -1,6 +1,6 @@
 use axum::{
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use std::sync::Arc;
@@ -15,9 +15,10 @@ use crate::{
     error::Result,
     library::Library,
     routes::{
-        get_cover, get_library, get_login, get_page, get_stats, get_title, home, library as library_page, logout, post_login,
-        get_book, reader, get_progress, save_progress, get_all_progress, admin_dashboard, scan_library,
-        get_missing_entries, delete_missing_entry, delete_all_missing_entries, missing_items_page,
+        admin_dashboard, delete_all_missing_entries, delete_missing_entry, get_all_progress,
+        get_book, get_cover, get_library, get_login, get_missing_entries, get_page, get_progress,
+        get_stats, get_title, home, library as library_page, logout, missing_items_page,
+        post_login, reader, save_progress, scan_library,
     },
     Storage,
 };
@@ -83,8 +84,14 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/admin/missing-items", get(missing_items_page))
         // Admin API routes
         .route("/api/admin/scan", post(scan_library))
-        .route("/api/admin/entries/missing", get(get_missing_entries).delete(delete_all_missing_entries))
-        .route("/api/admin/entries/missing/:id", axum::routing::delete(delete_missing_entry))
+        .route(
+            "/api/admin/entries/missing",
+            get(get_missing_entries).delete(delete_all_missing_entries),
+        )
+        .route(
+            "/api/admin/entries/missing/:id",
+            delete(delete_missing_entry),
+        )
         // Reader routes
         .route("/reader/:tid/:eid/:page", get(reader))
         // API routes
@@ -94,10 +101,16 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/cover/:tid/:eid", get(get_cover))
         .route("/api/stats", get(get_stats))
         // Progress API
-        .route("/api/progress/:tid/:eid", get(get_progress).post(save_progress))
+        .route(
+            "/api/progress/:tid/:eid",
+            get(get_progress).post(save_progress),
+        )
         .route("/api/progress", get(get_all_progress))
         // Add state and middleware
-        .layer(middleware::from_fn_with_state(app_state.clone(), require_auth))
+        .layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            require_auth,
+        ))
         .layer(session_layer)
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);

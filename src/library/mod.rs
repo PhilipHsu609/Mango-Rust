@@ -1,12 +1,14 @@
 pub mod entry;
-pub mod title;
-pub mod library;
 pub mod progress;
+pub mod title;
+
+// Library manager module
+mod manager;
 
 pub use entry::Entry;
-pub use title::Title;
-pub use library::{Library, LibraryStats, SharedLibrary, SortMethod, spawn_periodic_scanner};
+pub use manager::{spawn_periodic_scanner, Library, LibraryStats, SharedLibrary, SortMethod};
 pub use progress::TitleInfo;
+pub use title::Title;
 
 /// Trait for types that can be sorted by name and modification time
 pub trait Sortable {
@@ -30,9 +32,9 @@ pub fn sort_by_name<T: Sortable>(items: &mut [T], ascending: bool) {
 pub fn sort_by_mtime<T: Sortable>(items: &mut [T], ascending: bool) {
     if ascending {
         // Oldest first
-        items.sort_by(|a, b| a.sort_mtime().cmp(&b.sort_mtime()));
+        items.sort_by_key(|a| a.sort_mtime());
     } else {
         // Newest first
-        items.sort_by(|a, b| b.sort_mtime().cmp(&a.sort_mtime()));
+        items.sort_by_key(|b| std::cmp::Reverse(b.sort_mtime()));
     }
 }

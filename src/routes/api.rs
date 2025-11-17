@@ -4,9 +4,14 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-use crate::{error::Result, library::{Entry, SortMethod}, AppState};
+use crate::{
+    error::{Error, Result},
+    library::{Entry, SortMethod},
+    util::SortParams,
+    AppState,
+};
 
 /// API route: GET /api/library?sort=title|modified|auto&ascend=0|1
 /// Returns list of all manga titles with optional sorting
@@ -15,10 +20,8 @@ pub async fn get_library(
     Query(params): Query<SortParams>,
 ) -> Result<impl IntoResponse> {
     let lib = state.library.read().await;
-    let (sort_method, ascending) = SortMethod::from_params(
-        params.sort.as_deref(),
-        params.ascend.as_deref(),
-    );
+    let (sort_method, ascending) =
+        SortMethod::from_params(params.sort.as_deref(), params.ascend.as_deref());
     let titles = lib.get_titles_sorted(sort_method, ascending);
 
     let response: Vec<TitleInfo> = titles
@@ -47,10 +50,8 @@ pub async fn get_title(
         .get_title(&title_id)
         .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {}", title_id)))?;
 
-    let (sort_method, ascending) = SortMethod::from_params(
-        params.sort.as_deref(),
-        params.ascend.as_deref(),
-    );
+    let (sort_method, ascending) =
+        SortMethod::from_params(params.sort.as_deref(), params.ascend.as_deref());
     let entries: Vec<EntryInfo> = title
         .get_entries_sorted(sort_method, ascending)
         .iter()
@@ -78,9 +79,9 @@ pub async fn get_page(
 ) -> Result<impl IntoResponse> {
     let lib = state.library.read().await;
 
-    let entry = lib
-        .get_entry(&title_id, &entry_id)
-        .ok_or_else(|| crate::error::Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id)))?;
+    let entry = lib.get_entry(&title_id, &entry_id).ok_or_else(|| {
+        crate::error::Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id))
+    })?;
 
     // Pages are 1-indexed in the API, but 0-indexed internally
     let page_idx = page.saturating_sub(1);
@@ -115,28 +116,25 @@ pub async fn get_stats(State(state): State<AppState>) -> Result<impl IntoRespons
 pub async fn get_cover(
     State(state): State<AppState>,
     Path((title_id, entry_id)): Path<(String, String)>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse> {
     let lib = state.library.read().await;
 
     // Get entry
-    let entry = match lib.get_entry(&title_id, &entry_id) {
-        Some(entry) => entry,
-        None => {
-            return (StatusCode::NOT_FOUND, "Entry not found").into_response();
-        }
-    };
+    let entry = lib
+        .get_entry(&title_id, &entry_id)
+        .ok_or_else(|| Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id)))?;
 
     let db = state.storage.pool();
 
     // Try to get thumbnail first
     match Entry::get_thumbnail(&entry_id, db).await {
         Ok(Some((data, mime))) => {
-            return ([(header::CONTENT_TYPE, mime.as_str())], data).into_response();
+            return Ok(([(header::CONTENT_TYPE, mime.as_str())], data).into_response());
         }
         Ok(None) => {
             // No thumbnail exists, try to generate one
             if let Ok(Some((data, mime, _size))) = entry.generate_thumbnail(db).await {
-                return ([(header::CONTENT_TYPE, mime.as_str())], data).into_response();
+                return Ok(([(header::CONTENT_TYPE, mime.as_str())], data).into_response());
             }
             // Fall through to return first page
         }
@@ -147,28 +145,12 @@ pub async fn get_cover(
     }
 
     // Fallback: return first page directly
-    match entry.get_page(0).await {
-        Ok(data) => {
-            let mime = guess_mime_type(&data);
-            ([(header::CONTENT_TYPE, mime)], data).into_response()
-        }
-        Err(e) => {
-            tracing::error!("Failed to get page for entry {}: {}", entry_id, e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get cover").into_response()
-        }
-    }
+    let data = entry.get_page(0).await?;
+    let mime = guess_mime_type(&data);
+    Ok(([(header::CONTENT_TYPE, mime)], data).into_response())
 }
 
-// Request and response types
-
-/// Query parameters for sorting
-#[derive(Deserialize)]
-pub struct SortParams {
-    /// Optional sort method (title, modified, auto)
-    pub sort: Option<String>,
-    /// Optional ascend flag (1 for ascending, 0 for descending)
-    pub ascend: Option<String>,
-}
+// Response types
 
 #[derive(Serialize)]
 struct TitleInfo {

@@ -1,12 +1,18 @@
+use askama::Template;
 use axum::{
     extract::{Path, Query, State},
     response::Html,
 };
-use askama::Template;
 use serde::Deserialize;
 
-use crate::{auth::Username, error::{Error, Result}, library::SortMethod, AppState};
-use super::{HasProgress, sort_by_progress};
+use super::{sort_by_progress, HasProgress};
+use crate::{
+    auth::Username,
+    error::{Error, Result},
+    library::SortMethod,
+    util::render_error,
+    AppState,
+};
 
 /// Query parameters for book page
 #[derive(Deserialize)]
@@ -22,7 +28,7 @@ struct EntryData {
     entry_id: String,
     entry_name: String,
     pages: usize,
-    progress: String,  // Formatted with 1 decimal place
+    progress: String, // Formatted with 1 decimal place
     saved_page: usize,
     path: String,
 }
@@ -52,19 +58,15 @@ struct BookTemplate {
     entries: Vec<EntryData>,
 }
 
-
 pub async fn get_book(
     State(state): State<AppState>,
     Path(title_id): Path<String>,
     Query(params): Query<BookParams>,
     Username(username): Username,
 ) -> Result<Html<String>> {
-
     // Parse sort method and ascend flag
-    let (sort_method, ascending) = SortMethod::from_params(
-        params.sort.as_deref(),
-        params.ascend.as_deref(),
-    );
+    let (sort_method, ascending) =
+        SortMethod::from_params(params.sort.as_deref(), params.ascend.as_deref());
 
     // Get title and its entries
     let (title_name, mut entries) = {
@@ -80,7 +82,7 @@ pub async fn get_book(
         // For progress sorting, we need to calculate progress first, then sort
         // For other methods, use the title's built-in sorting
         let all_entries = if matches!(sort_method, SortMethod::Progress) {
-            title.get_entries_sorted(SortMethod::Name, true)  // Get name-sorted as base
+            title.get_entries_sorted(SortMethod::Name, true) // Get name-sorted as base
         } else {
             title.get_entries_sorted(sort_method, ascending)
         };
@@ -96,11 +98,7 @@ pub async fn get_book(
 
             // Apply search filter if provided
             if let Some(ref search) = params.search {
-                if !entry
-                    .title
-                    .to_lowercase()
-                    .contains(&search.to_lowercase())
-                {
+                if !entry.title.to_lowercase().contains(&search.to_lowercase()) {
                     continue;
                 }
             }
@@ -149,7 +147,5 @@ pub async fn get_book(
         entries,
     };
 
-    Ok(Html(template.render().map_err(|e| {
-        Error::Internal(format!("Template render error: {}", e))
-    })?))
+    Ok(Html(template.render().map_err(render_error)?))
 }

@@ -123,11 +123,13 @@ where
 pub struct AdminOnly(pub String);
 
 #[async_trait]
-impl FromRequestParts<AppState> for AdminOnly
-{
+impl FromRequestParts<AppState> for AdminOnly {
     type Rejection = (StatusCode, &'static str);
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         // First check if user is authenticated
         let username = parts
             .extensions
@@ -136,11 +138,12 @@ impl FromRequestParts<AppState> for AdminOnly
             .ok_or((StatusCode::UNAUTHORIZED, "Not authenticated"))?;
 
         // Check if user is admin
-        let is_admin = state
-            .storage
-            .is_admin(&username)
-            .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to verify admin status"))?;
+        let is_admin = state.storage.is_admin(&username).await.map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to verify admin status",
+            )
+        })?;
 
         if is_admin {
             Ok(AdminOnly(username))

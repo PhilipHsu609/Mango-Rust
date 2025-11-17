@@ -39,7 +39,8 @@ impl Entry {
             .to_string();
 
         let metadata = tokio::fs::metadata(&path).await?;
-        let mtime = metadata.modified()?
+        let mtime = metadata
+            .modified()?
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
@@ -75,18 +76,25 @@ impl Entry {
 
     /// Generate file signature for change detection
     pub fn calculate_signature(&mut self) -> Result<()> {
-        self.signature = file_signature(&self.path)?;
+        self.signature = crate::util::file_signature(&self.path)?;
         Ok(())
     }
 
     /// Generate thumbnail from first page
     /// Returns (thumbnail_data, mime_type, size)
-    pub async fn generate_thumbnail(&self, db: &sqlx::SqlitePool) -> Result<Option<(Vec<u8>, String, usize)>> {
+    pub async fn generate_thumbnail(
+        &self,
+        db: &sqlx::SqlitePool,
+    ) -> Result<Option<(Vec<u8>, String, usize)>> {
         // Get first page
         let page_data = match self.get_page(0).await {
             Ok(data) => data,
             Err(e) => {
-                tracing::warn!("Failed to get first page for thumbnail of {}: {}", self.title, e);
+                tracing::warn!(
+                    "Failed to get first page for thumbnail of {}: {}",
+                    self.title,
+                    e
+                );
                 return Ok(None);
             }
         };
@@ -95,7 +103,11 @@ impl Entry {
         let img = match image::load_from_memory(&page_data) {
             Ok(img) => img,
             Err(e) => {
-                tracing::warn!("Failed to load image for thumbnail of {}: {}", self.title, e);
+                tracing::warn!(
+                    "Failed to load image for thumbnail of {}: {}",
+                    self.title,
+                    e
+                );
                 return Ok(None);
             }
         };
@@ -113,9 +125,9 @@ impl Entry {
         // Encode to JPEG
         let mut buffer = Vec::new();
         let mut cursor = std::io::Cursor::new(&mut buffer);
-        
+
         match thumbnail.write_to(&mut cursor, image::ImageFormat::Jpeg) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => {
                 tracing::warn!("Failed to encode thumbnail for {}: {}", self.title, e);
                 return Ok(None);
@@ -126,7 +138,9 @@ impl Entry {
         let mime = "image/jpeg".to_string();
 
         // Get filename from first image
-        let filename = self.image_files.first()
+        let filename = self
+            .image_files
+            .first()
             .map(|s| s.as_str())
             .unwrap_or("thumbnail.jpg")
             .to_string();
@@ -147,13 +161,13 @@ impl Entry {
     }
 
     /// Get thumbnail from database
-    pub async fn get_thumbnail(entry_id: &str, db: &sqlx::SqlitePool) -> Result<Option<(Vec<u8>, String)>> {
-        let result = sqlx::query!(
-            "SELECT data, mime FROM thumbnails WHERE id = ?",
-            entry_id
-        )
-        .fetch_optional(db)
-        .await?;
+    pub async fn get_thumbnail(
+        entry_id: &str,
+        db: &sqlx::SqlitePool,
+    ) -> Result<Option<(Vec<u8>, String)>> {
+        let result = sqlx::query!("SELECT data, mime FROM thumbnails WHERE id = ?", entry_id)
+            .fetch_optional(db)
+            .await?;
 
         Ok(result.map(|row| (row.data, row.mime)))
     }
@@ -206,29 +220,6 @@ fn is_image_file(filename: &str) -> bool {
         || lower.ends_with(".bmp")
 }
 
-/// Calculate file signature (inode on Unix, CRC32 hash on Windows)
-/// Matches original Mango's file signature behavior
-#[cfg(unix)]
-fn file_signature(path: &Path) -> Result<u64> {
-    use std::os::unix::fs::MetadataExt;
-    let metadata = std::fs::metadata(path)?;
-    Ok(metadata.ino())
-}
-
-#[cfg(not(unix))]
-fn file_signature(path: &Path) -> Result<u64> {
-    use crc32fast::Hasher;
-
-    let metadata = std::fs::metadata(path)?;
-    let mut hasher = Hasher::new();
-
-    // Hash path + file size as signature
-    hasher.update(path.to_string_lossy().as_bytes());
-    hasher.update(&metadata.len().to_le_bytes());
-
-    Ok(hasher.finalize() as u64)
-}
-
 impl super::Sortable for Entry {
     fn sort_name(&self) -> &str {
         &self.title
@@ -239,7 +230,7 @@ impl super::Sortable for Entry {
     }
 }
 
-impl<'a> super::Sortable for &'a Entry {
+impl super::Sortable for &Entry {
     fn sort_name(&self) -> &str {
         &self.title
     }

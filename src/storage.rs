@@ -1,5 +1,5 @@
 use bcrypt::{hash, verify, DEFAULT_COST};
-use sqlx::{sqlite::SqlitePool, Row, SqlitePool as Pool};
+use sqlx::{sqlite::SqlitePool, Row};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
@@ -18,7 +18,7 @@ pub struct MissingEntry {
 /// Matches original Mango's Storage class functionality
 #[derive(Clone)]
 pub struct Storage {
-    pool: Pool,
+    pool: SqlitePool,
 }
 
 impl Storage {
@@ -71,11 +71,13 @@ impl Storage {
             let random_password = generate_random_password();
             let password_hash = hash_password(&random_password)?;
 
-            sqlx::query("INSERT INTO users (username, password, token, admin) VALUES (?, ?, NULL, 1)")
-                .bind("admin")
-                .bind(&password_hash)
-                .execute(&self.pool)
-                .await?;
+            sqlx::query(
+                "INSERT INTO users (username, password, token, admin) VALUES (?, ?, NULL, 1)",
+            )
+            .bind("admin")
+            .bind(&password_hash)
+            .execute(&self.pool)
+            .await?;
 
             tracing::warn!("═══════════════════════════════════════════════════════════");
             tracing::warn!("Initial admin user created!");
@@ -131,10 +133,11 @@ impl Storage {
     /// Verify session token, return username on success
     /// Matches original Storage#verify_token
     pub async fn verify_token(&self, token: &str) -> Result<Option<String>> {
-        let username: Option<String> = sqlx::query_scalar("SELECT username FROM users WHERE token = ?")
-            .bind(token)
-            .fetch_optional(&self.pool)
-            .await?;
+        let username: Option<String> =
+            sqlx::query_scalar("SELECT username FROM users WHERE token = ?")
+                .bind(token)
+                .fetch_optional(&self.pool)
+                .await?;
 
         Ok(username)
     }
@@ -207,13 +210,15 @@ impl Storage {
 
         if let Some(new_password) = password {
             let password_hash = hash_password(new_password)?;
-            sqlx::query("UPDATE users SET username = ?, password = ?, admin = ? WHERE username = ?")
-                .bind(new_username)
-                .bind(&password_hash)
-                .bind(admin_flag)
-                .bind(original_username)
-                .execute(&self.pool)
-                .await?;
+            sqlx::query(
+                "UPDATE users SET username = ?, password = ?, admin = ? WHERE username = ?",
+            )
+            .bind(new_username)
+            .bind(&password_hash)
+            .bind(admin_flag)
+            .bind(original_username)
+            .execute(&self.pool)
+            .await?;
         } else {
             sqlx::query("UPDATE users SET username = ?, admin = ? WHERE username = ?")
                 .bind(new_username)
@@ -272,11 +277,10 @@ impl Storage {
     /// Get all unavailable (missing) entries
     /// Matches original Storage#get_missing
     pub async fn get_missing_entries(&self) -> Result<Vec<MissingEntry>> {
-        let rows = sqlx::query(
-            "SELECT id, path, type FROM ids WHERE unavailable = 1 ORDER BY type, path"
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows =
+            sqlx::query("SELECT id, path, type FROM ids WHERE unavailable = 1 ORDER BY type, path")
+                .fetch_all(&self.pool)
+                .await?;
 
         let entries = rows
             .into_iter()
@@ -325,7 +329,7 @@ impl Storage {
     }
 
     /// Get database pool for advanced operations
-    pub fn pool(&self) -> &Pool {
+    pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }
 }

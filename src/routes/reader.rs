@@ -1,10 +1,15 @@
+use askama::Template;
 use axum::{
     extract::{Path, State},
     response::Html,
 };
-use askama::Template;
 
-use crate::{auth::Username, AppState, error::{Error, Result}};
+use crate::{
+    auth::Username,
+    error::{Error, Result},
+    util::render_error,
+    AppState,
+};
 
 /// Entry option data for reader template
 #[derive(serde::Serialize)]
@@ -29,22 +34,24 @@ struct ReaderTemplate {
     exit_url: String,
 }
 
-
+/// GET /reader/{title_id}/{entry_id}/{page} - Display reader for an entry page
+/// Returns: HTML page with reader interface, entry content, and navigation
 pub async fn reader(
     State(state): State<AppState>,
     Path((title_id, entry_id, page)): Path<(String, String, usize)>,
     Username(_username): Username,
 ) -> Result<Html<String>> {
-
     // Get library read lock
     let lib = state.library.read().await;
 
     // Find the title
-    let title = lib.get_title(&title_id)
+    let title = lib
+        .get_title(&title_id)
         .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
 
     // Find the entry within the title
-    let entry = lib.get_entry(&title_id, &entry_id)
+    let entry = lib
+        .get_entry(&title_id, &entry_id)
         .ok_or_else(|| Error::NotFound(format!("Entry not found: {}", entry_id)))?;
 
     let total_pages = entry.pages;
@@ -58,7 +65,8 @@ pub async fn reader(
     }
 
     // Get all entries in this title for jump functionality
-    let entries: Vec<EntryOption> = title.entries
+    let entries: Vec<EntryOption> = title
+        .entries
         .iter()
         .map(|e| EntryOption {
             id: e.id.clone(),
@@ -67,8 +75,7 @@ pub async fn reader(
         .collect();
 
     // Find current entry index to determine prev/next entry
-    let current_entry_idx = title.entries.iter()
-        .position(|e| e.id == entry_id);
+    let current_entry_idx = title.entries.iter().position(|e| e.id == entry_id);
 
     let (prev_entry_url, next_entry_url) = if let Some(idx) = current_entry_idx {
         let prev_url = if idx > 0 {
@@ -103,7 +110,5 @@ pub async fn reader(
         exit_url: format!("/book/{}", title.id),
     };
 
-    Ok(Html(template.render().map_err(|e| {
-        Error::Internal(format!("Template render error: {}", e))
-    })?))
+    Ok(Html(template.render().map_err(render_error)?))
 }

@@ -1,4 +1,4 @@
-use mango_rust::{Config, server};
+use mango_rust::{server, Config};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]

@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-use crate::error::Result;
 use super::entry::Entry;
-use super::library::SortMethod;
+use super::manager::SortMethod;
+use crate::error::Result;
 
 /// Represents a manga series (directory containing chapters/volumes)
 #[derive(Debug, Clone)]
@@ -70,11 +70,7 @@ impl Title {
         entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
 
         // Calculate latest mtime
-        let mtime = entries
-            .iter()
-            .map(|e| e.mtime)
-            .max()
-            .unwrap_or(0);
+        let mtime = entries.iter().map(|e| e.mtime).max().unwrap_or(0);
 
         // Calculate signatures
         let signature = calculate_dir_signature(&path)?;
@@ -102,7 +98,7 @@ impl Title {
     pub fn get_entries_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Entry> {
         let mut entries: Vec<&Entry> = self.entries.iter().collect();
 
-        use super::{sort_by_name, sort_by_mtime};
+        use super::{sort_by_mtime, sort_by_name};
 
         match method {
             SortMethod::Name | SortMethod::Progress | SortMethod::Auto => {
@@ -136,7 +132,12 @@ impl Title {
     }
 
     /// Save reading progress for an entry
-    pub async fn save_entry_progress(&self, username: &str, entry_id: &str, page: usize) -> Result<()> {
+    pub async fn save_entry_progress(
+        &self,
+        username: &str,
+        entry_id: &str,
+        page: usize,
+    ) -> Result<()> {
         use super::progress::TitleInfo;
 
         let mut info = TitleInfo::load(&self.path).await?;
@@ -163,9 +164,13 @@ impl Title {
     /// Get progress information for an entry (percentage and page number)
     pub async fn get_entry_progress(&self, username: &str, entry_id: &str) -> Result<(f32, usize)> {
         // Find the entry to get its page count
-        let entry = self.entries.iter()
+        let entry = self
+            .entries
+            .iter()
             .find(|e| e.id == entry_id)
-            .ok_or_else(|| crate::error::Error::NotFound(format!("Entry not found: {}", entry_id)))?;
+            .ok_or_else(|| {
+                crate::error::Error::NotFound(format!("Entry not found: {}", entry_id))
+            })?;
 
         let page = self.load_entry_progress(username, entry_id).await?;
         let percentage = if entry.pages > 0 {
@@ -259,7 +264,7 @@ fn calculate_dir_signature(path: &Path) -> Result<u64> {
         let entry_path = entry.path();
 
         if entry_path.is_file() && is_archive(&entry_path) {
-            let sig = file_signature(&entry_path)?;
+            let sig = crate::util::file_signature(&entry_path)?;
             signatures.push(sig);
         }
     }
@@ -279,7 +284,7 @@ fn calculate_dir_signature(path: &Path) -> Result<u64> {
 /// Calculate contents signature (SHA1 of all filenames, sorted)
 /// Used for detecting when directory contents changed
 fn calculate_contents_signature(path: &Path) -> Result<String> {
-    use sha1::{Sha1, Digest};
+    use sha1::{Digest, Sha1};
     use std::fs;
 
     let mut filenames = Vec::new();
@@ -308,27 +313,6 @@ fn calculate_contents_signature(path: &Path) -> Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-/// Calculate file signature (inode on Unix, CRC32 hash on Windows)
-#[cfg(unix)]
-fn file_signature(path: &Path) -> Result<u64> {
-    use std::os::unix::fs::MetadataExt;
-    let metadata = std::fs::metadata(path)?;
-    Ok(metadata.ino())
-}
-
-#[cfg(not(unix))]
-fn file_signature(path: &Path) -> Result<u64> {
-    use crc32fast::Hasher;
-
-    let metadata = std::fs::metadata(path)?;
-    let mut hasher = Hasher::new();
-
-    hasher.update(path.to_string_lossy().as_bytes());
-    hasher.update(&metadata.len().to_le_bytes());
-
-    Ok(hasher.finalize() as u64)
-}
-
 impl super::Sortable for Title {
     fn sort_name(&self) -> &str {
         &self.title
@@ -339,7 +323,7 @@ impl super::Sortable for Title {
     }
 }
 
-impl<'a> super::Sortable for &'a Title {
+impl super::Sortable for &Title {
     fn sort_name(&self) -> &str {
         &self.title
     }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 
@@ -93,23 +93,57 @@ pub struct Config {
 }
 
 // Default value functions
-fn default_host() -> String { "0.0.0.0".to_string() }
-fn default_port() -> u16 { 9000 }
-fn default_base_url() -> String { "/".to_string() }
-fn default_session_secret() -> String { "mango-session-secret".to_string() }
-fn default_library_path() -> PathBuf { expand_home("~/mango/library") }
-fn default_db_path() -> PathBuf { expand_home("~/mango/mango.db") }
-fn default_queue_db_path() -> PathBuf { expand_home("~/mango/queue.db") }
-fn default_scan_interval() -> u32 { 5 }
-fn default_thumbnail_interval() -> u32 { 24 }
-fn default_log_level() -> String { "info".to_string() }
-fn default_upload_path() -> PathBuf { expand_home("~/mango/uploads") }
-fn default_plugin_path() -> PathBuf { expand_home("~/mango/plugins") }
-fn default_download_timeout() -> u64 { 30 }
-fn default_library_cache_path() -> PathBuf { expand_home("~/mango/library.yml.gz") }
-fn default_true() -> bool { true }
-fn default_cache_size() -> usize { 50 }
-fn default_plugin_update_interval() -> u32 { 24 }
+fn default_host() -> String {
+    "0.0.0.0".to_string()
+}
+fn default_port() -> u16 {
+    9000
+}
+fn default_base_url() -> String {
+    "/".to_string()
+}
+fn default_session_secret() -> String {
+    "mango-session-secret".to_string()
+}
+fn default_library_path() -> PathBuf {
+    expand_home("~/mango/library")
+}
+fn default_db_path() -> PathBuf {
+    expand_home("~/mango/mango.db")
+}
+fn default_queue_db_path() -> PathBuf {
+    expand_home("~/mango/queue.db")
+}
+fn default_scan_interval() -> u32 {
+    5
+}
+fn default_thumbnail_interval() -> u32 {
+    24
+}
+fn default_log_level() -> String {
+    "info".to_string()
+}
+fn default_upload_path() -> PathBuf {
+    expand_home("~/mango/uploads")
+}
+fn default_plugin_path() -> PathBuf {
+    expand_home("~/mango/plugins")
+}
+fn default_download_timeout() -> u64 {
+    30
+}
+fn default_library_cache_path() -> PathBuf {
+    expand_home("~/mango/library.yml.gz")
+}
+fn default_true() -> bool {
+    true
+}
+fn default_cache_size() -> usize {
+    50
+}
+fn default_plugin_update_interval() -> u32 {
+    24
+}
 
 impl Config {
     /// Load configuration from file, with fallback to defaults
@@ -121,10 +155,14 @@ impl Config {
         let mut config = if expanded_path.exists() {
             tracing::info!("Loading config from: {}", expanded_path.display());
             let content = fs::read_to_string(&expanded_path)?;
-            serde_yaml::from_str::<Config>(&content)
-                .map_err(|e| crate::error::Error::Config(format!("Failed to parse config: {}", e)))?
+            serde_yaml::from_str::<Config>(&content).map_err(|e| {
+                crate::error::Error::Config(format!("Failed to parse config: {}", e))
+            })?
         } else {
-            tracing::warn!("Config file not found at {}, using defaults", expanded_path.display());
+            tracing::warn!(
+                "Config file not found at {}, using defaults",
+                expanded_path.display()
+            );
             Self::default_config()
         };
 
@@ -210,9 +248,10 @@ impl Config {
     fn validate(&self) -> Result<()> {
         // base_url must start and end with /
         if !self.base_url.starts_with('/') {
-            return Err(crate::error::Error::Config(
-                format!("base_url must start with '/', got: {}", self.base_url)
-            ));
+            return Err(crate::error::Error::Config(format!(
+                "base_url must start with '/', got: {}",
+                self.base_url
+            )));
         }
 
         let mut url = self.base_url.clone();
@@ -223,7 +262,7 @@ impl Config {
         // If login is disabled, default_username must be set
         if self.disable_login && self.default_username.is_none() {
             return Err(crate::error::Error::Config(
-                "disable_login is true but default_username is not set".to_string()
+                "disable_login is true but default_username is not set".to_string(),
             ));
         }
 
@@ -236,8 +275,9 @@ impl Config {
             fs::create_dir_all(parent)?;
         }
 
-        let yaml = serde_yaml::to_string(self)
-            .map_err(|e| crate::error::Error::Config(format!("Failed to serialize config: {}", e)))?;
+        let yaml = serde_yaml::to_string(self).map_err(|e| {
+            crate::error::Error::Config(format!("Failed to serialize config: {}", e))
+        })?;
 
         fs::write(path, yaml)?;
         tracing::info!("Created default config at: {}", path.display());
@@ -253,20 +293,20 @@ impl Config {
 
 /// Expand ~ to home directory in a string path
 fn expand_home(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
+    if let Some(stripped) = path.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
-            return home.join(&path[2..]);
+            return home.join(stripped);
         }
     }
     PathBuf::from(path)
 }
 
 /// Expand ~ in a PathBuf
-fn expand_home_path(path: &PathBuf) -> PathBuf {
+fn expand_home_path(path: &Path) -> PathBuf {
     if let Some(path_str) = path.to_str() {
         expand_home(path_str)
     } else {
-        path.clone()
+        path.to_path_buf()
     }
 }
 

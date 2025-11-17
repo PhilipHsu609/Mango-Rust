@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
+use super::entry::Entry;
+use super::title::Title;
 use crate::error::Result;
 use crate::Storage;
-use super::title::Title;
-use super::entry::Entry;
 
 /// Main library manager
 /// Handles scanning, ID tracking, and title registry
@@ -49,7 +49,11 @@ impl Library {
                         // Try to match with existing ID from database
                         if let Some(existing_id) = self.find_existing_id(&title).await? {
                             title.id = existing_id;
-                            tracing::debug!("Matched existing title: {} ({})", title.title, title.id);
+                            tracing::debug!(
+                                "Matched existing title: {} ({})",
+                                title.title,
+                                title.id
+                            );
                         } else {
                             // New title, persist ID to database
                             self.persist_title_id(&title).await?;
@@ -108,7 +112,7 @@ impl Library {
 
         // Tier 2: Path-only match (directory modified but not moved)
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND type = 'title' AND unavailable = 0"
+            "SELECT id FROM ids WHERE path = ? AND type = 'title' AND unavailable = 0",
         )
         .bind(title.path.to_string_lossy().as_ref())
         .fetch_optional(self.storage.pool())
@@ -148,7 +152,7 @@ impl Library {
 
         // Tier 2: Path-only match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND type = 'entry' AND unavailable = 0"
+            "SELECT id FROM ids WHERE path = ? AND type = 'entry' AND unavailable = 0",
         )
         .bind(entry.path.to_string_lossy().as_ref())
         .fetch_optional(self.storage.pool())
@@ -171,7 +175,7 @@ impl Library {
     async fn persist_title_id(&self, title: &Title) -> Result<()> {
         sqlx::query(
             "INSERT INTO ids (id, path, signature, type) VALUES (?, ?, ?, 'title')
-             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?"
+             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
         )
         .bind(&title.id)
         .bind(title.path.to_string_lossy().as_ref())
@@ -188,7 +192,7 @@ impl Library {
     async fn persist_entry_id(&self, entry: &Entry) -> Result<()> {
         sqlx::query(
             "INSERT INTO ids (id, path, signature, type) VALUES (?, ?, ?, 'entry')
-             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?"
+             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
         )
         .bind(&entry.id)
         .bind(entry.path.to_string_lossy().as_ref())
@@ -210,7 +214,7 @@ impl Library {
     pub fn get_titles_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Title> {
         let mut titles: Vec<&Title> = self.titles.values().collect();
 
-        use super::{sort_by_name, sort_by_mtime};
+        use super::{sort_by_mtime, sort_by_name};
 
         match method {
             SortMethod::Name | SortMethod::Progress | SortMethod::Auto => {
@@ -259,14 +263,15 @@ impl Library {
         use std::collections::HashSet;
 
         // Collect IDs of all found entries
-        let found_ids: HashSet<String> = self.titles
+        let found_ids: HashSet<String> = self
+            .titles
             .values()
             .flat_map(|title| title.entries.iter().map(|e| e.id.clone()))
             .collect();
 
         // Query all entry IDs from database where unavailable = 0
         let all_ids: Vec<String> = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE type = 'entry' AND unavailable = 0"
+            "SELECT id FROM ids WHERE type = 'entry' AND unavailable = 0",
         )
         .fetch_all(self.storage.pool())
         .await?;
@@ -302,9 +307,10 @@ impl Library {
 }
 
 /// Sorting methods for titles and entries
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SortMethod {
     /// Sort alphabetically by name/title
+    #[default]
     Name,
     /// Sort by modification time
     TimeModified,
@@ -314,16 +320,10 @@ pub enum SortMethod {
     Auto,
 }
 
-impl Default for SortMethod {
-    fn default() -> Self {
-        SortMethod::Name
-    }
-}
-
 impl SortMethod {
     /// Parse from string parameter (for API routes)
     /// Matches original Mango API: "title", "modified", "auto"
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "title" | "name" => SortMethod::Name,
             "modified" | "time" => SortMethod::TimeModified,
@@ -336,7 +336,7 @@ impl SortMethod {
     /// Parse sort method and ascend flag from query parameters
     /// Returns (SortMethod, bool) where bool is true for ascending
     pub fn from_params(sort: Option<&str>, ascend: Option<&str>) -> (Self, bool) {
-        let method = sort.map(Self::from_str).unwrap_or_default();
+        let method = sort.map(Self::parse).unwrap_or_default();
         let ascending = ascend
             .and_then(|s| s.parse::<i32>().ok())
             .map(|v| v != 0)
@@ -362,9 +362,8 @@ pub fn spawn_periodic_scanner(
     interval_minutes: u64,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(
-            std::time::Duration::from_secs(interval_minutes * 60)
-        );
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_secs(interval_minutes * 60));
 
         loop {
             interval.tick().await;

@@ -1,18 +1,21 @@
-pub mod login;
-pub mod main;
+pub mod admin;
 pub mod api;
 pub mod book;
-pub mod reader;
+pub mod login;
+pub mod main;
 pub mod progress;
-pub mod admin;
+pub mod reader;
 
-pub use login::{get_login, logout, post_login};
-pub use main::{home, library};
+pub use admin::{
+    admin_dashboard, delete_all_missing_entries, delete_missing_entry, get_missing_entries,
+    missing_items_page, scan_library,
+};
 pub use api::{get_cover, get_library, get_page, get_stats, get_title};
 pub use book::get_book;
-pub use reader::reader;
+pub use login::{get_login, logout, post_login};
+pub use main::{home, library};
 pub use progress::{get_all_progress, get_progress, save_progress};
-pub use admin::{admin_dashboard, scan_library, get_missing_entries, delete_missing_entry, delete_all_missing_entries, missing_items_page};
+pub use reader::reader;
 
 /// Trait for types that have a progress field (as a String)
 pub trait HasProgress {
@@ -26,9 +29,13 @@ pub fn sort_by_progress<T: HasProgress>(items: &mut [T], ascending: bool) {
         let a_progress: f32 = a.progress().parse().unwrap_or(0.0);
         let b_progress: f32 = b.progress().parse().unwrap_or(0.0);
         if ascending {
-            a_progress.partial_cmp(&b_progress).unwrap_or(std::cmp::Ordering::Equal)
+            a_progress
+                .partial_cmp(&b_progress)
+                .unwrap_or(std::cmp::Ordering::Equal)
         } else {
-            b_progress.partial_cmp(&a_progress).unwrap_or(std::cmp::Ordering::Equal)
+            b_progress
+                .partial_cmp(&a_progress)
+                .unwrap_or(std::cmp::Ordering::Equal)
         }
     });
 }

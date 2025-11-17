@@ -1,15 +1,16 @@
+use askama::Template;
 use axum::{
     extract::State,
     response::{Html, IntoResponse, Redirect},
     Form,
 };
-use askama::Template;
 use serde::Deserialize;
 use tower_sessions::Session;
 
 use crate::{
     auth::{SESSION_TOKEN_KEY, SESSION_USERNAME_KEY},
     error::{Error, Result},
+    util::render_error,
     AppState,
 };
 
@@ -30,9 +31,7 @@ pub struct LoginForm {
 /// GET /login - Show login page
 pub async fn get_login() -> Result<Html<String>> {
     let template = LoginTemplate { error: None };
-    Ok(Html(template.render().map_err(|e| {
-        Error::Internal(format!("Template render error: {}", e))
-    })?))
+    Ok(Html(template.render().map_err(render_error)?))
 }
 
 /// POST /login - Process login
@@ -42,7 +41,11 @@ pub async fn post_login(
     Form(form): Form<LoginForm>,
 ) -> Result<impl IntoResponse> {
     // Verify credentials
-    match state.storage.verify_user(&form.username, &form.password).await? {
+    match state
+        .storage
+        .verify_user(&form.username, &form.password)
+        .await?
+    {
         Some(token) => {
             // Store token and username in session
             session
@@ -59,11 +62,8 @@ pub async fn post_login(
         }
         None => {
             // Invalid credentials, show error
-            tracing::warn!(
-                "Failed login attempt for username: {}",
-                form.username
-            );
-            let template = LoginTemplate {
+            tracing::warn!("Failed login attempt for username: {}", form.username);
+            let _template = LoginTemplate {
                 error: Some("Invalid username or password".to_string()),
             };
             Ok(Redirect::to("/login")) // TODO: Return HTML with error instead of redirect

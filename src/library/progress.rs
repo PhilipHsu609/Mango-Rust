@@ -1,7 +1,7 @@
+use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use crate::error::Result;
 
 /// Structure for storing title metadata and progress in info.json
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -56,7 +56,7 @@ impl TitleInfo {
     pub fn set_progress(&mut self, username: &str, entry_id: &str, page: usize) {
         self.progress
             .entry(username.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(entry_id.to_string(), page);
     }
 
