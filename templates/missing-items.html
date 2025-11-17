@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Missing Items - Admin - Mango{% endblock %}
+
+{% block content %}
+<div x-data="missingItemsData()">
+    <h2>Missing Items</h2>
+
+    <p class="uk-text-meta">
+        Items in this list are stored in the database but their files no longer exist on disk.
+        You can delete them to clean up the database.
+    </p>
+
+    <div x-show="loading">
+        <div uk-spinner></div>
+        <span>Loading missing items...</span>
+    </div>
+
+    <div x-show="!loading && items.length === 0">
+        <div class="uk-alert-success" uk-alert>
+            <p>No missing items found!</p>
+        </div>
+        <a class="uk-button uk-button-default" href="/admin">Back to Admin</a>
+    </div>
+
+    <div x-show="!loading && items.length > 0">
+        <div class="uk-margin">
+            <button class="uk-button uk-button-danger" @click="deleteAll()" :disabled="deleting">
+                <span x-show="!deleting">Delete All (<span x-text="items.length"></span> items)</span>
+                <span x-show="deleting">Deleting...</span>
+            </button>
+            <a class="uk-button uk-button-default uk-margin-small-left" href="/admin">Back to Admin</a>
+        </div>
+
+        <table class="uk-table uk-table-divider uk-table-hover">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Path</th>
+                    <th>ID</th>
+                    <th class="uk-width-small">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="item in items" :key="item.id">
+                    <tr>
+                        <td x-text="item.type"></td>
+                        <td>
+                            <code class="uk-text-small" x-text="item.path"></code>
+                        </td>
+                        <td>
+                            <span class="uk-text-meta uk-text-small" x-text="item.id"></span>
+                        </td>
+                        <td>
+                            <button
+                                class="uk-button uk-button-danger uk-button-small"
+                                @click="deleteItem(item.id)"
+                                :disabled="deleting"
+                            >
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function missingItemsData() {
+    return {
+        items: [],
+        loading: true,
+        deleting: false,
+
+        async init() {
+            await this.load();
+        },
+
+        async load() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/admin/entries/missing');
+                if (response.ok) {
+                    this.items = await response.json();
+                } else {
+                    console.error('Failed to load missing items:', response.statusText);
+                }
+            } catch (error) {
+                console.error('Error loading missing items:', error);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async deleteItem(id) {
+            if (!confirm('Are you sure you want to delete this entry from the database?')) {
+                return;
+            }
+
+            this.deleting = true;
+            try {
+                const response = await fetch(`/api/admin/entries/missing/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    // Remove item from list
+                    this.items = this.items.filter(item => item.id !== id);
+                } else {
+                    alert('Failed to delete item');
+                }
+            } catch (error) {
+                console.error('Error deleting item:', error);
+                alert('Error deleting item');
+            } finally {
+                this.deleting = false;
+            }
+        },
+
+        async deleteAll() {
+            const count = this.items.length;
+            if (!confirm(`Are you sure you want to delete all ${count} missing entries from the database?`)) {
+                return;
+            }
+
+            this.deleting = true;
+            try {
+                const response = await fetch('/api/admin/entries/missing', {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log(`Deleted ${result.deleted} items`);
+                    this.items = [];
+                } else {
+                    alert('Failed to delete all items');
+                }
+            } catch (error) {
+                console.error('Error deleting all items:', error);
+                alert('Error deleting all items');
+            } finally {
+                this.deleting = false;
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

@@ -107,3 +107,28 @@ pub async fn delete_all_missing_entries(
         "deleted": count
     })))
 }
+
+/// Missing Items template
+#[derive(Template)]
+#[template(path = "missing-items.html")]
+struct MissingItemsTemplate {
+    home_active: bool,
+    library_active: bool,
+    admin_active: bool,
+}
+
+/// GET /admin/missing-items - Missing items management page
+/// Shows list of items in database whose files no longer exist
+pub async fn missing_items_page(
+    AdminOnly(_username): AdminOnly,
+) -> Result<Html<String>> {
+    let template = MissingItemsTemplate {
+        home_active: false,
+        library_active: false,
+        admin_active: true,
+    };
+
+    Ok(Html(template.render().map_err(|e| {
+        crate::error::Error::Internal(format!("Template render error: {}", e))
+    })?))
+}

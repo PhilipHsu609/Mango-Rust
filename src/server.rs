@@ -17,7 +17,7 @@ use crate::{
     routes::{
         get_cover, get_library, get_login, get_page, get_stats, get_title, home, library as library_page, logout, post_login,
         get_book, reader, get_progress, save_progress, get_all_progress, admin_dashboard, scan_library,
-        get_missing_entries, delete_missing_entry, delete_all_missing_entries,
+        get_missing_entries, delete_missing_entry, delete_all_missing_entries, missing_items_page,
     },
     Storage,
 };
@@ -80,6 +80,7 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/logout", get(logout))
         // Admin routes (requires admin access)
         .route("/admin", get(admin_dashboard))
+        .route("/admin/missing-items", get(missing_items_page))
         // Admin API routes
         .route("/api/admin/scan", post(scan_library))
         .route("/api/admin/entries/missing", get(get_missing_entries).delete(delete_all_missing_entries))
