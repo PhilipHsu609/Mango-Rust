@@ -1,8 +1,11 @@
 use axum::{
     response::Html,
     extract::State,
+    Json,
 };
 use askama::Template;
+use serde::Serialize;
+use std::time::Instant;
 
 use crate::{auth::AdminOnly, error::Result, AppState};
 
@@ -36,4 +39,34 @@ pub async fn admin_dashboard(
     Ok(Html(template.render().map_err(|e| {
         crate::error::Error::Internal(format!("Template render error: {}", e))
     })?))
+}
+
+/// Response for library scan endpoint
+#[derive(Serialize)]
+pub struct ScanResponse {
+    pub titles: usize,
+    pub milliseconds: u128,
+}
+
+/// POST /api/admin/scan - Trigger library rescan
+/// Returns number of titles found and time taken in milliseconds
+pub async fn scan_library(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+) -> Result<Json<ScanResponse>> {
+    let start = Instant::now();
+
+    // Trigger library scan
+    let mut library = state.library.write().await;
+    library.scan().await?;
+    let stats = library.stats();
+
+    let elapsed = start.elapsed().as_millis();
+
+    tracing::info!("Library scan completed: {} titles in {}ms", stats.titles, elapsed);
+
+    Ok(Json(ScanResponse {
+        titles: stats.titles,
+        milliseconds: elapsed,
+    }))
 }

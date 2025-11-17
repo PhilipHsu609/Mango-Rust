@@ -1,6 +1,6 @@
 use axum::{
     middleware,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use crate::{
     library::Library,
     routes::{
         get_cover, get_library, get_login, get_page, get_stats, get_title, home, library as library_page, logout, post_login,
-        get_book, reader, get_progress, save_progress, get_all_progress, admin_dashboard,
+        get_book, reader, get_progress, save_progress, get_all_progress, admin_dashboard, scan_library,
     },
     Storage,
 };
@@ -79,6 +79,8 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/logout", get(logout))
         // Admin routes (requires admin access)
         .route("/admin", get(admin_dashboard))
+        // Admin API routes
+        .route("/api/admin/scan", post(scan_library))
         // Reader routes
         .route("/reader/:tid/:eid/:page", get(reader))
         // API routes

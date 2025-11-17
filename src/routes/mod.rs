@@ -12,7 +12,7 @@ pub use api::{get_cover, get_library, get_page, get_stats, get_title};
 pub use book::get_book;
 pub use reader::reader;
 pub use progress::{get_all_progress, get_progress, save_progress};
-pub use admin::admin_dashboard;
+pub use admin::{admin_dashboard, scan_library};
 
 /// Trait for types that have a progress field (as a String)
 pub trait HasProgress {
