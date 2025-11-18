@@ -9,6 +9,14 @@ pub struct TitleInfo {
     /// Progress tracking: username -> entry_id -> page_number
     #[serde(default)]
     pub progress: HashMap<String, HashMap<String, usize>>,
+
+    /// Last read timestamp: username -> entry_id -> unix_timestamp
+    #[serde(default)]
+    pub last_read: HashMap<String, HashMap<String, i64>>,
+
+    /// Date added timestamp: entry_id -> unix_timestamp
+    #[serde(default)]
+    pub date_added: HashMap<String, i64>,
 }
 
 impl TitleInfo {
@@ -58,6 +66,9 @@ impl TitleInfo {
             .entry(username.to_string())
             .or_default()
             .insert(entry_id.to_string(), page);
+
+        // Update last_read timestamp
+        self.set_last_read(username, entry_id, chrono::Utc::now().timestamp());
     }
 
     /// Remove progress for a specific user and entry
@@ -69,5 +80,36 @@ impl TitleInfo {
                 self.progress.remove(username);
             }
         }
+    }
+
+    /// Get last read timestamp for a specific user and entry
+    pub fn get_last_read(&self, username: &str, entry_id: &str) -> Option<i64> {
+        self.last_read
+            .get(username)
+            .and_then(|user_last_read| user_last_read.get(entry_id))
+            .copied()
+    }
+
+    /// Set last read timestamp for a specific user and entry
+    pub fn set_last_read(&mut self, username: &str, entry_id: &str, timestamp: i64) {
+        self.last_read
+            .entry(username.to_string())
+            .or_default()
+            .insert(entry_id.to_string(), timestamp);
+    }
+
+    /// Get date added timestamp for an entry
+    pub fn get_date_added(&self, entry_id: &str) -> Option<i64> {
+        self.date_added.get(entry_id).copied()
+    }
+
+    /// Set date added timestamp for an entry
+    pub fn set_date_added(&mut self, entry_id: &str, timestamp: i64) {
+        self.date_added.insert(entry_id.to_string(), timestamp);
+    }
+
+    /// Set date added for an entry if not already set
+    pub fn set_date_added_if_new(&mut self, entry_id: &str, timestamp: i64) {
+        self.date_added.entry(entry_id.to_string()).or_insert(timestamp);
     }
 }

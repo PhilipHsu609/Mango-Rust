@@ -10,7 +10,10 @@ pub use admin::{
     admin_dashboard, delete_all_missing_entries, delete_missing_entry, get_missing_entries,
     missing_items_page, scan_library,
 };
-pub use api::{get_cover, get_library, get_page, get_stats, get_title};
+pub use api::{
+    continue_reading, get_cover, get_library, get_page, get_stats, get_title, recently_added,
+    start_reading,
+};
 pub use book::get_book;
 pub use login::{get_login, logout, post_login};
 pub use main::{home, library};

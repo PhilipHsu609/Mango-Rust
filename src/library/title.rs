@@ -237,6 +237,23 @@ impl Title {
 
         Ok(total_progress / entry_count as f32)
     }
+
+    /// Populate date_added timestamps for newly discovered entries
+    /// Should be called after scanning to track when entries were first discovered
+    pub async fn populate_date_added(&self) -> Result<()> {
+        use super::progress::TitleInfo;
+
+        let mut info = TitleInfo::load(&self.path).await?;
+        let now = chrono::Utc::now().timestamp();
+
+        for entry in &self.entries {
+            // Only set if not already set (preserve original date for existing entries)
+            info.set_date_added_if_new(&entry.id, now);
+        }
+
+        info.save(&self.path).await?;
+        Ok(())
+    }
 }
 
 /// Check if a file is a supported archive format

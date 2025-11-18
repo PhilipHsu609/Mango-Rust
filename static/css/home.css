@@ -28,6 +28,26 @@ h2 {
     display: block;
 }
 
+.entry-card {
+    cursor: pointer;
+}
+
+.book-link {
+    color: #1e87f0;
+    text-decoration: none;
+    font-size: 0.85rem;
+    margin-top: 3px;
+    display: inline-block;
+}
+
+.book-link:hover {
+    text-decoration: underline;
+}
+
+.card-meta {
+    margin-top: 3px;
+}
+
 .card:hover {
     box-shadow: 0 4px 16px rgba(0,0,0,.12);
     transform: translateY(-2px);
@@ -60,6 +80,18 @@ h2 {
     top: 10px;
     right: 10px;
     background: #1e87f0;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.group-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.7);
     color: white;
     padding: 4px 10px;
     border-radius: 3px;

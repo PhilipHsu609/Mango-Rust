@@ -181,6 +181,196 @@ struct LibraryStats {
     pages: usize,
 }
 
+/// API route: GET /api/library/continue_reading
+/// Returns the last 8 entries the user has read, sorted by last_read timestamp
+pub async fn continue_reading(
+    State(state): State<AppState>,
+    crate::auth::Username(username): crate::auth::Username,
+) -> Result<impl IntoResponse> {
+    use crate::library::progress::TitleInfo;
+
+    let lib = state.library.read().await;
+    let mut entries_with_progress = Vec::new();
+
+    // Collect all entries with last_read timestamps
+    for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
+        let info = TitleInfo::load(&title.path).await?;
+
+        for entry in &title.entries {
+            if let Some(last_read) = info.get_last_read(&username, &entry.id) {
+                let progress = info.get_progress(&username, &entry.id).unwrap_or(0);
+                let percentage = if entry.pages > 0 {
+                    (progress as f32 / entry.pages as f32) * 100.0
+                } else {
+                    0.0
+                };
+
+                entries_with_progress.push(ContinueReadingEntry {
+                    title_id: title.id.clone(),
+                    title_name: title.title.clone(),
+                    entry_id: entry.id.clone(),
+                    entry_name: entry.title.clone(),
+                    pages: entry.pages,
+                    progress,
+                    percentage: format!("{:.1}", percentage),
+                    last_read,
+                });
+            }
+        }
+    }
+
+    // Sort by last_read (most recent first) and take top 8
+    entries_with_progress.sort_by(|a, b| b.last_read.cmp(&a.last_read));
+    entries_with_progress.truncate(8);
+
+    Ok(Json(entries_with_progress))
+}
+
+/// API route: GET /api/library/start_reading
+/// Returns unread titles (0% progress) for the user
+pub async fn start_reading(
+    State(state): State<AppState>,
+    crate::auth::Username(username): crate::auth::Username,
+) -> Result<impl IntoResponse> {
+    let lib = state.library.read().await;
+    let mut unread_titles = Vec::new();
+
+    for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
+        let progress_pct = title.get_title_progress(&username).await?;
+
+        if progress_pct == 0.0 {
+            unread_titles.push(StartReadingTitle {
+                id: title.id.clone(),
+                title: title.title.clone(),
+                entry_count: title.entries.len(),
+                first_entry_id: title.entries.first().map(|e| e.id.clone()),
+            });
+        }
+    }
+
+    // Shuffle and take top 8
+    use rand::seq::SliceRandom;
+    let mut rng = rand::thread_rng();
+    unread_titles.shuffle(&mut rng);
+    unread_titles.truncate(8);
+
+    Ok(Json(unread_titles))
+}
+
+/// API route: GET /api/library/recently_added
+/// Returns recently added entries (within last month) with grouping by title
+pub async fn recently_added(
+    State(state): State<AppState>,
+    crate::auth::Username(username): crate::auth::Username,
+) -> Result<impl IntoResponse> {
+    use crate::library::progress::TitleInfo;
+
+    let lib = state.library.read().await;
+    let mut entries_with_dates = Vec::new();
+    let one_month_ago = chrono::Utc::now().timestamp() - (30 * 24 * 60 * 60);
+
+    // Collect all entries with date_added within last month
+    for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
+        let info = TitleInfo::load(&title.path).await?;
+
+        for entry in &title.entries {
+            if let Some(date_added) = info.get_date_added(&entry.id) {
+                if date_added > one_month_ago {
+                    let progress = info.get_progress(&username, &entry.id).unwrap_or(0);
+                    let percentage = if entry.pages > 0 {
+                        (progress as f32 / entry.pages as f32) * 100.0
+                    } else {
+                        0.0
+                    };
+
+                    entries_with_dates.push((
+                        title.id.clone(),
+                        title.title.clone(),
+                        entry.id.clone(),
+                        entry.title.clone(),
+                        entry.pages,
+                        percentage,
+                        date_added,
+                    ));
+                }
+            }
+        }
+    }
+
+    // Sort by date_added (most recent first)
+    entries_with_dates.sort_by(|a, b| b.6.cmp(&a.6));
+
+    // Group consecutive entries from same title added on same day
+    let mut result: Vec<RecentlyAddedEntry> = Vec::new();
+    for (title_id, title_name, entry_id, entry_name, pages, percentage, date_added) in entries_with_dates {
+        if result.len() >= 8 {
+            break;
+        }
+
+        // Check if we can group with last entry
+        let should_group = if let Some(last) = result.last() {
+            last.title_id == title_id && (date_added - last.date_added).abs() < (24 * 60 * 60)
+        } else {
+            false
+        };
+
+        if should_group {
+            // Group with previous entry
+            if let Some(last) = result.last_mut() {
+                last.grouped_count += 1;
+                last.percentage = String::new(); // Hide percentage for grouped items
+            }
+        } else {
+            result.push(RecentlyAddedEntry {
+                title_id,
+                title_name,
+                entry_id,
+                entry_name,
+                pages,
+                percentage: format!("{:.1}", percentage),
+                grouped_count: 1,
+                date_added,
+            });
+        }
+    }
+
+    Ok(Json(result))
+}
+
+// Response types for home page sections
+
+#[derive(Serialize)]
+struct ContinueReadingEntry {
+    title_id: String,
+    title_name: String,
+    entry_id: String,
+    entry_name: String,
+    pages: usize,
+    progress: usize,
+    percentage: String,
+    last_read: i64,
+}
+
+#[derive(Serialize)]
+struct StartReadingTitle {
+    id: String,
+    title: String,
+    entry_count: usize,
+    first_entry_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct RecentlyAddedEntry {
+    title_id: String,
+    title_name: String,
+    entry_id: String,
+    entry_name: String,
+    pages: usize,
+    percentage: String,
+    grouped_count: usize,
+    date_added: i64,
+}
+
 /// Guess MIME type from image data magic bytes
 fn guess_mime_type(data: &[u8]) -> &'static str {
     if data.len() < 4 {

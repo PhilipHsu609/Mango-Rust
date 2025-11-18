@@ -70,6 +70,11 @@ impl Library {
                             }
                         }
 
+                        // Populate date_added for newly discovered entries
+                        if let Err(e) = title.populate_date_added().await {
+                            tracing::warn!("Failed to populate date_added for {}: {}", title.title, e);
+                        }
+
                         new_titles.insert(title.id.clone(), title);
                     }
                     Err(e) => {
