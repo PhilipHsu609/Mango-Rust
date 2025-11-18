@@ -110,7 +110,7 @@ pub async fn run(config: Config) -> Result<()> {
             "/api/progress/:tid/:eid",
             get(get_progress).post(save_progress),
         )
-        .route("/api/progress", get(get_all_progress))
+        .route("/api/progress", get(get_all_progress).put(save_progress))
         // Add state and middleware
         .layer(middleware::from_fn_with_state(
             app_state.clone(),

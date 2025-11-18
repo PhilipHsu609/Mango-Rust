@@ -71,7 +71,8 @@ function homePageData() {
             const continueBtn = document.getElementById('modal-continue-btn');
             if (this.currentEntry.progress > 0) {
                 continueBtn.textContent = `Continue from ${this.currentEntry.percentage.toFixed(1)}%`;
-                continueBtn.href = `/reader/${titleId}/${entryId}`;
+                // Use progress value as the page number (progress is the current page)
+                continueBtn.href = `/reader/${titleId}/${entryId}/${this.currentEntry.progress}`;
                 continueBtn.style.display = '';
             } else {
                 continueBtn.style.display = 'none';
@@ -85,17 +86,18 @@ function homePageData() {
             if (!this.currentEntry) return;
 
             try {
-                const response = await fetch('/api/progress', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        title_id: this.currentEntry.titleId,
-                        entry_id: this.currentEntry.entryId,
-                        page: this.currentEntry.pages
-                    })
-                });
+                const response = await fetch(
+                    `/api/progress/${this.currentEntry.titleId}/${this.currentEntry.entryId}`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            page: this.currentEntry.pages
+                        })
+                    }
+                );
 
                 if (response.ok) {
                     // Close modal
@@ -114,17 +116,18 @@ function homePageData() {
             if (!this.currentEntry) return;
 
             try {
-                const response = await fetch('/api/progress', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        title_id: this.currentEntry.titleId,
-                        entry_id: this.currentEntry.entryId,
-                        page: 0
-                    })
-                });
+                const response = await fetch(
+                    `/api/progress/${this.currentEntry.titleId}/${this.currentEntry.entryId}`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            page: 0
+                        })
+                    }
+                );
 
                 if (response.ok) {
                     // Close modal
