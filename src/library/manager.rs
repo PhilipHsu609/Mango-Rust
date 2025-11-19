@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -247,6 +247,11 @@ impl Library {
             .entries
             .iter()
             .find(|e| e.id == entry_id)
+    }
+
+    /// Get library root path
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// Get total library statistics

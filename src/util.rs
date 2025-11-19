@@ -80,3 +80,41 @@ impl NavigationState {
 pub fn render_error<E: std::fmt::Display>(e: E) -> Error {
     Error::Internal(format!("Template render error: {}", e))
 }
+
+/// Get sort preferences for a user from info.json
+/// If query params are provided, saves them and returns them
+/// Otherwise, returns saved preferences or defaults
+///
+/// Returns (sort_method, ascending) tuple
+pub async fn get_and_save_sort(
+    dir: &Path,
+    username: &str,
+    params: &SortParams,
+) -> Result<(String, bool)> {
+    use crate::library::progress::TitleInfo;
+
+    let mut info = TitleInfo::load(dir).await?;
+
+    // If query params exist, use them and save to info.json
+    if let Some(method) = &params.sort {
+        let ascending = params
+            .ascend
+            .as_ref()
+            .and_then(|s| s.parse::<i32>().ok())
+            .map(|v| v != 0)
+            .unwrap_or(true);
+
+        info.set_sort_by(username, method, ascending);
+        info.save(dir).await?;
+
+        return Ok((method.clone(), ascending));
+    }
+
+    // Otherwise, load saved preferences or use defaults
+    if let Some((method, ascending)) = info.get_sort_by(username) {
+        Ok((method, ascending))
+    } else {
+        // Default: sort by title ascending
+        Ok(("title".to_string(), true))
+    }
+}

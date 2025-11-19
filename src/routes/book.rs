@@ -64,9 +64,25 @@ pub async fn get_book(
     Query(params): Query<BookParams>,
     Username(username): Username,
 ) -> Result<Html<String>> {
-    // Parse sort method and ascend flag
-    let (sort_method, ascending) =
-        SortMethod::from_params(params.sort.as_deref(), params.ascend.as_deref());
+    // Get title path for loading/saving sort preferences
+    let title_path = {
+        let lib = state.library.read().await;
+        let title = lib
+            .get_title(&title_id)
+            .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
+        title.path.clone()
+    };
+
+    // Load/save sort preferences from title's info.json
+    let sort_params = crate::util::SortParams {
+        sort: params.sort.clone(),
+        ascend: params.ascend.clone(),
+    };
+    let (sort_method_str, ascending) =
+        crate::util::get_and_save_sort(&title_path, &username, &sort_params).await?;
+
+    // Parse sort method from string
+    let sort_method = SortMethod::parse(&sort_method_str);
 
     // Get title and its entries
     let (title_name, mut entries) = {

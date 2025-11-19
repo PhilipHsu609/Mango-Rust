@@ -75,9 +75,15 @@ pub async fn library(
     Query(params): Query<SortParams>,
     Username(username): Username,
 ) -> Result<Html<String>> {
-    // Parse sort method and ascend flag
-    let (sort_method, ascending) =
-        SortMethod::from_params(params.sort.as_deref(), params.ascend.as_deref());
+    // Get library path for loading/saving sort preferences
+    let library_path = state.library.read().await.path().to_path_buf();
+
+    // Load/save sort preferences from info.json
+    let (sort_method_str, ascending) =
+        crate::util::get_and_save_sort(&library_path, &username, &params).await?;
+
+    // Parse sort method from string
+    let sort_method = SortMethod::parse(&sort_method_str);
 
     // Get library statistics and title data
     let (title_count, mut titles) = {
