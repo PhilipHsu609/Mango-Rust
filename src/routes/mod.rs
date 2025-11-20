@@ -7,8 +7,9 @@ pub mod progress;
 pub mod reader;
 
 pub use admin::{
-    admin_dashboard, delete_all_missing_entries, delete_missing_entry, get_missing_entries,
-    missing_items_page, scan_library,
+    admin_dashboard, create_user, delete_all_missing_entries, delete_missing_entry,
+    delete_user, get_missing_entries, get_users, missing_items_page, scan_library,
+    update_user, users_page,
 };
 pub use api::{
     continue_reading, get_cover, get_library, get_page, get_stats, get_title, recently_added,
@@ -16,7 +17,7 @@ pub use api::{
 };
 pub use book::get_book;
 pub use login::{get_login, logout, post_login};
-pub use main::{home, library};
+pub use main::{change_password_api, change_password_page, home, library};
 pub use progress::{get_all_progress, get_progress, save_progress};
 pub use reader::reader;
 

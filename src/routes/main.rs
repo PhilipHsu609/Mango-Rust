@@ -6,7 +6,7 @@ use axum::{
 
 use super::{sort_by_progress, HasProgress};
 use crate::{
-    auth::Username,
+    auth::User,
     error::Result,
     library::SortMethod,
     util::{render_error, SortParams},
@@ -36,6 +36,7 @@ struct LibraryTemplate {
     home_active: bool,
     library_active: bool,
     admin_active: bool,
+    is_admin: bool,
     title_count: usize,
     sort_name_asc: bool,
     sort_name_desc: bool,
@@ -53,18 +54,20 @@ struct HomeTemplate {
     home_active: bool,
     library_active: bool,
     admin_active: bool,
+    is_admin: bool,
 }
 
 /// GET / - Home page with Continue Reading, Start Reading, Recently Added (requires authentication)
 pub async fn home(
     State(_state): State<AppState>,
-    Username(_username): Username,
+    user: User,
 ) -> Result<Html<String>> {
     // TODO: Implement Continue Reading, Start Reading, Recently Added logic
     let template = HomeTemplate {
         home_active: true,
         library_active: false,
         admin_active: false,
+        is_admin: user.is_admin,
     };
 
     Ok(Html(template.render().map_err(render_error)?))
@@ -73,14 +76,14 @@ pub async fn home(
 pub async fn library(
     State(state): State<AppState>,
     Query(params): Query<SortParams>,
-    Username(username): Username,
+    user: User,
 ) -> Result<Html<String>> {
     // Get library path for loading/saving sort preferences
     let library_path = state.library.read().await.path().to_path_buf();
 
     // Load/save sort preferences from info.json
     let (sort_method_str, ascending) =
-        crate::util::get_and_save_sort(&library_path, &username, &params).await?;
+        crate::util::get_and_save_sort(&library_path, &user.username, &params).await?;
 
     // Parse sort method from string
     let sort_method = SortMethod::parse(&sort_method_str);
@@ -101,7 +104,7 @@ pub async fn library(
         // Calculate progress for each title
         let mut titles = Vec::new();
         for t in sorted_titles {
-            let progress_pct = t.get_title_progress(&username).await.unwrap_or(0.0);
+            let progress_pct = t.get_title_progress(&user.username).await.unwrap_or(0.0);
             titles.push(TitleData {
                 id: t.id.clone(),
                 name: t.title.clone(),
@@ -131,6 +134,7 @@ pub async fn library(
         home_active: false,
         library_active: true,
         admin_active: false,
+        is_admin: user.is_admin,
         title_count,
         sort_name_asc,
         sort_name_desc,
@@ -142,4 +146,55 @@ pub async fn library(
     };
 
     Ok(Html(template.render().map_err(render_error)?))
+}
+
+/// Change Password page template
+#[derive(Template)]
+#[template(path = "change-password.html")]
+struct ChangePasswordTemplate {
+    home_active: bool,
+    library_active: bool,
+    admin_active: bool,
+    is_admin: bool,
+}
+
+/// GET /change-password - Change password page (requires authentication)
+pub async fn change_password_page(user: User) -> Result<Html<String>> {
+    let template = ChangePasswordTemplate {
+        home_active: false,
+        library_active: false,
+        admin_active: false,
+        is_admin: user.is_admin,
+    };
+
+    Ok(Html(template.render().map_err(render_error)?))
+}
+
+/// Request body for change password API endpoint
+#[derive(serde::Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+/// POST /api/user/change-password - Change user's password (requires authentication)
+pub async fn change_password_api(
+    State(state): State<AppState>,
+    user: User,
+    axum::Json(request): axum::Json<ChangePasswordRequest>,
+) -> Result<axum::http::StatusCode> {
+    // Validate new password length
+    if request.new_password.len() < 6 {
+        return Err(crate::error::Error::BadRequest(
+            "New password must be at least 6 characters".to_string(),
+        ));
+    }
+
+    // Change the password
+    state
+        .storage
+        .change_password(&user.username, &request.current_password, &request.new_password)
+        .await?;
+
+    Ok(axum::http::StatusCode::OK)
 }

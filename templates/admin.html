@@ -7,11 +7,10 @@
     <h2>Admin Dashboard</h2>
 
     <ul class="uk-list uk-list-large uk-list-divider">
-        <!-- User Management (TODO: Implement in future) -->
+        <!-- User Management -->
         <li>
-            <a class="uk-link-reset" href="#">
-                <span style="color: grey;">User Management</span>
-                <span class="uk-text-meta"> (Coming Soon)</span>
+            <a class="uk-link-reset" href="/admin/users">
+                <span>User Management</span>
             </a>
         </li>
 
@@ -27,11 +26,10 @@
             </a>
         </li>
 
-        <!-- Scan Library Files (TODO: Implement API endpoint) -->
+        <!-- Scan Library Files -->
         <li>
             <a class="uk-link-reset" @click="scanLibrary()" style="cursor: pointer;">
                 <span :style="scanning ? 'color:grey' : ''">Scan Library Files</span>
-                <span class="uk-text-meta"> (Coming Soon)</span>
                 <div class="uk-align-right">
                     <div uk-spinner x-show="scanning"></div>
                     <span x-show="!scanning && scanMs > 0" x-text="`Scanned ${scanTitles} titles in ${scanMs}ms`"></span>

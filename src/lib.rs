@@ -47,6 +47,9 @@ pub mod error {
         #[error("Not found: {0}")]
         NotFound(String),
 
+        #[error("{0}")]
+        BadRequest(String),
+
         #[error("Internal server error: {0}")]
         Internal(String),
     }
@@ -56,6 +59,7 @@ pub mod error {
             let status = match &self {
                 Error::AuthFailed => StatusCode::UNAUTHORIZED,
                 Error::NotFound(_) => StatusCode::NOT_FOUND,
+                Error::BadRequest(_) => StatusCode::BAD_REQUEST,
                 Error::Database(_)
                 | Error::Io(_)
                 | Error::Internal(_)

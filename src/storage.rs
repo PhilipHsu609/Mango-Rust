@@ -232,6 +232,43 @@ impl Storage {
         Ok(())
     }
 
+    /// Change user's password
+    /// Verifies current password before allowing the change
+    pub async fn change_password(
+        &self,
+        username: &str,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<()> {
+        // First, get the current password hash
+        let row: Option<(String,)> = sqlx::query_as("SELECT password FROM users WHERE username = ?")
+            .bind(username)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        let current_hash = row
+            .ok_or_else(|| Error::BadRequest(format!("User not found: {}", username)))?
+            .0;
+
+        // Verify the current password
+        if !verify_password(current_password, &current_hash)? {
+            return Err(Error::BadRequest("Current password is incorrect".to_string()));
+        }
+
+        // Hash the new password
+        let new_hash = hash_password(new_password)?;
+
+        // Update the password
+        sqlx::query("UPDATE users SET password = ? WHERE username = ?")
+            .bind(&new_hash)
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
+
+        tracing::info!("Password changed for user: {}", username);
+        Ok(())
+    }
+
     /// Delete a user
     /// Matches original Storage#delete_user
     pub async fn delete_user(&self, username: &str) -> Result<()> {

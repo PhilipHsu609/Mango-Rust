@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use super::{sort_by_progress, HasProgress};
 use crate::{
-    auth::Username,
+    auth::User,
     error::{Error, Result},
     library::SortMethod,
     util::render_error,
@@ -46,6 +46,7 @@ struct BookTemplate {
     home_active: bool,
     library_active: bool,
     admin_active: bool,
+    is_admin: bool,
     title_id: String,
     title_name: String,
     entry_count: usize,
@@ -62,7 +63,7 @@ pub async fn get_book(
     State(state): State<AppState>,
     Path(title_id): Path<String>,
     Query(params): Query<BookParams>,
-    Username(username): Username,
+    user: User,
 ) -> Result<Html<String>> {
     // Get title path for loading/saving sort preferences
     let title_path = {
@@ -79,7 +80,7 @@ pub async fn get_book(
         ascend: params.ascend.clone(),
     };
     let (sort_method_str, ascending) =
-        crate::util::get_and_save_sort(&title_path, &username, &sort_params).await?;
+        crate::util::get_and_save_sort(&title_path, &user.username, &sort_params).await?;
 
     // Parse sort method from string
     let sort_method = SortMethod::parse(&sort_method_str);
@@ -108,7 +109,7 @@ pub async fn get_book(
         for entry in all_entries {
             // Load progress for this entry using Title's method
             let (progress_percentage, saved_page) = title
-                .get_entry_progress(&username, &entry.id)
+                .get_entry_progress(&user.username, &entry.id)
                 .await
                 .unwrap_or((0.0, 0));
 
@@ -151,6 +152,7 @@ pub async fn get_book(
         home_active: false,
         library_active: true,
         admin_active: false,
+        is_admin: user.is_admin,
         title_id,
         title_name,
         entry_count,

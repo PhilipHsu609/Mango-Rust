@@ -152,3 +152,36 @@ impl FromRequestParts<AppState> for AdminOnly {
         }
     }
 }
+
+/// User extractor that provides username and admin status
+/// Can be used in any authenticated handler
+pub struct User {
+    pub username: String,
+    pub is_admin: bool,
+}
+
+#[async_trait]
+impl FromRequestParts<AppState> for User {
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        // Get username from request extensions
+        let username = parts
+            .extensions
+            .get::<String>()
+            .cloned()
+            .ok_or(StatusCode::UNAUTHORIZED)?;
+
+        // Check if user is admin
+        let is_admin = state
+            .storage
+            .is_admin(&username)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        Ok(User { username, is_admin })
+    }
+}

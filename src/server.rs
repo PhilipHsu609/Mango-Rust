@@ -1,6 +1,6 @@
 use axum::{
     middleware,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use std::sync::Arc;
@@ -15,11 +15,12 @@ use crate::{
     error::Result,
     library::Library,
     routes::{
-        admin_dashboard, continue_reading, delete_all_missing_entries, delete_missing_entry,
-        get_all_progress, get_book, get_cover, get_library, get_login, get_missing_entries,
-        get_page, get_progress, get_stats, get_title, home, library as library_page, logout,
-        missing_items_page, post_login, reader, recently_added, save_progress, scan_library,
-        start_reading,
+        admin_dashboard, change_password_api, change_password_page, continue_reading, create_user,
+        delete_all_missing_entries, delete_missing_entry, delete_user, get_all_progress, get_book,
+        get_cover, get_library, get_login, get_missing_entries, get_page, get_progress, get_stats,
+        get_title, get_users, home, library as library_page, logout, missing_items_page,
+        post_login, reader, recently_added, save_progress, scan_library, start_reading,
+        update_user, users_page,
     },
     Storage,
 };
@@ -79,10 +80,12 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/", get(home))
         .route("/library", get(library_page))
         .route("/book/:id", get(get_book))
+        .route("/change-password", get(change_password_page))
         .route("/logout", get(logout))
         // Admin routes (requires admin access)
         .route("/admin", get(admin_dashboard))
         .route("/admin/missing-items", get(missing_items_page))
+        .route("/admin/users", get(users_page))
         // Admin API routes
         .route("/api/admin/scan", post(scan_library))
         .route(
@@ -92,6 +95,11 @@ pub async fn run(config: Config) -> Result<()> {
         .route(
             "/api/admin/entries/missing/:id",
             delete(delete_missing_entry),
+        )
+        .route("/api/admin/users", get(get_users).post(create_user))
+        .route(
+            "/api/admin/users/:username",
+            patch(update_user).delete(delete_user),
         )
         // Reader routes
         .route("/reader/:tid/:eid/:page", get(reader))
@@ -111,6 +119,8 @@ pub async fn run(config: Config) -> Result<()> {
             get(get_progress).post(save_progress),
         )
         .route("/api/progress", get(get_all_progress).put(save_progress))
+        // User API
+        .route("/api/user/change-password", post(change_password_api))
         // Add state and middleware
         .layer(middleware::from_fn_with_state(
             app_state.clone(),

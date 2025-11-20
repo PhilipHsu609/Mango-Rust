@@ -58,15 +58,15 @@ pub async fn post_login(
                 .map_err(|e| Error::Internal(format!("Failed to save session: {}", e)))?;
 
             tracing::info!("User {} logged in successfully", form.username);
-            Ok(Redirect::to("/"))
+            Ok(Redirect::to("/").into_response())
         }
         None => {
             // Invalid credentials, show error
             tracing::warn!("Failed login attempt for username: {}", form.username);
-            let _template = LoginTemplate {
+            let template = LoginTemplate {
                 error: Some("Invalid username or password".to_string()),
             };
-            Ok(Redirect::to("/login")) // TODO: Return HTML with error instead of redirect
+            Ok(Html(template.render().map_err(render_error)?).into_response())
         }
     }
 }

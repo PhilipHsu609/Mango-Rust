@@ -71,7 +71,7 @@
                 <li{% if home_active %} class="uk-active"{% endif %}><a class="nav-item" href="/">HOME</a></li>
                 <li{% if library_active %} class="uk-active"{% endif %}><a class="nav-item" href="/library">LIBRARY</a></li>
                 <li><a class="nav-item" href="#">TAGS</a></li>
-                <li{% if admin_active %} class="uk-active"{% endif %}><a class="nav-item" href="/admin">ADMIN</a></li>
+                {% if is_admin %}<li{% if admin_active %} class="uk-active"{% endif %}><a class="nav-item" href="/admin">ADMIN</a></li>{% endif %}
                 <li><a class="nav-item" href="#">DOWNLOAD</a></li>
             </ul>
         </div>
@@ -82,6 +82,7 @@
                         <span uk-icon="icon: moon; ratio: 0.9"></span>
                     </a>
                 </li>
+                <li><a class="nav-item" href="/change-password">CHANGE PASSWORD</a></li>
                 <li><a class="nav-item" href="/logout">LOGOUT</a></li>
             </ul>
         </div>
