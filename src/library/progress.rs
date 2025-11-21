@@ -87,18 +87,8 @@ impl TitleInfo {
     /// Save TitleInfo to a directory's info.json file
     pub async fn save(&self, dir: &Path) -> Result<()> {
         let info_path = dir.join("info.json");
-
-        // Only delete the file if there's no data at all (no progress and no sort preferences)
-        if self.progress.is_empty() && self.sort_by.is_empty() {
-            if info_path.exists() {
-                tokio::fs::remove_file(&info_path).await?;
-            }
-            return Ok(());
-        }
-
         let json = serde_json::to_string_pretty(self)?;
         tokio::fs::write(&info_path, json).await?;
-
         Ok(())
     }
 
