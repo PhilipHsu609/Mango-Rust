@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 
 use crate::{
     error::{Error, Result},
@@ -369,6 +370,80 @@ struct RecentlyAddedEntry {
     percentage: String,
     grouped_count: usize,
     date_added: i64,
+}
+
+// ========== Tags API Endpoints ==========
+
+#[derive(Serialize)]
+struct TagWithCount {
+    tag: String,
+    count: usize,
+}
+
+/// API route: GET /api/tags
+/// Returns all tags with their usage counts, sorted by count desc then name asc
+pub async fn list_tags(
+    State(state): State<AppState>,
+    _username: crate::auth::Username,
+) -> Result<impl IntoResponse> {
+    let storage = &state.storage;
+    let tags = storage.list_tags().await?;
+
+    // Count titles for each tag
+    let mut tag_counts: HashMap<String, usize> = HashMap::new();
+    for tag in tags {
+        let title_ids = storage.get_tag_titles(&tag).await?;
+        tag_counts.insert(tag, title_ids.len());
+    }
+
+    // Sort by count desc, then by tag name asc
+    let mut tags_with_counts: Vec<TagWithCount> = tag_counts
+        .into_iter()
+        .map(|(tag, count)| TagWithCount { tag, count })
+        .collect();
+
+    tags_with_counts.sort_by(|a, b| {
+        b.count.cmp(&a.count)
+            .then_with(|| a.tag.to_lowercase().cmp(&b.tag.to_lowercase()))
+    });
+
+    Ok(Json(tags_with_counts))
+}
+
+/// API route: GET /api/tags/:tid
+/// Returns all tags for a specific title
+pub async fn get_title_tags(
+    State(state): State<AppState>,
+    Path(title_id): Path<String>,
+    _username: crate::auth::Username,
+) -> Result<impl IntoResponse> {
+    let storage = &state.storage;
+    let tags = storage.get_title_tags(&title_id).await?;
+    Ok(Json(tags))
+}
+
+/// API route: PUT /api/admin/tags/:tid/:tag
+/// Add a tag to a title (admin only)
+pub async fn add_tag(
+    State(state): State<AppState>,
+    Path((title_id, tag)): Path<(String, String)>,
+    _admin: crate::auth::AdminOnly,
+) -> Result<impl IntoResponse> {
+    let storage = &state.storage;
+    storage.add_tag(&title_id, &tag).await?;
+    Ok(StatusCode::OK)
+}
+
+/// API route: DELETE /api/admin/tags/:tid/:tag
+/// Remove a tag from a title (admin only)
+pub async fn delete_tag(
+    State(state): State<AppState>,
+    Path((title_id, tag)): Path<(String, String)>,
+    _admin: crate::auth::AdminOnly,
+) -> Result<impl IntoResponse> {
+    let storage = &state.storage;
+    storage.delete_tag(&title_id, &tag).await?;
+    Ok(StatusCode::OK)
 }
 
 /// Guess MIME type from image data magic bytes

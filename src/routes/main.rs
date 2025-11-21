@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     response::Html,
 };
 
@@ -197,4 +197,198 @@ pub async fn change_password_api(
         .await?;
 
     Ok(axum::http::StatusCode::OK)
+}
+
+
+// ========== Tags Page Handlers ==========
+
+#[derive(Template)]
+#[template(path = "tags.html")]
+struct TagsTemplate {
+    home_active: bool,
+    library_active: bool,
+    admin_active: bool,
+    is_admin: bool,
+    tags: Vec<TagWithCount>,
+}
+
+#[derive(serde::Serialize)]
+struct TagWithCount {
+    tag: String,
+    encoded_tag: String,
+    count: usize,
+}
+
+/// GET /tags - List all tags with their usage counts
+pub async fn list_tags_page(
+    State(state): State<AppState>,
+    user: User,
+) -> Result<Html<String>> {
+    let storage = &state.storage;
+    let tags = storage.list_tags().await?;
+
+    // Count titles for each tag and prepare display data
+    let mut tags_with_counts = Vec::new();
+    for tag in tags {
+        let title_ids = storage.get_tag_titles(&tag).await?;
+        let count = title_ids.len();
+        
+        // URL-encode the tag for links
+        let encoded_tag = percent_encoding::percent_encode(
+            tag.as_bytes(),
+            percent_encoding::NON_ALPHANUMERIC,
+        ).to_string();
+        
+        tags_with_counts.push(TagWithCount {
+            tag,
+            encoded_tag,
+            count,
+        });
+    }
+
+    // Sort by count desc, then by tag name asc (case-insensitive)
+    tags_with_counts.sort_by(|a, b| {
+        b.count.cmp(&a.count)
+            .then_with(|| a.tag.to_lowercase().cmp(&b.tag.to_lowercase()))
+    });
+
+    let template = TagsTemplate {
+        home_active: false,
+        library_active: false,
+        admin_active: false,
+        is_admin: user.is_admin,
+        tags: tags_with_counts,
+    };
+    Ok(Html(template.render().map_err(render_error)?))
+}
+
+#[derive(Template)]
+#[template(path = "tag.html")]
+struct TagTemplate {
+    home_active: bool,
+    library_active: bool,
+    admin_active: bool,
+    is_admin: bool,
+    tag: String,
+    title_count: usize,
+    titles: Vec<TitleData>,
+    sort_name_asc: bool,
+    sort_name_desc: bool,
+    sort_time_asc: bool,
+    sort_time_desc: bool,
+    sort_progress_asc: bool,
+    sort_progress_desc: bool,
+}
+
+/// GET /tags/:tag - Show filtered library view for a specific tag
+pub async fn view_tag_page(
+    State(state): State<AppState>,
+    Path(tag): Path<String>,
+    Query(params): Query<crate::util::SortParams>,
+    user: User,
+) -> Result<Html<String>> {
+    let storage = &state.storage;
+    let lib = state.library.read().await;
+
+    // Get all title IDs with this tag
+    let title_ids = storage.get_tag_titles(&tag).await?;
+    
+    if title_ids.is_empty() {
+        return Err(crate::error::Error::NotFound(format!("Tag '{}' not found", tag)));
+    }
+
+    // Get title objects for these IDs
+    let mut titles: Vec<TitleData> = title_ids
+        .iter()
+        .filter_map(|id| {
+            lib.get_title(id).map(|title| {
+                TitleData {
+                    id: title.id.clone(),
+                    name: title.title.clone(),
+                    entry_count: title.entries.len(),
+                    first_entry_id: title.entries.first().map(|e| e.id.clone()),
+                    progress: String::new(), // Will be filled later
+                }
+            })
+        })
+        .collect();
+
+    // Load progress for each title
+    for title_data in &mut titles {
+        let title = lib.get_title(&title_data.id).unwrap();
+        let progress_pct = title.get_title_progress(&user.username).await?;
+        title_data.progress = format!("{:.1}", progress_pct);
+    }
+
+    // Determine sort method
+    let (sort_method, ascending) =
+        crate::library::SortMethod::from_params(params.sort.as_deref(), params.ascend.as_deref());
+
+    // Sort titles based on method
+    match sort_method {
+        crate::library::SortMethod::Name => {
+            titles.sort_by(|a, b| {
+                if ascending {
+                    natord::compare(&a.name, &b.name)
+                } else {
+                    natord::compare(&b.name, &a.name)
+                }
+            });
+        }
+        crate::library::SortMethod::TimeModified => {
+            // For modified sort, we need to get the mtime from the actual titles
+            titles.sort_by(|a, b| {
+                let a_title = lib.get_title(&a.id).unwrap();
+                let b_title = lib.get_title(&b.id).unwrap();
+                let a_mtime = a_title.mtime;
+                let b_mtime = b_title.mtime;
+                if ascending {
+                    a_mtime.cmp(&b_mtime)
+                } else {
+                    b_mtime.cmp(&a_mtime)
+                }
+            });
+        }
+        crate::library::SortMethod::Progress => {
+            if ascending {
+                crate::routes::sort_by_progress(&mut titles, true);
+            } else {
+                crate::routes::sort_by_progress(&mut titles, false);
+            }
+        }
+        crate::library::SortMethod::Auto => {
+            // Auto sort defaults to Name ascending
+            titles.sort_by(|a, b| natord::compare(&a.name, &b.name));
+        }
+    }
+
+    // Determine which sort option is active
+    let (sort_name_asc, sort_name_desc, sort_time_asc, sort_time_desc, sort_progress_asc, sort_progress_desc) =
+        match (sort_method, ascending) {
+            (crate::library::SortMethod::Name, true) => (true, false, false, false, false, false),
+            (crate::library::SortMethod::Name, false) => (false, true, false, false, false, false),
+            (crate::library::SortMethod::TimeModified, true) => (false, false, true, false, false, false),
+            (crate::library::SortMethod::TimeModified, false) => (false, false, false, true, false, false),
+            (crate::library::SortMethod::Progress, true) => (false, false, false, false, true, false),
+            (crate::library::SortMethod::Progress, false) => (false, false, false, false, false, true),
+            (crate::library::SortMethod::Auto, _) => (true, false, false, false, false, false),
+        };
+
+    let template = TagTemplate {
+        home_active: false,
+        library_active: false,
+        admin_active: false,
+        is_admin: user.is_admin,
+        tag,
+        title_count: titles.len(),
+        titles,
+        sort_name_asc,
+        sort_name_desc,
+        sort_time_asc,
+        sort_time_desc,
+        sort_progress_asc,
+        sort_progress_desc,
+    };
+
+    Ok(Html(template.render().map_err(render_error)?))
 }

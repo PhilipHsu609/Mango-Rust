@@ -12,12 +12,12 @@ pub use admin::{
     update_user, users_page,
 };
 pub use api::{
-    continue_reading, get_cover, get_library, get_page, get_stats, get_title, recently_added,
-    start_reading,
+    add_tag, continue_reading, delete_tag, get_cover, get_library, get_page, get_stats, get_title,
+    get_title_tags, list_tags, recently_added, start_reading,
 };
 pub use book::get_book;
 pub use login::{get_login, logout, post_login};
-pub use main::{change_password_api, change_password_page, home, library};
+pub use main::{change_password_api, change_password_page, home, library, list_tags_page, view_tag_page};
 pub use progress::{get_all_progress, get_progress, save_progress};
 pub use reader::reader;
 
