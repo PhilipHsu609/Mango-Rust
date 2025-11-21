@@ -365,6 +365,83 @@ impl Storage {
         Ok(count as usize)
     }
 
+
+    // ========== Tags Methods ==========
+
+    /// Get all tags for a specific title
+    /// Matches original Storage#get_title_tags
+    pub async fn get_title_tags(&self, title_id: &str) -> Result<Vec<String>> {
+        let rows = sqlx::query("SELECT tag FROM tags WHERE id = ? ORDER BY tag")
+            .bind(title_id)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let tags = rows
+            .into_iter()
+            .map(|row| row.get("tag"))
+            .collect();
+
+        Ok(tags)
+    }
+
+    /// Get all title IDs that have a specific tag
+    /// Matches original Storage#get_tag_titles
+    pub async fn get_tag_titles(&self, tag: &str) -> Result<Vec<String>> {
+        let rows = sqlx::query("SELECT id FROM tags WHERE tag = ?")
+            .bind(tag)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let title_ids = rows
+            .into_iter()
+            .map(|row| row.get("id"))
+            .collect();
+
+        Ok(title_ids)
+    }
+
+    /// List all unique tags
+    /// Returns all distinct tag names sorted alphabetically
+    pub async fn list_tags(&self) -> Result<Vec<String>> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT tag FROM tags \
+             ORDER BY tag"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let tags = rows
+            .into_iter()
+            .map(|row| row.get("tag"))
+            .collect();
+
+        Ok(tags)
+    }
+
+    /// Add a tag to a title
+    /// Matches original Storage#add_tag
+    pub async fn add_tag(&self, title_id: &str, tag: &str) -> Result<()> {
+        sqlx::query("INSERT INTO tags (id, tag) VALUES (?, ?)")
+            .bind(title_id)
+            .bind(tag)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Delete a tag from a title
+    /// Matches original Storage#delete_tag
+    pub async fn delete_tag(&self, title_id: &str, tag: &str) -> Result<()> {
+        sqlx::query("DELETE FROM tags WHERE id = ? AND tag = ?")
+            .bind(title_id)
+            .bind(tag)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
     /// Get database pool for advanced operations
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
