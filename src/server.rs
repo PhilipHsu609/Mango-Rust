@@ -1,6 +1,6 @@
 use axum::{
     middleware,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use std::sync::Arc;
@@ -15,12 +15,13 @@ use crate::{
     error::Result,
     library::Library,
     routes::{
-        admin_dashboard, change_password_api, change_password_page, continue_reading, create_user,
-        delete_all_missing_entries, delete_missing_entry, delete_user, get_all_progress, get_book,
-        get_cover, get_library, get_login, get_missing_entries, get_page, get_progress, get_stats,
-        get_title, get_users, home, library as library_page, logout, missing_items_page,
-        post_login, reader, recently_added, save_progress, scan_library, start_reading,
-        update_user, users_page,
+        add_tag, admin_dashboard, change_password_api, change_password_page, continue_reading,
+        create_user, delete_all_missing_entries, delete_missing_entry, delete_tag, delete_user,
+        get_all_progress, get_book, get_cover, get_library, get_login, get_missing_entries,
+        get_page, get_progress, get_stats, get_title, get_title_tags, get_users, home,
+        library as library_page, list_tags, list_tags_page, logout, missing_items_page, post_login, reader,
+        recently_added, save_progress, scan_library, start_reading, update_user, users_page,
+        view_tag_page,
     },
     Storage,
 };
@@ -82,6 +83,9 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/book/:id", get(get_book))
         .route("/change-password", get(change_password_page))
         .route("/logout", get(logout))
+        // Tags routes
+        .route("/tags", get(list_tags_page))
+        .route("/tags/:tag", get(view_tag_page))
         // Admin routes (requires admin access)
         .route("/admin", get(admin_dashboard))
         .route("/admin/missing-items", get(missing_items_page))
@@ -109,6 +113,10 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/page/:tid/:eid/:page", get(get_page))
         .route("/api/cover/:tid/:eid", get(get_cover))
         .route("/api/stats", get(get_stats))
+        // Tags API routes
+        .route("/api/tags", get(list_tags))
+        .route("/api/tags/:tid", get(get_title_tags))
+        .route("/api/admin/tags/:tid/:tag", put(add_tag).delete(delete_tag))
         // Home page API routes
         .route("/api/library/continue_reading", get(continue_reading))
         .route("/api/library/start_reading", get(start_reading))

@@ -50,3 +50,4 @@ rand = "0.8"  # For random password generation
 natord = "1.0"  # Natural number ordering for sorting
 crc32fast = "1.4"  # CRC32 for directory signatures
 sha1 = "0.10"  # SHA1 for contents signatures
+percent-encoding = "2.3.2"
