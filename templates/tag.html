@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Tag: {{ tag }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="/static/css/library.css">
+{% endblock %}
+
+{% block content %}
+<div x-data="tagViewData()">
+    <h2 class="uk-title">Tag: {{ tag }}</h2>
+    <p class="subtitle">{{ title_count }} {% if title_count == 1 %}title{% else %}titles{% endif %} tagged</p>
+
+    <!-- Search and Sort Controls -->
+    <div class="uk-grid-small" uk-grid>
+        <div class="uk-margin-bottom uk-width-3-4@s">
+            <form class="uk-search uk-search-default">
+                <span uk-search-icon></span>
+                <input class="uk-search-input" type="search" placeholder="Search" x-model="searchQuery">
+            </form>
+        </div>
+        <div class="uk-margin-bottom uk-width-1-4@s">
+            <select class="uk-select" @change="handleSortChange($event)">
+            <option value="title:1"{% if sort_name_asc %} selected{% endif %}>▲ Name</option>
+            <option value="title:0"{% if sort_name_desc %} selected{% endif %}>▼ Name</option>
+            <option value="modified:1"{% if sort_time_asc %} selected{% endif %}>▲ Date Modified</option>
+            <option value="modified:0"{% if sort_time_desc %} selected{% endif %}>▼ Date Modified</option>
+            <option value="progress:1"{% if sort_progress_asc %} selected{% endif %}>▲ Progress</option>
+            <option value="progress:0"{% if sort_progress_desc %} selected{% endif %}>▼ Progress</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Titles Grid -->
+    <div class="titles-grid">
+        {% for title in titles %}
+        <a href="/book/{{ title.id }}" class="title-card"
+           x-show="matchesSearch('{{ title.name }}')">
+            <div class="title-thumbnail">
+                {% match title.first_entry_id %}
+                {% when Some with (entry_id) %}
+                <img src="/api/cover/{{ title.id }}/{{ entry_id }}" alt="{{ title.name }}" loading="lazy">
+                {% when None %}
+                <div class="placeholder-icon">📖</div>
+                {% endmatch %}
+                <div class="progress-badge">{{ title.progress }}%</div>
+            </div>
+            <div class="title-info">
+                <div class="title-name uk-card-title">{{ title.name }}</div>
+                <div class="title-stats">{{ title.entry_count }} {% if title.entry_count == 1 %}entry{% else %}entries{% endif %}</div>
+            </div>
+        </a>
+        {% endfor %}
+
+        {% if titles.is_empty() %}
+        <p>No titles found with this tag.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function tagViewData() {
+    return {
+        searchQuery: '',
+
+        matchesSearch(name) {
+            if (this.searchQuery.trim() === '') return true;
+            return name.toLowerCase().includes(this.searchQuery.toLowerCase());
+        },
+
+        handleSortChange(event) {
+            const value = event.target.value;
+            const [sort, ascend] = value.split(':');
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('sort', sort);
+            urlParams.set('ascend', ascend);
+            window.location.search = urlParams.toString();
+        }
+    };
+}
+</script>
+{% endblock %}
