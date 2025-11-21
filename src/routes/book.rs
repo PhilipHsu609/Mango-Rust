@@ -57,6 +57,7 @@ struct BookTemplate {
     sort_progress_asc: bool,
     sort_progress_desc: bool,
     entries: Vec<EntryData>,
+    tags: Vec<String>,
 }
 
 pub async fn get_book(
@@ -140,6 +141,9 @@ pub async fn get_book(
 
     let entry_count = entries.len();
 
+    // Fetch tags for this title
+    let tags = state.storage.get_title_tags(&title_id).await?;
+
     // Determine which sort option is selected
     let sort_title_asc = matches!(sort_method, SortMethod::Name) && ascending;
     let sort_title_desc = matches!(sort_method, SortMethod::Name) && !ascending;
@@ -163,6 +167,7 @@ pub async fn get_book(
         sort_progress_asc,
         sort_progress_desc,
         entries,
+        tags,
     };
 
     Ok(Html(template.render().map_err(render_error)?))

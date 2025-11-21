@@ -91,3 +91,133 @@ function bookData() {
         }
     };
 }
+
+// Alpine.js component for tags management
+function tagsData() {
+    return {
+        tags: [],
+        allTags: [], // All existing tags in the system for suggestions
+        showAddForm: false,
+        newTag: '',
+        addingTag: false,
+        deletingTag: null,
+        showSuggestions: false,
+
+        async init() {
+            // Get title ID from page (injected via template)
+            const titleId = this.$root.dataset.titleId;
+            if (titleId) {
+                await this.loadTags(titleId);
+            }
+            // Load all tags for autocomplete
+            await this.loadAllTags();
+        },
+
+        // Get filtered suggestions based on input
+        get filteredSuggestions() {
+            if (!this.newTag.trim()) {
+                return this.allTags.filter(tag => !this.tags.includes(tag));
+            }
+            const searchLower = this.newTag.toLowerCase();
+            return this.allTags.filter(tag =>
+                tag.toLowerCase().includes(searchLower) && !this.tags.includes(tag)
+            );
+        },
+
+        async loadTags(titleId) {
+            try {
+                const response = await fetch(`/api/tags/${titleId}`);
+                if (response.ok) {
+                    this.tags = await response.json();
+                }
+            } catch (error) {
+                console.error('Failed to load tags:', error);
+            }
+        },
+
+        async loadAllTags() {
+            try {
+                const response = await fetch('/api/tags');
+                if (response.ok) {
+                    const data = await response.json();
+                    // Extract just the tag names from the array of {tag, count} objects
+                    this.allTags = data.map(item => item.tag);
+                }
+            } catch (error) {
+                console.error('Failed to load all tags:', error);
+            }
+        },
+
+        selectSuggestion(tag) {
+            this.newTag = tag;
+            this.showSuggestions = false;
+            // Focus remains on input for user to press Enter or click Add
+        },
+
+        async addTag() {
+            const tag = this.newTag.trim();
+            if (!tag) return;
+
+            const titleId = this.$root.dataset.titleId;
+            this.addingTag = true;
+
+            try {
+                const response = await fetch(`/api/admin/tags/${titleId}/${encodeURIComponent(tag)}`, {
+                    method: 'PUT'
+                });
+
+                if (response.ok) {
+                    // Add tag to local array
+                    this.tags.push(tag);
+                    this.tags.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+                    // Reset form
+                    this.newTag = '';
+                    this.showAddForm = false;
+                } else {
+                    const error = await response.text();
+                    alert(`Failed to add tag: ${error}`);
+                }
+            } catch (error) {
+                console.error('Failed to add tag:', error);
+                alert('Failed to add tag');
+            } finally {
+                this.addingTag = false;
+            }
+        },
+
+        async deleteTag(tag) {
+            if (!confirm(`Remove tag "${tag}"?`)) return;
+
+            const titleId = this.$root.dataset.titleId;
+            this.deletingTag = tag;
+
+            try {
+                const response = await fetch(`/api/admin/tags/${titleId}/${encodeURIComponent(tag)}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    // Remove tag from local array
+                    const index = this.tags.indexOf(tag);
+                    if (index > -1) {
+                        this.tags.splice(index, 1);
+                    }
+                } else {
+                    const error = await response.text();
+                    alert(`Failed to delete tag: ${error}`);
+                }
+            } catch (error) {
+                console.error('Failed to delete tag:', error);
+                alert('Failed to delete tag');
+            } finally {
+                this.deletingTag = null;
+            }
+        },
+
+        cancelAdd() {
+            this.newTag = '';
+            this.showAddForm = false;
+        }
+    };
+}
