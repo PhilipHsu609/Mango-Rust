@@ -1,0 +1,48 @@
+// ============================================================================
+// Base Layout Styles
+// Core layout, typography, and global styles
+// ============================================================================
+
+@import '_variables';
+
+// ----------------------------------------------------------------------------
+// Global Reset & Base Styles
+// ----------------------------------------------------------------------------
+
+html {
+    height: 100%;
+    background: @bg-light;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+}
+
+body {
+    font-family: @font-family;
+    background: @bg-light;
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    overflow-x: hidden;
+}
+
+// ----------------------------------------------------------------------------
+// Main Content Container
+// ----------------------------------------------------------------------------
+
+.main-content {
+    max-width: @content-max-width;
+    margin: @content-margin;
+    padding: @content-padding;
+}
+
+// ----------------------------------------------------------------------------
+// Mobile Responsive Adjustments
+// ----------------------------------------------------------------------------
+
+@media (max-width: @breakpoint-medium) {
+    .main-content {
+        margin: @content-margin-mobile;
+        padding: @content-padding-mobile;
+    }
+}

@@ -1,0 +1,259 @@
+// ============================================================================
+// Dark Theme - ALL dark mode styles
+// Single source of truth for dark mode across entire application
+// ============================================================================
+
+@import '_variables';
+
+// Wrap everything in body.uk-light selector
+body.uk-light {
+    color: @dark-text-primary;
+    background: @dark-bg;
+
+    // ------------------------------------------------------------------------
+    // Navigation
+    // ------------------------------------------------------------------------
+
+    .uk-navbar-container {
+        background: @dark-bg-elevated !important;
+        border-bottom: 1px solid @dark-border;
+    }
+
+    .nav-item {
+        color: @dark-text-secondary !important;
+
+        &:hover {
+            color: #fff !important;
+        }
+    }
+
+    .uk-active .nav-item {
+        color: #fff !important;
+    }
+
+    // Main content area
+    .main-content {
+        background: @dark-bg;
+    }
+
+    // Mobile offcanvas
+    .uk-offcanvas-bar {
+        background: @dark-bg-elevated;
+
+        h3 {
+            color: @dark-text-primary;
+        }
+    }
+
+    #mobile-nav .uk-nav {
+        > li > a {
+            color: @dark-text-secondary;
+
+            &:hover {
+                color: #fff;
+            }
+        }
+
+        > li.uk-active > a {
+            color: @primary-color;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Modals
+    // ------------------------------------------------------------------------
+
+    .uk-modal-dialog {
+        background: @dark-bg-elevated;
+        color: @dark-text-primary;
+    }
+
+    .uk-modal-title {
+        color: @dark-text-primary;
+    }
+
+    .uk-modal-body {
+        color: @dark-text-primary;
+    }
+
+    .uk-modal-header {
+        border-bottom-color: @dark-border;
+    }
+
+    .uk-modal-footer {
+        border-top-color: @dark-border;
+    }
+
+    // ------------------------------------------------------------------------
+    // Buttons
+    // ------------------------------------------------------------------------
+
+    .uk-button-default {
+        background: @dark-border;
+        color: @dark-text-primary;
+        border-color: @dark-border-light;
+
+        &:hover {
+            background: @dark-border-light;
+            color: #fff;
+        }
+    }
+
+    .uk-button-primary {
+        background: @primary-color;
+        color: #fff;
+
+        &:hover {
+            background: darken(@primary-color, 5%);
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Forms
+    // ------------------------------------------------------------------------
+
+    .uk-input,
+    .uk-textarea,
+    .uk-select {
+        background: @dark-bg-input;
+        border-color: @dark-border;
+        color: @dark-text-primary;
+
+        &:focus {
+            background: @dark-bg-input;
+            border-color: @primary-color;
+            color: @dark-text-primary;
+        }
+
+        &::placeholder {
+            color: @dark-text-muted;
+        }
+    }
+
+    .uk-select option {
+        background: @dark-bg-input;
+        color: @dark-text-primary;
+    }
+
+    .uk-form-label {
+        color: @dark-text-secondary;
+    }
+
+    .uk-checkbox {
+        background: @dark-bg-input;
+        border-color: @dark-border;
+
+        &:checked {
+            background-color: @primary-color;
+            border-color: @primary-color;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Cards
+    // ------------------------------------------------------------------------
+
+    .uk-card {
+        background: @dark-bg-elevated;
+        color: @dark-text-primary;
+    }
+
+    .uk-card-title {
+        color: @dark-text-primary;
+    }
+
+    // ------------------------------------------------------------------------
+    // Tables
+    // ------------------------------------------------------------------------
+
+    .uk-table {
+        color: @dark-text-primary;
+
+        th {
+            color: @dark-text-secondary;
+        }
+    }
+
+    .uk-table-hover tbody tr:hover {
+        background: @dark-bg-hover;
+    }
+
+    .uk-table-divider > tr:not(:first-child),
+    .uk-table-divider > :not(:first-child) > tr,
+    .uk-table-divider > :first-child > tr:not(:first-child) {
+        border-top-color: @dark-border;
+    }
+
+    // ------------------------------------------------------------------------
+    // Lists
+    // ------------------------------------------------------------------------
+
+    .uk-list > li {
+        color: @dark-text-primary;
+    }
+
+    .uk-list-divider > li:nth-child(n+2) {
+        border-top-color: @dark-border;
+    }
+
+    // ------------------------------------------------------------------------
+    // Links
+    // ------------------------------------------------------------------------
+
+    .uk-link-reset {
+        color: @dark-text-primary;
+
+        &:hover {
+            color: #fff;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Badges
+    // ------------------------------------------------------------------------
+
+    .uk-badge {
+        background: @dark-border;
+        color: @dark-text-primary;
+    }
+
+    // ------------------------------------------------------------------------
+    // Alerts
+    // ------------------------------------------------------------------------
+
+    .uk-alert {
+        background: @dark-bg-hover;
+        color: @dark-text-primary;
+    }
+
+    .uk-alert-warning {
+        background: #5a4a1a;
+        color: @dark-text-primary;
+    }
+
+    .uk-alert-success {
+        background: #1a4a2a;
+        color: @dark-text-primary;
+    }
+
+    // ------------------------------------------------------------------------
+    // Misc
+    // ------------------------------------------------------------------------
+
+    .uk-close {
+        color: @dark-text-secondary;
+
+        &:hover {
+            color: #fff;
+        }
+    }
+
+    code {
+        background: @dark-bg-input;
+        color: @dark-text-primary;
+    }
+
+    h3 {
+        color: @dark-text-primary;
+    }
+}

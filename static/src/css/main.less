@@ -1,0 +1,22 @@
+// ============================================================================
+// Main LESS Entry Point
+// Imports all LESS sources in correct dependency order
+// ============================================================================
+
+// 1. Variables - Must be first (defines all design tokens)
+@import '_variables';
+
+// 2. Base - Global layout and typography
+@import 'base';
+
+// 3. Components - Reusable UI components
+@import 'components/_nav';
+
+// 4. Pages - Page-specific styles (will be added in Phase 7)
+// @import 'pages/_library';
+// @import 'pages/_book';
+// @import 'pages/_home';
+// @import 'pages/_reader';
+
+// 5. Dark Theme - Must be last (overrides everything)
+@import '_dark-theme';

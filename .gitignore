@@ -8,3 +8,7 @@
 # Environment variables (may contain sensitive data)
 .env
 .env.local
+
+# Frontend compiled assets (build output)
+static/dist/
+node_modules/

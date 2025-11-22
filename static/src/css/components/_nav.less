@@ -1,0 +1,87 @@
+// ============================================================================
+// Navigation Component
+// Navbar, logo, hamburger menu, and mobile offcanvas
+// ============================================================================
+
+@import '../_variables';
+
+// ----------------------------------------------------------------------------
+// Navbar Container
+// ----------------------------------------------------------------------------
+
+.uk-navbar-container {
+    background: @bg-white !important;
+    box-shadow: @shadow-light;
+}
+
+// ----------------------------------------------------------------------------
+// Logo
+// ----------------------------------------------------------------------------
+
+.logo {
+    width: @logo-size;
+    height: @logo-size;
+
+    @media (max-width: @breakpoint-medium) {
+        width: @logo-size-mobile;
+        height: @logo-size-mobile;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Navigation Items
+// ----------------------------------------------------------------------------
+
+.nav-item {
+    color: @text-tertiary !important;
+    font-weight: @font-weight-normal;
+    text-transform: uppercase;
+    font-size: @font-size-small;
+    letter-spacing: @letter-spacing-wide;
+
+    &:hover {
+        color: @text-secondary !important;
+    }
+}
+
+.uk-active .nav-item {
+    color: @text-primary !important;
+}
+
+// ----------------------------------------------------------------------------
+// Mobile Navigation Offcanvas
+// ----------------------------------------------------------------------------
+
+#mobile-nav {
+    padding: @spacing-sm;
+
+    .uk-nav {
+        margin-top: @spacing-sm;
+
+        > li > a {
+            padding: 12px 0;
+            font-size: 1rem;
+            color: @text-secondary;
+            text-transform: uppercase;
+            letter-spacing: @letter-spacing-wide;
+
+            &:hover {
+                color: @text-primary;
+            }
+        }
+
+        > li.uk-active > a {
+            color: @primary-color;
+            font-weight: @font-weight-medium;
+        }
+    }
+}
+
+// Offcanvas styling
+.uk-offcanvas-bar {
+    background: @bg-white;
+
+    h3 {
+        color: @text-primary;
+    }
+}

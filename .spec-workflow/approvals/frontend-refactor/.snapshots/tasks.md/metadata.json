@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/frontend-refactor/tasks.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-22T06:37:22.338Z",
+      "trigger": "initial",
+      "approvalId": "approval_1763793442335_e9ad4zixj",
+      "approvalTitle": "Frontend Refactoring - Tasks Breakdown"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-22T06:38:06.560Z",
+      "trigger": "approved",
+      "approvalId": "approval_1763793442335_e9ad4zixj",
+      "approvalTitle": "Frontend Refactoring - Tasks Breakdown"
+    }
+  ]
+}
