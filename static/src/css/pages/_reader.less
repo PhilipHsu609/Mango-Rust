@@ -13,9 +13,13 @@
 
 body {
     font-family: @font-family;
+    overflow-x: hidden;
+}
+
+// Reader-specific styles (reader page always uses dark background for optimal reading)
+body.reader-page {
     background-color: #000;
     color: #ffffff;
-    overflow-x: hidden;
 }
 
 // Continuous mode styles

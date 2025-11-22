@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/css/uikit.min.css" />
     <link rel="stylesheet" href="/static/dist/css/main.css" />
 </head>
-<body class="paged-mode fit-height">
+<body class="reader-page paged-mode fit-height">
     <div id="reader-container">
         <!-- Settings button -->
         <button id="settings-btn" onclick="UIkit.modal('#settings-modal').show()">⚙️</button>
@@ -137,6 +137,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
     <script src="/static/src/js/core.js"></script>
-    <script src="/static/src/js/pages/reader.js"></script>
+    <script>
+    {% include "reader.js" %}
+    </script>
 </body>
 </html>
