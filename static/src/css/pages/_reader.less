@@ -1,3 +1,10 @@
+// ============================================================================
+// Reader Page Styles
+// Converted from templates/reader.css
+// ============================================================================
+
+@import '../_variables';
+
 * {
     margin: 0;
     padding: 0;
@@ -5,13 +12,13 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: @font-family;
     background-color: #000;
     color: #ffffff;
     overflow-x: hidden;
 }
 
-/* Continuous mode styles */
+// Continuous mode styles
 body.continuous-mode {
     overflow-y: auto;
 }
@@ -25,16 +32,16 @@ body.paged-mode {
     min-height: 100vh;
 }
 
-/* Continuous mode container */
+// Continuous mode container
 #continuous-container {
     max-width: 1200px;
     margin: 0 auto;
     padding: 20px;
     display: none;
-}
 
-body.continuous-mode #continuous-container {
-    display: block;
+    body.continuous-mode & {
+        display: block;
+    }
 }
 
 .continuous-image {
@@ -42,13 +49,13 @@ body.continuous-mode #continuous-container {
     width: 100%;
     margin: 0 auto;
     cursor: pointer;
+
+    &.spine {
+        width: 50px !important;
+    }
 }
 
-.continuous-image.spine {
-    width: 50px !important;
-}
-
-/* Paged mode container */
+// Paged mode container
 #paged-container {
     display: none;
     position: fixed;
@@ -58,10 +65,10 @@ body.continuous-mode #continuous-container {
     height: 100vh;
     justify-content: center;
     align-items: center;
-}
 
-body.paged-mode #paged-container {
-    display: flex;
+    body.paged-mode & {
+        display: flex;
+    }
 }
 
 #paged-image {
@@ -69,7 +76,7 @@ body.paged-mode #paged-container {
     cursor: pointer;
 }
 
-/* Fit modes for paged */
+// Fit modes for paged
 body.fit-height #paged-image {
     max-height: 100vh;
     max-width: none;
@@ -89,7 +96,7 @@ body.fit-real #paged-image {
     max-height: none;
 }
 
-/* Click zones for paged mode */
+// Click zones for paged mode
 .click-zone {
     position: fixed;
     top: 0;
@@ -97,17 +104,17 @@ body.fit-real #paged-image {
     height: 100%;
     z-index: 10;
     cursor: pointer;
+
+    &.click-zone-left {
+        left: 0;
+    }
+
+    &.click-zone-right {
+        right: 0;
+    }
 }
 
-.click-zone-left {
-    left: 0;
-}
-
-.click-zone-right {
-    right: 0;
-}
-
-/* Flip animations */
+// Flip animations
 .slide-left {
     animation: slideInLeft 0.3s ease-out;
 }
@@ -138,7 +145,7 @@ body.fit-real #paged-image {
     }
 }
 
-/* Settings button */
+// Settings button
 #settings-btn {
     position: fixed;
     bottom: 20px;
@@ -154,13 +161,13 @@ body.fit-real #paged-image {
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     z-index: 1000;
     transition: transform 0.2s;
+
+    &:hover {
+        transform: scale(1.1);
+    }
 }
 
-#settings-btn:hover {
-    transform: scale(1.1);
-}
-
-/* Loading indicator */
+// Loading indicator
 #loading {
     position: fixed;
     top: 50%;
@@ -171,7 +178,7 @@ body.fit-real #paged-image {
     z-index: 100;
 }
 
-/* Next entry button for continuous mode */
+// Next entry button for continuous mode
 #next-entry-btn {
     display: block;
     margin: 40px auto;

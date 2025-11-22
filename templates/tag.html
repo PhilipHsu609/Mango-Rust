@@ -2,10 +2,6 @@
 
 {% block title %}Tag: {{ tag }}{% endblock %}
 
-{% block styles %}
-<link rel="stylesheet" href="/static/css/library.css">
-{% endblock %}
-
 {% block content %}
 <div x-data="tagViewData()">
     <h2 class="uk-title">Tag: {{ tag }}</h2>

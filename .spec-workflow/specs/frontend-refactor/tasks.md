@@ -109,7 +109,7 @@
 
 ### Phase 4: Move Reader CSS/JS to Static Files
 
-- [ ] 4.1. Move reader.css to static/src/css/pages/
+- [x] 4.1. Move reader.css to static/src/css/pages/
   - Files: `templates/reader.css` → `static/src/css/pages/_reader.less`
   - Convert reader.css to LESS, remove from templates
   - Import in main.less
@@ -118,7 +118,7 @@
   - _Requirements: REQ-1, REQ-2_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: CSS Migration Specialist | Task: Move templates/reader.css (184 lines) to static/src/css/pages/_reader.less following requirements REQ-1 and REQ-2, convert to LESS format, remove dark theme styles (move to _dark-theme.less if not already there), import in main.less | Restrictions: Must remove {% include "reader.css" %} from reader.html, preserve all reader-specific styles, test reader page thoroughly | _Leverage: Current reader.css content_ | Success: reader.css moved successfully, compiled into main.css, reader.html loads external CSS, reader page renders identically, keyboard navigation works | Instructions: Mark in-progress, test reader functionality thoroughly, log with file migration details, mark complete._
 
-- [ ] 4.2. Move reader.js to static/src/js/pages/
+- [x] 4.2. Move reader.js to static/src/js/pages/
   - Files: `templates/reader.js` → `static/src/js/pages/reader.js`
   - Copy reader.js to static folder, remove from templates
   - Update reader.html to use <script src="/static/js/pages/reader.js">
@@ -127,7 +127,7 @@
   - _Requirements: REQ-2_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: JavaScript Migration Developer | Task: Move templates/reader.js (495 lines) to static/src/js/pages/reader.js following requirement REQ-2, update templates/reader.html to load from /static/js/pages/reader.js instead of inline include, preserve all template variables ({{ title_id }}, {{ entry_id }}, {{ page }}) | Restrictions: Must preserve Askama template variable interpolation, test all reader functions (page navigation, keyboard shortcuts, progress saving), do not break functionality | _Leverage: Current reader.js logic_ | Success: reader.js moved to static/src/js/pages/, reader.html loads external script, all template variables work correctly, keyboard navigation functional, progress saving works | Instructions: Mark in-progress, test reader extensively, log with JavaScript module details, mark complete._
 
-- [ ] 4.3. Update reader.html template to load external assets
+- [x] 4.3. Update reader.html template to load external assets
   - Files: `templates/reader.html` (modify)
   - Replace {% include "reader.css" %} with proper {% block styles %}
   - Replace {% include "reader.js" %} with proper {% block scripts %}
@@ -138,7 +138,7 @@
 
 ### Phase 5: Create Template Components
 
-- [ ] 5.1. Create navigation component template
+- [x] 5.1. Create navigation component template
   - Files: `templates/components/nav.html`
   - Extract navigation HTML from base.html into reusable macro
   - Support parameters: active_page, is_admin, username
@@ -147,7 +147,7 @@
   - _Requirements: REQ-3_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Template Component Developer with Askama expertise | Task: Create reusable navigation component in templates/components/nav.html following requirement REQ-3, extract both desktop and mobile navigation from base.html (lines 322-371), create Askama macro accepting parameters (active_page, is_admin) | Restrictions: Must handle both desktop and mobile navigation in ONE component, use Askama macro syntax, maintain UIKit classes and attributes | _Leverage: base.html navigation structure_ | Success: nav.html component created with macro, accepts parameters correctly, single source for desktop AND mobile nav, eliminates duplication | Instructions: Mark in-progress, test navigation on all pages, log with component creation details, mark complete._
 
-- [ ] 5.2. Update base.html to use navigation component
+- [x] 5.2. Update base.html to use navigation component
   - Files: `templates/base.html` (modify lines 322-371)
   - Replace navigation HTML with {% from "components/nav.html" import nav %}
   - Call nav macro with appropriate parameters
@@ -156,7 +156,7 @@
   - _Requirements: REQ-3_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Template Integration Developer | Task: Update templates/base.html to use navigation component following requirement REQ-3, replace hardcoded navigation (lines 322-371) with {% from "components/nav.html" import nav %} and macro call, pass active_page and is_admin parameters | Restrictions: Must preserve all navigation functionality, hamburger menu must work, active page highlighting must work, test all pages | _Leverage: nav component from task 5.1_ | Success: base.html uses nav component successfully, navigation works on all pages, mobile hamburger functional, active highlighting correct, code duplication eliminated | Instructions: Mark in-progress, test navigation across pages, log with integration results, mark complete._
 
-- [ ] 5.3. Create modal base component template
+- [x] 5.3. Create modal base component template
   - Files: `templates/components/modal-base.html`
   - Create reusable modal structure with {% block %} for content
   - Support parameters: modal_id, title
@@ -167,7 +167,7 @@
 
 ### Phase 6: Organize JavaScript Modules
 
-- [ ] 6.1. Create core JavaScript module
+- [x] 6.1. Create core JavaScript module
   - Files: `static/src/js/core.js`
   - Extract theme management from theme.js
   - Add localStorage utilities
@@ -176,7 +176,7 @@
   - _Requirements: REQ-2, REQ-5, REQ-7_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: JavaScript Module Developer | Task: Create static/src/js/core.js consolidating theme management from static/js/theme.js following requirements REQ-2, REQ-5, and REQ-7, add localStorage helper functions, create initialization logic | Restrictions: Must prevent FOUC (Flash of Unstyled Content), apply theme before DOM renders, support system theme detection, provide clean API for theme management | _Leverage: theme.js current implementation_ | Success: core.js created with theme management and utilities, theme applies before render (no FOUC), system theme detection works, provides toggleTheme(), getTheme(), savePreference() functions | Instructions: Mark in-progress, test theme functionality, log with module structure and exports, mark complete._
 
-- [ ] 6.2. Refactor library.js to use vanilla JavaScript for search
+- [x] 6.2. Refactor library.js to use vanilla JavaScript for search
   - Files: `static/js/library.js` (modify)
   - Replace Alpine.js search with simple vanilla JavaScript
   - Keep Alpine.js for sort dropdown only
@@ -185,7 +185,7 @@
   - _Requirements: REQ-7_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: JavaScript Optimization Developer | Task: Refactor static/js/library.js following requirement REQ-7, replace Alpine.js search filtering with simple vanilla JavaScript (5-10 lines), keep Alpine only for reactive sort dropdown, import core.js utilities | Restrictions: Must maintain exact search functionality, case-insensitive matching, instant filtering, test search thoroughly | _Leverage: Original Mango's search.js pattern (simple jQuery), current Alpine implementation for reference_ | Success: Library search works with vanilla JS, code reduced from ~145 lines to ~100 lines, Alpine.js only used for sort dropdown, search performance maintained or improved | Instructions: Mark in-progress, test search extensively, log with code reduction metrics, mark complete._
 
-- [ ] 6.3. Refactor book.js to optimize Alpine.js usage
+- [x] 6.3. Refactor book.js to optimize Alpine.js usage
   - Files: `static/js/book.js` (modify)
   - Keep Alpine.js for entry modal (reactive state needed)
   - Simplify tag management code
@@ -194,7 +194,7 @@
   - _Requirements: REQ-7_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: JavaScript Refactoring Specialist | Task: Optimize static/js/book.js following requirement REQ-7, keep Alpine.js for entry modal (reactive state management appropriate here), simplify tag autocomplete logic, remove unnecessary reactivity | Restrictions: Must preserve all functionality (entry modal, progress management, tag autocomplete), reduce code complexity where possible, maintain user experience | _Leverage: Current book.js structure_ | Success: book.js optimized, Alpine.js used appropriately for reactive components, tag management simplified, all functionality works identically, code is cleaner | Instructions: Mark in-progress, test book page features, log with optimization details, mark complete._
 
-- [ ] 6.4. Update base.html to load core.js
+- [x] 6.4. Update base.html to load core.js
   - Files: `templates/base.html` (modify script loading)
   - Load core.js before page-specific scripts
   - Ensure theme applies before render
@@ -205,7 +205,7 @@
 
 ### Phase 7: Page-Specific CSS Migration
 
-- [ ] 7.1. Move library.css to LESS
+- [x] 7.1. Move library.css to LESS
   - Files: `static/css/library.css` → `static/src/css/pages/_library.less`
   - Convert library.css to LESS format
   - Remove dark theme styles (already in _dark-theme.less)
@@ -214,7 +214,7 @@
   - _Requirements: REQ-1, REQ-5_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: CSS Migration Developer | Task: Convert static/css/library.css to static/src/css/pages/_library.less following requirements REQ-1 and REQ-5, remove dark theme styles (should be in _dark-theme.less), use LESS variables and nesting, import in main.less | Restrictions: Remove ALL body.uk-light rules, use variables for colors, test library page in both themes, verify identical rendering | _Leverage: library.css current styles_ | Success: library.css converted to _library.less, dark styles removed, compiled into main.css, library page renders identically in both themes | Instructions: Mark in-progress, test library page thoroughly, log with migration details, mark complete._
 
-- [ ] 7.2. Move book.css to LESS
+- [x] 7.2. Move book.css to LESS
   - Files: `static/css/book.css` → `static/src/css/pages/_book.less`
   - Convert book.css to LESS format
   - Remove dark theme styles (already in _dark-theme.less)
@@ -223,7 +223,7 @@
   - _Requirements: REQ-1, REQ-5_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: CSS Migration Developer | Task: Convert static/css/book.css to static/src/css/pages/_book.less following requirements REQ-1 and REQ-5, remove dark theme styles (should be in _dark-theme.less), use LESS variables and nesting, import in main.less | Restrictions: Remove ALL body.uk-light rules, use variables for colors, test book page in both themes, verify identical rendering including modals and tags | _Leverage: book.css current styles_ | Success: book.css converted to _book.less, dark styles removed, compiled into main.css, book page renders identically, entry modal and tags work correctly | Instructions: Mark in-progress, test book page and modals, log with migration details, mark complete._
 
-- [ ] 7.3. Move home.css to LESS
+- [x] 7.3. Move home.css to LESS
   - Files: `static/css/home.css` → `static/src/css/pages/_home.less`
   - Convert home.css to LESS format
   - Remove dark theme styles (already in _dark-theme.less)
@@ -232,7 +232,7 @@
   - _Requirements: REQ-1, REQ-5_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: CSS Migration Developer | Task: Convert static/css/home.css to static/src/css/pages/_home.less following requirements REQ-1 and REQ-5, remove dark theme styles (should be in _dark-theme.less), use LESS variables and nesting, import in main.less | Restrictions: Remove ALL body.uk-light rules, use variables for colors, test home page in both themes, verify continue reading, start reading, recently added sections | _Leverage: home.css current styles_ | Success: home.css converted to _home.less, dark styles removed, compiled into main.css, home page renders identically, all sections (continue/start/recent) work correctly | Instructions: Mark in-progress, test home page sections, log with migration details, mark complete._
 
-- [ ] 7.4. Update templates to remove individual CSS file loads
+- [x] 7.4. Update templates to remove individual CSS file loads
   - Files: `templates/library.html`, `templates/book.html`, `templates/home.html` (modify {% block styles %})
   - Remove <link> tags for individual CSS files
   - All styles now loaded from main.css in base.html
@@ -243,7 +243,7 @@
 
 ### Phase 8: Testing and Finalization
 
-- [ ] 8.1. Comprehensive visual regression testing
+- [x] 8.1. Comprehensive visual regression testing
   - Test: Screenshot all pages in light and dark mode
   - Compare before/after refactoring screenshots
   - Verify pixel-perfect parity
@@ -252,7 +252,7 @@
   - _Requirements: All requirements_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: QA Visual Testing Specialist | Task: Perform comprehensive visual regression testing covering all requirements, use Playwright MCP to screenshot all pages (/library, /book/:id, /home, /reader/*, /admin, /tags, /change-password) in both light and dark themes, compare with pre-refactoring screenshots | Restrictions: Must test EVERY page, both themes, multiple screen sizes (desktop, tablet, mobile), identify any visual differences | _Leverage: Playwright MCP browser_take_screenshot tool_ | Success: All pages render identically to pre-refactoring, zero visual regressions, both themes work perfectly, mobile responsive layouts correct | Instructions: Mark in-progress, screenshot systematically, log with visual testing summary and any issues found, mark complete._
 
-- [ ] 8.2. Functional testing of all interactive features
+- [x] 8.2. Functional testing of all interactive features
   - Test: Navigation, theme toggle, search, modals, forms
   - Verify keyboard shortcuts, progress saving, tag management
   - Test on multiple browsers
@@ -261,7 +261,7 @@
   - _Requirements: All requirements_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: QA Functional Testing Engineer | Task: Perform comprehensive functional testing covering all requirements, test navigation (hamburger menu, links), theme toggle and persistence, library search and sort, reader keyboard shortcuts, book entry modals, tag autocomplete, admin functions | Restrictions: Test ALL interactive features, verify localStorage persistence, test across pages, check edge cases | _Leverage: Playwright MCP browser interaction tools_ | Success: All functionality works identically to pre-refactoring, no broken features, interactions smooth, data persists correctly | Instructions: Mark in-progress, test systematically, log with functional testing summary, mark complete._
 
-- [ ] 8.3. Performance testing and optimization
+- [x] 8.3. Performance testing and optimization
   - Test: Measure page load times, CSS bundle size, JavaScript size
   - Verify First Contentful Paint <1s, Time to Interactive <2s
   - Check minification and compression
@@ -270,7 +270,7 @@
   - _Requirements: REQ-9_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Performance Testing Specialist | Task: Measure performance metrics following requirement REQ-9, use browser DevTools and Lighthouse to measure First Contentful Paint, Time to Interactive, CSS bundle size (<50KB gzipped), JavaScript size (<100KB total), verify cache headers correct | Restrictions: Test on 3G connection simulation, measure multiple pages, identify any performance regressions | _Leverage: Chrome DevTools Performance panel, Lighthouse_ | Success: Performance meets targets (FCP <1s, TTI <2s on 3G), CSS <50KB gzipped, JS <100KB total, cache headers correct, performance improved or maintained | Instructions: Mark in-progress, measure systematically, log with performance metrics, mark complete._
 
-- [ ] 8.4. Update documentation (README.md)
+- [-] 8.4. Update documentation (README.md)
   - Files: `README.md` (update), create `FRONTEND.md`
   - Document build system setup and usage
   - Explain directory structure and file organization

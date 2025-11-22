@@ -5,72 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ entry_name }} - Page {{ current_page }}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/css/uikit.min.css" />
-    <style>
-{% include "reader.css" %}
-
-/* Dark mode UIKit modal styles for reader */
-body.uk-light .uk-modal-dialog {
-    background: #2a2a2a;
-    color: #e5e5e5;
-}
-
-body.uk-light .uk-modal-title {
-    color: #e5e5e5;
-}
-
-body.uk-light .uk-modal-body {
-    color: #e5e5e5;
-}
-
-body.uk-light .uk-modal-header {
-    background: #2a2a2a;
-    border-bottom-color: #3a3a3a;
-}
-
-body.uk-light .uk-modal-footer {
-    background: #2a2a2a;
-    border-top-color: #3a3a3a;
-}
-
-body.uk-light .uk-input,
-body.uk-light .uk-select {
-    background: #1a1a1a;
-    border-color: #3a3a3a;
-    color: #e5e5e5;
-}
-
-body.uk-light .uk-input:focus,
-body.uk-light .uk-select:focus {
-    background: #1a1a1a;
-    border-color: #1e87f0;
-    color: #e5e5e5;
-}
-
-body.uk-light .uk-select option {
-    background: #1a1a1a;
-    color: #e5e5e5;
-}
-
-body.uk-light .uk-form-label {
-    color: #aaa;
-}
-
-body.uk-light .uk-close {
-    color: #aaa;
-}
-
-body.uk-light .uk-close:hover {
-    color: #fff;
-}
-
-body.uk-light .uk-text-meta {
-    color: #999;
-}
-
-body.uk-light .uk-range {
-    background: #3a3a3a;
-}
-    </style>
+    <link rel="stylesheet" href="/static/dist/css/main.css" />
 </head>
 <body class="paged-mode fit-height">
     <div id="reader-container">
@@ -201,9 +136,7 @@ body.uk-light .uk-range {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
-    <script src="/static/js/theme.js"></script>
-    <script>
-{% include "reader.js" %}
-    </script>
+    <script src="/static/src/js/core.js"></script>
+    <script src="/static/src/js/pages/reader.js"></script>
 </body>
 </html>

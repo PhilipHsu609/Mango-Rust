@@ -1,16 +1,20 @@
+// ============================================================================
+// Home Page Styles
+// ============================================================================
+
 h2 {
     font-size: 1.75rem;
     font-weight: 300;
     margin-bottom: 30px;
-    color: #333;
+    color: @text-primary;
 }
 
-/* Home container */
+// Home container
 .home-container {
     padding-bottom: 60px;
 }
 
-/* Section Grid */
+// Section Grid
 .section {
     margin-bottom: 60px;
 }
@@ -28,8 +32,8 @@ h2 {
 }
 
 .card {
-    background: white;
-    border-radius: 5px;
+    background: @bg-white;
+    border-radius: @border-radius;
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0,0,0,.08);
     transition: all 0.3s ease;
@@ -37,6 +41,11 @@ h2 {
     text-decoration: none;
     color: inherit;
     display: block;
+
+    &:hover {
+        box-shadow: 0 4px 16px rgba(0,0,0,.12);
+        transform: translateY(-2px);
+    }
 }
 
 .entry-card {
@@ -44,56 +53,51 @@ h2 {
 }
 
 .book-link {
-    color: #1e87f0;
+    color: @primary-color;
     text-decoration: none;
     font-size: 0.85rem;
     margin-top: 3px;
     display: inline-block;
-}
 
-.book-link:hover {
-    text-decoration: underline;
+    &:hover {
+        text-decoration: underline;
+    }
 }
 
 .card-meta {
     margin-top: 3px;
 }
 
-.card:hover {
-    box-shadow: 0 4px 16px rgba(0,0,0,.12);
-    transform: translateY(-2px);
-}
-
 .card-thumbnail {
     width: 100%;
     height: 280px;
-    background: #f8f8f8;
+    background: @bg-card;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-}
 
-.card-thumbnail img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
+    img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
 
-.card-thumbnail .placeholder-icon {
-    font-size: 4rem;
-    color: #ddd;
+    .placeholder-icon {
+        font-size: 4rem;
+        color: @border-light;
+    }
 }
 
 .progress-badge {
     position: absolute;
     top: 10px;
     right: 10px;
-    background: #1e87f0;
+    background: @primary-color;
     color: white;
     padding: 4px 10px;
-    border-radius: 3px;
+    border-radius: @border-radius-small;
     font-size: 0.75rem;
     font-weight: 500;
 }
@@ -105,7 +109,7 @@ h2 {
     background: rgba(0, 0, 0, 0.7);
     color: white;
     padding: 4px 10px;
-    border-radius: 3px;
+    border-radius: @border-radius-small;
     font-size: 0.75rem;
     font-weight: 500;
 }
@@ -118,7 +122,7 @@ h2 {
     font-size: 1rem;
     font-weight: 400;
     margin-bottom: 3px;
-    color: #333;
+    color: @text-primary;
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;
@@ -127,20 +131,20 @@ h2 {
 }
 
 .card-subtitle {
-    color: #1e87f0;
+    color: @primary-color;
     font-size: 0.85rem;
     margin-bottom: 3px;
 }
 
 .card-stats {
-    color: #c5a06d;
+    color: @accent-gold;
     font-size: 0.85rem;
 }
 
 .empty-state {
     text-align: center;
     padding: 60px 20px;
-    color: #999;
+    color: @text-muted;
 }
 
 .empty-state-icon {
@@ -149,7 +153,7 @@ h2 {
     opacity: 0.3;
 }
 
-/* Mobile Responsive Styles */
+// Mobile Responsive Styles
 @media (max-width: 768px) {
     h2 {
         font-size: 1.5rem;
@@ -160,7 +164,7 @@ h2 {
         margin-bottom: 40px;
     }
 
-    /* 2 columns for most phones */
+    // 2 columns for most phones
     .cards-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;
@@ -191,42 +195,4 @@ h2 {
     .empty-state-icon {
         font-size: 3rem;
     }
-}
-
-/* Dark mode styles */
-body.uk-light h2 {
-    color: #e5e5e5;
-}
-
-body.uk-light .card {
-    background: #2a2a2a;
-    box-shadow: 0 2px 8px rgba(0,0,0,.3);
-}
-
-body.uk-light .card:hover {
-    box-shadow: 0 4px 16px rgba(0,0,0,.4);
-}
-
-body.uk-light .card-thumbnail {
-    background: #1a1a1a;
-}
-
-body.uk-light .card-title {
-    color: #e5e5e5;
-}
-
-body.uk-light .card-subtitle {
-    color: #1e87f0;
-}
-
-body.uk-light .card-stats {
-    color: #c5a06d;
-}
-
-body.uk-light .book-link {
-    color: #1e87f0;
-}
-
-body.uk-light .empty-state {
-    color: #999;
 }

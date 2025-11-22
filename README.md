@@ -38,6 +38,7 @@ Mango-Rust is a modern reimplementation of the excellent Mango manga server, ori
 
 - Rust 1.91.0 or later
 - SQLite 3
+- Node.js and npm (for frontend development with LESS compiler)
 
 ## Installation
 
@@ -114,6 +115,87 @@ cargo fmt
 # Run linter
 cargo clippy
 ```
+
+### Frontend Development
+
+Mango-Rust uses LESS for CSS preprocessing, providing variables, nesting, and modular organization.
+
+**Prerequisites:**
+- Node.js and npm (for LESS compiler)
+
+**Setup:**
+```bash
+# Install LESS compiler globally
+npm install -g less
+
+# Or use npx to run without global install
+npx less --version
+```
+
+**Development Workflow:**
+
+```bash
+# Watch mode - auto-recompile CSS on file changes
+./watch-css.sh
+
+# In another terminal, run the server
+cargo watch -x run
+```
+
+**Production Build:**
+```bash
+# Compile and minify CSS
+./build-css.sh
+
+# Build the server
+cargo build --release
+```
+
+**Frontend Directory Structure:**
+```
+static/
+  src/                # Source files (edit these)
+    css/
+      _variables.less   # Design tokens (colors, spacing, breakpoints)
+      base.less         # Global styles and layout
+      _dark-theme.less  # Dark mode styles
+      components/       # Reusable UI components
+        _nav.less
+      pages/            # Page-specific styles
+        _reader.less
+        _library.less
+        _book.less
+        _home.less
+      main.less         # Entry point - imports all LESS files
+    js/
+      core.js           # Shared utilities (theme, localStorage)
+      pages/            # Page-specific JavaScript
+        reader.js
+        library.js
+        book.js
+  dist/               # Compiled output (gitignored, auto-generated)
+    css/
+      main.css        # Compiled CSS bundle
+      main.css.map    # Source map for debugging
+```
+
+**Key Files:**
+- `static/src/css/main.less` - Main LESS entry point, imports all stylesheets
+- `build-css.sh` - Production CSS build with compression
+- `watch-css.sh` - Development mode with auto-compilation
+- `static/src/js/core.js` - Theme management and shared utilities
+
+**CSS Architecture:**
+- All styles compiled from LESS sources into single `main.css` bundle
+- Dark theme uses `body.uk-light` selector wrapper
+- Variables defined in `_variables.less` for consistent design tokens
+- Page-specific styles in `pages/` directory
+- Component styles in `components/` directory
+
+**Performance:**
+- CSS bundle: <50KB gzipped
+- Minified and compressed in production
+- Source maps for debugging
 
 ## Project Structure
 

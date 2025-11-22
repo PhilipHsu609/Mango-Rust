@@ -256,4 +256,102 @@ body.uk-light {
     h3 {
         color: @dark-text-primary;
     }
+
+    // ------------------------------------------------------------------------
+    // Page-Specific Dark Styles
+    // ------------------------------------------------------------------------
+
+    // Library, Book, Home Pages - Common elements
+    h2 {
+        color: @dark-text-primary;
+    }
+
+    .subtitle {
+        color: @text-muted;
+    }
+
+    // Search and form elements
+    .uk-search .uk-search-input {
+        background: @dark-bg-elevated;
+        border-color: @dark-border;
+        color: @dark-text-primary;
+
+        &::placeholder {
+            color: @dark-text-muted;
+        }
+    }
+
+    .uk-select {
+        background: @dark-bg-elevated;
+        border-color: @dark-border;
+        color: @dark-text-primary;
+    }
+
+    // Cards (title-card, entry-card, card)
+    .title-card,
+    .entry-card,
+    .card {
+        background: @dark-bg-elevated;
+        box-shadow: 0 2px 8px rgba(0,0,0,.3);
+
+        &:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,.4);
+        }
+    }
+
+    .title-thumbnail,
+    .entry-thumbnail,
+    .card-thumbnail {
+        background: @dark-bg-input;
+    }
+
+    .title-name,
+    .entry-name,
+    .card-title {
+        color: @dark-text-primary;
+    }
+
+    .title-stats,
+    .entry-stats,
+    .card-stats {
+        color: @accent-gold;
+    }
+
+    // Book page
+    .title-header h2 {
+        color: @dark-text-primary;
+    }
+
+    .breadcrumb {
+        color: @text-muted;
+
+        a {
+            color: @primary-color;
+        }
+    }
+
+    .modal-entry-path {
+        color: @text-muted;
+    }
+
+    .modal-entry-pages {
+        color: @dark-text-secondary;
+    }
+
+    .modal-section h4 {
+        color: @dark-text-primary;
+    }
+
+    // Home page
+    .card-subtitle {
+        color: @primary-color;
+    }
+
+    .book-link {
+        color: @primary-color;
+    }
+
+    .empty-state {
+        color: @text-muted;
+    }
 }
