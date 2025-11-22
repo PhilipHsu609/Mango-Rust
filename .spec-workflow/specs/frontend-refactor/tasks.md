@@ -89,7 +89,7 @@
   - _Requirements: REQ-5_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Theme Systems Developer | Task: Extract and consolidate ALL dark mode styles from templates/base.html (lines 110-317), static/css/library.css, static/css/book.css, static/css/home.css into single static/src/css/_dark-theme.less file following requirement REQ-5, use LESS variables for dark colors | Restrictions: MUST include every dark mode style (modals, forms, tables, alerts, etc.), use `body.uk-light` selector wrapper, organize by component | _Leverage: Current dark theme implementation across multiple files_ | Success: ALL dark mode styles consolidated into one file, no dark styles remain in other files, theme toggle works identically, all UI elements dark themed correctly | Instructions: Mark in-progress, grep for "uk-light" to find all dark styles, log with consolidation summary, mark complete._
 
-- [ ] 3.2. Remove dark theme styles from individual CSS files
+- [x] 3.2. Remove dark theme styles from individual CSS files
   - Files: `static/css/library.css`, `static/css/book.css`, `static/css/home.css` (delete dark sections)
   - Delete body.uk-light rules from page-specific CSS files
   - Verify dark theme still works via consolidated file
@@ -98,7 +98,7 @@
   - _Requirements: REQ-5_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: CSS Refactoring Specialist | Task: Remove all `body.uk-light` dark mode styles from static/css/library.css, book.css, home.css following requirement REQ-5, verify dark theme continues working from consolidated _dark-theme.less | Restrictions: Must remove ALL dark theme styles, test each page in dark mode before/after, do not break light mode | _Leverage: Consolidated dark-theme.less as reference_ | Success: All body.uk-light rules removed from page CSS files, dark mode works identically, theme toggles correctly on all pages, no style regressions | Instructions: Mark in-progress, test dark mode thoroughly on each page, log with files modified, mark complete._
 
-- [ ] 3.3. Test dark mode across all pages
+- [x] 3.3. Test dark mode across all pages
   - Test: Navigate library, book, home, reader, admin pages
   - Toggle theme on each page, verify persistence
   - Check modals, forms, tables in dark mode
@@ -270,7 +270,7 @@
   - _Requirements: REQ-9_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Performance Testing Specialist | Task: Measure performance metrics following requirement REQ-9, use browser DevTools and Lighthouse to measure First Contentful Paint, Time to Interactive, CSS bundle size (<50KB gzipped), JavaScript size (<100KB total), verify cache headers correct | Restrictions: Test on 3G connection simulation, measure multiple pages, identify any performance regressions | _Leverage: Chrome DevTools Performance panel, Lighthouse_ | Success: Performance meets targets (FCP <1s, TTI <2s on 3G), CSS <50KB gzipped, JS <100KB total, cache headers correct, performance improved or maintained | Instructions: Mark in-progress, measure systematically, log with performance metrics, mark complete._
 
-- [-] 8.4. Update documentation (README.md)
+- [x] 8.4. Update documentation (README.md)
   - Files: `README.md` (update), create `FRONTEND.md`
   - Document build system setup and usage
   - Explain directory structure and file organization
@@ -279,7 +279,7 @@
   - _Requirements: REQ-10_
   - _Prompt: Implement the task for spec frontend-refactor, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Technical Documentation Writer | Task: Update README.md and create FRONTEND.md documentation following requirement REQ-10, document build system setup (npm install -g less), development workflow (watch-css.sh), production build (build-css.sh), directory structure explanation, file organization standards | Restrictions: Keep documentation concise and practical, include prerequisites, setup steps, development workflow, troubleshooting common issues | _Leverage: Current README.md format_ | Success: Documentation complete and clear, setup instructions work for new developers, directory structure explained, development workflow documented | Instructions: Mark in-progress, write comprehensive docs, log with documentation details, mark complete._
 
-- [ ] 8.5. Final cleanup and code review
+- [x] 8.5. Final cleanup and code review
   - Task: Remove old CSS files, delete unused static files
   - Review all code for consistency and quality
   - Ensure .gitignore is correct
