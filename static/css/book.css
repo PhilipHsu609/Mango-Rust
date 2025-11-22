@@ -96,6 +96,12 @@
     margin-top: 30px;
 }
 
+@media (max-width: 768px) {
+    .entries-grid {
+        gap: 15px;
+    }
+}
+
 .entry-card {
     background: white;
     border-radius: 5px;
@@ -202,3 +208,61 @@
     flex: 1;
     min-width: 150px;
 }
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    h2 {
+        font-size: 1.5rem;
+    }
+
+    .breadcrumb {
+        font-size: 0.85rem;
+    }
+
+    /* Stack controls vertically on mobile */
+    .controls {
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .uk-select {
+        width: 100%;
+        min-width: auto;
+    }
+
+    /* 2 columns for tablets and large phones */
+    .entries-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .entry-thumbnail {
+        height: 200px;
+    }
+
+    .entry-info {
+        padding: 12px;
+    }
+
+    .entry-name {
+        font-size: 0.9rem;
+    }
+
+    .entry-stats {
+        font-size: 0.8rem;
+    }
+
+    /* Modal adjustments */
+    .button-group .uk-button {
+        min-width: 120px;
+        font-size: 0.9rem;
+    }
+
+    .modal-entry-path,
+    .modal-entry-pages {
+        font-size: 0.85rem;
+    }
+}
+

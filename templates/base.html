@@ -11,6 +11,7 @@
             background: #fafafa;
             margin: 0;
             padding: 0;
+            overflow-x: hidden;
         }
 
         body {
@@ -19,6 +20,7 @@
             margin: 0;
             padding: 0;
             min-height: 100%;
+            overflow-x: hidden;
         }
 
         /* Navigation Bar */
@@ -54,13 +56,68 @@
             margin: 40px auto;
             padding: 0 20px;
         }
+
+        /* Mobile Responsive Styles */
+        @media (max-width: 960px) {
+            /* Tighter spacing */
+            .main-content {
+                margin: 20px auto;
+                padding: 0 15px;
+            }
+
+            .logo {
+                width: 32px;
+                height: 32px;
+            }
+        }
+
+        /* Mobile Navigation Offcanvas */
+        #mobile-nav {
+            padding: 20px;
+        }
+
+        #mobile-nav .uk-nav {
+            margin-top: 20px;
+        }
+
+        #mobile-nav .uk-nav > li > a {
+            padding: 12px 0;
+            font-size: 1rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #mobile-nav .uk-nav > li.uk-active > a {
+            color: #1e87f0;
+            font-weight: 500;
+        }
+
+        #mobile-nav .uk-nav > li > a:hover {
+            color: #333;
+        }
+
+        /* Mobile offcanvas styling */
+        .uk-offcanvas-bar {
+            background: white;
+        }
+
+        .uk-offcanvas-bar h3 {
+            color: #333;
+        }
     </style>
     {% block styles %}{% endblock %}
 </head>
 <body>
     <!-- Navigation -->
     <div class="uk-navbar-container" uk-navbar>
-        <div class="uk-navbar-left uk-margin-left">
+        <!-- Mobile hamburger (hidden on medium+ screens) -->
+        <div class="uk-navbar-left uk-hidden@m">
+            <div class="uk-navbar-toggle" uk-navbar-toggle-icon uk-toggle="target: #mobile-nav"></div>
+        </div>
+
+        <!-- Desktop navigation (visible on medium+ screens) -->
+        <div class="uk-navbar-left uk-visible@m uk-margin-left">
             <a class="uk-navbar-item uk-logo" href="/">
                 <svg class="logo" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
                     <circle cx="20" cy="20" r="18" fill="#FF9500"/>
@@ -75,7 +132,7 @@
                 <li><a class="nav-item" href="#">DOWNLOAD</a></li>
             </ul>
         </div>
-        <div class="uk-navbar-right uk-margin-right">
+        <div class="uk-navbar-right uk-visible@m uk-margin-right">
             <ul class="uk-navbar-nav">
                 <li>
                     <a class="nav-item" href="#">
@@ -84,6 +141,24 @@
                 </li>
                 <li><a class="nav-item" href="/change-password">CHANGE PASSWORD</a></li>
                 <li><a class="nav-item" href="/logout">LOGOUT</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Mobile Navigation Offcanvas -->
+    <div id="mobile-nav" uk-offcanvas="overlay: true">
+        <div class="uk-offcanvas-bar">
+            <button class="uk-offcanvas-close" type="button" uk-close></button>
+            <h3>Menu</h3>
+            <ul class="uk-nav uk-nav-default">
+                <li{% if home_active %} class="uk-active"{% endif %}><a href="/">Home</a></li>
+                <li{% if library_active %} class="uk-active"{% endif %}><a href="/library">Library</a></li>
+                <li><a href="/tags">Tags</a></li>
+                {% if is_admin %}<li{% if admin_active %} class="uk-active"{% endif %}><a href="/admin">Admin</a></li>{% endif %}
+                <li><a href="#">Download</a></li>
+                <li class="uk-nav-divider"></li>
+                <li><a href="/change-password">Change Password</a></li>
+                <li><a href="/logout">Logout</a></li>
             </ul>
         </div>
     </div>

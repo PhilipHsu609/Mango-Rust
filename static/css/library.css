@@ -76,6 +76,12 @@ h2 {
     margin-top: 30px;
 }
 
+@media (max-width: 768px) {
+    .titles-grid {
+        gap: 15px;
+    }
+}
+
 .title-card {
     background: white;
     border-radius: 5px;
@@ -147,3 +153,46 @@ h2 {
     color: #c5a06d;
     font-size: 0.85rem;
 }
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    h2 {
+        font-size: 1.5rem;
+    }
+
+    /* Stack controls vertically on mobile */
+    .controls {
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .uk-select {
+        width: 100%;
+        min-width: auto;
+    }
+
+    /* Smaller cards on mobile - 2 columns */
+    .titles-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .title-thumbnail {
+        height: 200px;
+    }
+
+    .title-info {
+        padding: 12px;
+    }
+
+    .title-name {
+        font-size: 0.9rem;
+    }
+
+    .title-stats {
+        font-size: 0.8rem;
+    }
+}
+
