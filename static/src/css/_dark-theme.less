@@ -356,4 +356,22 @@ body.uk-dark {
     .empty-state {
         color: @dark-text-muted;
     }
+
+    // ------------------------------------------------------------------------
+    // Reader Page
+    // ------------------------------------------------------------------------
+
+    // Settings button - dark theme uses elevated background with border
+    #settings-btn {
+        background: @dark-bg-elevated;
+        color: @dark-text-primary;
+        border: 2px solid @dark-border-light;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+
+        &:hover {
+            background: @dark-bg-hover;
+            border-color: @primary-color;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+        }
+    }
 }

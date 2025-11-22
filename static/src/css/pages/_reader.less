@@ -150,6 +150,7 @@ body.fit-real #paged-image {
 }
 
 // Settings button
+// Theme-specific colors defined in _light-theme.less and _dark-theme.less
 #settings-btn {
     position: fixed;
     bottom: 20px;
@@ -157,14 +158,11 @@ body.fit-real #paged-image {
     width: 60px;
     height: 60px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border: none;
-    color: white;
     font-size: 24px;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     z-index: 1000;
-    transition: transform 0.2s;
+    transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
 
     &:hover {
         transform: scale(1.1);

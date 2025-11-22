@@ -364,4 +364,19 @@ body.uk-light {
     .empty-state {
         color: @light-text-muted;
     }
+
+    // ------------------------------------------------------------------------
+    // Reader Page
+    // ------------------------------------------------------------------------
+
+    // Settings button - light theme uses subtle gradient
+    #settings-btn {
+        background: linear-gradient(135deg, @primary-color 0%, darken(@primary-color, 10%) 100%);
+        color: white;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+
+        &:hover {
+            box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+        }
+    }
 }
