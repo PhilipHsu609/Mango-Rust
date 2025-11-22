@@ -1,56 +1,56 @@
 // ============================================================================
-// Dark Theme - ALL dark mode styles
-// Single source of truth for dark mode across entire application
+// Light Theme - ALL light mode styles
+// Single source of truth for light mode across entire application
 // ============================================================================
 
 @import '_variables';
 
-// Wrap everything in body.uk-dark selector
-body.uk-dark {
-    color: @dark-text-primary;
-    background: @dark-bg;
+// Wrap everything in body.uk-light selector
+body.uk-light {
+    color: @light-text-primary;
+    background: @light-bg;
 
     // ------------------------------------------------------------------------
     // Navigation
     // ------------------------------------------------------------------------
 
     .uk-navbar-container {
-        background: @dark-bg-elevated !important;
-        border-bottom: 1px solid @dark-border;
+        background: @light-bg-white !important;
+        box-shadow: @light-shadow;
     }
 
     .nav-item {
-        color: @dark-text-secondary !important;
+        color: @light-text-tertiary !important;
 
         &:hover {
-            color: #fff !important;
+            color: @light-text-secondary !important;
         }
     }
 
     .uk-active .nav-item {
-        color: #fff !important;
+        color: @light-text-primary !important;
     }
 
     // Main content area
     .main-content {
-        background: @dark-bg;
+        background: @light-bg;
     }
 
     // Mobile offcanvas
     .uk-offcanvas-bar {
-        background: @dark-bg-elevated;
+        background: @light-bg-white;
 
         h3 {
-            color: @dark-text-primary;
+            color: @light-text-primary;
         }
     }
 
     #mobile-nav .uk-nav {
         > li > a {
-            color: @dark-text-secondary;
+            color: @light-text-secondary;
 
             &:hover {
-                color: #fff;
+                color: @light-text-primary;
             }
         }
 
@@ -64,26 +64,24 @@ body.uk-dark {
     // ------------------------------------------------------------------------
 
     .uk-modal-dialog {
-        background: @dark-bg-elevated;
-        color: @dark-text-primary;
+        background: @light-bg-white;
+        color: @light-text-primary;
     }
 
     .uk-modal-title {
-        color: @dark-text-primary;
+        color: @light-text-primary;
     }
 
     .uk-modal-body {
-        color: @dark-text-primary;
+        color: @light-text-primary;
     }
 
     .uk-modal-header {
-        background: @dark-bg-elevated;
-        border-bottom-color: @dark-border;
+        border-bottom-color: @light-border;
     }
 
     .uk-modal-footer {
-        background: @dark-bg-elevated;
-        border-top-color: @dark-border;
+        border-top-color: @light-border;
     }
 
     // ------------------------------------------------------------------------
@@ -91,13 +89,13 @@ body.uk-dark {
     // ------------------------------------------------------------------------
 
     .uk-button-default {
-        background: @dark-border;
-        color: @dark-text-primary;
-        border-color: @dark-border-light;
+        background: @light-bg-card;
+        color: @light-text-primary;
+        border-color: @light-border;
 
         &:hover {
-            background: @dark-border-light;
-            color: #fff;
+            background: @light-border;
+            color: @light-text-primary;
         }
     }
 
@@ -117,33 +115,33 @@ body.uk-dark {
     .uk-input,
     .uk-textarea,
     .uk-select {
-        background: @dark-bg-input;
-        border-color: @dark-border;
-        color: @dark-text-primary;
+        background: @light-bg-white;
+        border-color: @light-border;
+        color: @light-text-primary;
 
         &:focus {
-            background: @dark-bg-input;
+            background: @light-bg-white;
             border-color: @primary-color;
-            color: @dark-text-primary;
+            color: @light-text-primary;
         }
 
         &::placeholder {
-            color: @dark-text-muted;
+            color: @light-text-muted;
         }
     }
 
     .uk-select option {
-        background: @dark-bg-input;
-        color: @dark-text-primary;
+        background: @light-bg-white;
+        color: @light-text-primary;
     }
 
     .uk-form-label {
-        color: @dark-text-secondary;
+        color: @light-text-secondary;
     }
 
     .uk-checkbox {
-        background: @dark-bg-input;
-        border-color: @dark-border;
+        background: @light-bg-white;
+        border-color: @light-border;
 
         &:checked {
             background-color: @primary-color;
@@ -156,12 +154,12 @@ body.uk-dark {
     // ------------------------------------------------------------------------
 
     .uk-card {
-        background: @dark-bg-elevated;
-        color: @dark-text-primary;
+        background: @light-bg-white;
+        color: @light-text-primary;
     }
 
     .uk-card-title {
-        color: @dark-text-primary;
+        color: @light-text-primary;
     }
 
     // ------------------------------------------------------------------------
@@ -169,21 +167,21 @@ body.uk-dark {
     // ------------------------------------------------------------------------
 
     .uk-table {
-        color: @dark-text-primary;
+        color: @light-text-primary;
 
         th {
-            color: @dark-text-secondary;
+            color: @light-text-secondary;
         }
     }
 
     .uk-table-hover tbody tr:hover {
-        background: @dark-bg-hover;
+        background: @light-bg-card;
     }
 
     .uk-table-divider > tr:not(:first-child),
     .uk-table-divider > :not(:first-child) > tr,
     .uk-table-divider > :first-child > tr:not(:first-child) {
-        border-top-color: @dark-border;
+        border-top-color: @light-border;
     }
 
     // ------------------------------------------------------------------------
@@ -191,11 +189,11 @@ body.uk-dark {
     // ------------------------------------------------------------------------
 
     .uk-list > li {
-        color: @dark-text-primary;
+        color: @light-text-primary;
     }
 
     .uk-list-divider > li:nth-child(n+2) {
-        border-top-color: @dark-border;
+        border-top-color: @light-border;
     }
 
     // ------------------------------------------------------------------------
@@ -203,11 +201,23 @@ body.uk-dark {
     // ------------------------------------------------------------------------
 
     .uk-link-reset {
-        color: @dark-text-primary;
+        color: @light-text-primary;
 
         &:hover {
-            color: #fff;
+            color: @light-text-secondary;
         }
+    }
+
+    // ------------------------------------------------------------------------
+    // Text Utilities
+    // ------------------------------------------------------------------------
+
+    .uk-text-meta {
+        color: @light-text-muted !important;
+    }
+
+    .uk-text-muted {
+        color: @light-text-muted !important;
     }
 
     // ------------------------------------------------------------------------
@@ -215,8 +225,8 @@ body.uk-dark {
     // ------------------------------------------------------------------------
 
     .uk-badge {
-        background: @dark-border;
-        color: @dark-text-primary;
+        background: @light-bg-card;
+        color: @light-text-primary;
     }
 
     // ------------------------------------------------------------------------
@@ -224,18 +234,18 @@ body.uk-dark {
     // ------------------------------------------------------------------------
 
     .uk-alert {
-        background: @dark-bg-hover;
-        color: @dark-text-primary;
+        background: @light-bg-white;
+        color: @light-text-primary;
     }
 
     .uk-alert-warning {
-        background: #5a4a1a;
-        color: @dark-text-primary;
+        background: #fff8e1;
+        color: @light-text-primary;
     }
 
     .uk-alert-success {
-        background: #1a4a2a;
-        color: @dark-text-primary;
+        background: #e8f5e9;
+        color: @light-text-primary;
     }
 
     // ------------------------------------------------------------------------
@@ -243,74 +253,72 @@ body.uk-dark {
     // ------------------------------------------------------------------------
 
     .uk-close {
-        color: @dark-text-secondary;
+        color: @light-text-secondary;
 
         &:hover {
-            color: #fff;
+            color: @light-text-primary;
         }
     }
 
-    code {
-        background: @dark-bg-input;
-        color: @dark-text-primary;
+    .uk-divider-icon {
+        border-top-color: @light-border;
     }
 
-    h3 {
-        color: @dark-text-primary;
+    hr {
+        border-top-color: @light-border;
+    }
+
+    code {
+        background: @light-bg-card;
+        color: @light-text-primary;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+        color: @light-text-primary;
     }
 
     // ------------------------------------------------------------------------
-    // Page-Specific Dark Styles
+    // Page-Specific Light Styles
     // ------------------------------------------------------------------------
 
     // Library, Book, Home Pages - Common elements
-    h2 {
-        color: @dark-text-primary;
-    }
-
     .subtitle {
-        color: @dark-text-muted;
+        color: @light-text-muted;
     }
 
     // Search and form elements
     .uk-search .uk-search-input {
-        background: @dark-bg-elevated;
-        border-color: @dark-border;
-        color: @dark-text-primary;
+        background: @light-bg-white;
+        border-color: @light-border;
+        color: @light-text-primary;
 
         &::placeholder {
-            color: @dark-text-muted;
+            color: @light-text-muted;
         }
-    }
-
-    .uk-select {
-        background: @dark-bg-elevated;
-        border-color: @dark-border;
-        color: @dark-text-primary;
     }
 
     // Cards (title-card, entry-card, card)
     .title-card,
     .entry-card,
     .card {
-        background: @dark-bg-elevated;
-        box-shadow: 0 2px 8px rgba(0,0,0,.3);
+        background: @light-bg-white;
+        box-shadow: 0 2px 8px rgba(0,0,0,.08);
 
         &:hover {
-            box-shadow: 0 4px 16px rgba(0,0,0,.4);
+            box-shadow: 0 4px 16px rgba(0,0,0,.12);
         }
     }
 
     .title-thumbnail,
     .entry-thumbnail,
     .card-thumbnail {
-        background: @dark-bg-input;
+        background: @light-bg-card;
     }
 
     .title-name,
     .entry-name,
     .card-title {
-        color: @dark-text-primary;
+        color: @light-text-primary;
     }
 
     .title-stats,
@@ -321,11 +329,11 @@ body.uk-dark {
 
     // Book page
     .title-header h2 {
-        color: @dark-text-primary;
+        color: @light-text-primary;
     }
 
     .breadcrumb {
-        color: @dark-text-muted;
+        color: @light-text-muted;
 
         a {
             color: @primary-color;
@@ -333,15 +341,15 @@ body.uk-dark {
     }
 
     .modal-entry-path {
-        color: @dark-text-muted;
+        color: @light-text-muted;
     }
 
     .modal-entry-pages {
-        color: @dark-text-secondary;
+        color: @light-text-secondary;
     }
 
     .modal-section h4 {
-        color: @dark-text-primary;
+        color: @light-text-primary;
     }
 
     // Home page
@@ -354,6 +362,6 @@ body.uk-dark {
     }
 
     .empty-state {
-        color: @dark-text-muted;
+        color: @light-text-muted;
     }
 }

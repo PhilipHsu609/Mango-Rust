@@ -9,14 +9,17 @@
 // 2. Base - Global layout and typography
 @import 'base';
 
-// 3. Components - Reusable UI components
+// 3. Light Theme - Light mode styling (body.uk-light scope)
+@import '_light-theme';
+
+// 4. Components - Reusable UI components
 @import 'components/_nav';
 
-// 4. Pages - Page-specific styles
+// 5. Pages - Page-specific styles
 @import 'pages/_library';
 @import 'pages/_book';
 @import 'pages/_home';
 @import 'pages/_reader';
 
-// 5. Dark Theme - Must be last (overrides everything)
+// 6. Dark Theme - Must be last (overrides everything)
 @import '_dark-theme';

@@ -19,10 +19,14 @@ function detectSystemTheme() {
 }
 
 function applyTheme(theme) {
+    // Remove both theme classes first (mutual exclusion)
+    document.body.classList.remove('uk-dark', 'uk-light');
+
+    // Apply the correct theme class
     if (theme === 'dark') {
-        document.body.classList.add('uk-light');
+        document.body.classList.add('uk-dark');
     } else {
-        document.body.classList.remove('uk-light');
+        document.body.classList.add('uk-light');
     }
     localStorage.setItem('theme', theme);
 }
@@ -36,11 +40,14 @@ function toggleTheme() {
 // Apply theme before DOM renders (prevent FOUC)
 (function() {
     const theme = getTheme();
-    if (theme === 'dark') {
-        document.documentElement.classList.add('uk-light');
-        if (document.body) {
-            document.body.classList.add('uk-light');
-        }
+    const themeClass = theme === 'dark' ? 'uk-dark' : 'uk-light';
+
+    // Apply to html element first (before body exists)
+    document.documentElement.classList.add(themeClass);
+
+    // Apply to body if it exists
+    if (document.body) {
+        document.body.classList.add(themeClass);
     }
 })();
 

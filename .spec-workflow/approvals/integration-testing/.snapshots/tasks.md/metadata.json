@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/integration-testing/tasks.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-22T07:24:14.657Z",
+      "trigger": "initial",
+      "approvalId": "approval_1763796254643_hwpj1w6ad",
+      "approvalTitle": "Integration Testing Framework - Tasks"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-22T07:24:42.440Z",
+      "trigger": "approved",
+      "approvalId": "approval_1763796254643_hwpj1w6ad",
+      "approvalTitle": "Integration Testing Framework - Tasks"
+    }
+  ]
+}

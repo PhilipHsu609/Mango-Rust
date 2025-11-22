@@ -1,0 +1,27 @@
+{
+  "id": "approval_1763797414333_w2apnaxmp",
+  "title": "Design: Theme Naming Refactor",
+  "filePath": ".spec-workflow/specs/theme-naming-refactor/design.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-22T07:43:34.333Z",
+  "category": "spec",
+  "categoryName": "theme-naming-refactor",
+  "response": "Feedback Summary (2 comments):\n\nGeneral Comments:\n1. Ensure the naming in the _variables.less is consistent.\n2. If possible, I want a centralized place to manage style\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"Ensure the naming in the _variables.less is consistent.\",\n      \"timestamp\": \"2025-11-22T07:45:15.404Z\",\n      \"id\": \"comment_1763797515404_tb31nnoyc\"\n    },\n    {\n      \"type\": \"general\",\n      \"comment\": \"If possible, I want a centralized place to manage style\",\n      \"timestamp\": \"2025-11-22T07:45:40.637Z\",\n      \"id\": \"comment_1763797540637_guvjlpj8o\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nGeneral Comments:\\n1. Ensure the naming in the _variables.less is consistent.\\n2. If possible, I want a centralized place to manage style\\n\\n\",\n  \"timestamp\": \"2025-11-22T07:45:44.298Z\"\n}",
+  "respondedAt": "2025-11-22T07:45:44.714Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "Ensure the naming in the _variables.less is consistent.",
+      "timestamp": "2025-11-22T07:45:15.404Z",
+      "id": "comment_1763797515404_tb31nnoyc"
+    },
+    {
+      "type": "general",
+      "comment": "If possible, I want a centralized place to manage style",
+      "timestamp": "2025-11-22T07:45:40.637Z",
+      "id": "comment_1763797540637_guvjlpj8o"
+    }
+  ]
+}

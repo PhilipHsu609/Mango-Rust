@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/integration-testing/requirements.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-22T07:15:15.378Z",
+      "trigger": "initial",
+      "approvalId": "approval_1763795715368_aktav8rt3",
+      "approvalTitle": "Integration Testing Framework - Requirements"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-22T07:16:36.339Z",
+      "trigger": "approved",
+      "approvalId": "approval_1763795715368_aktav8rt3",
+      "approvalTitle": "Integration Testing Framework - Requirements"
+    }
+  ]
+}

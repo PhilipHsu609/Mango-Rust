@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/theme-naming-refactor/tasks.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-22T07:53:04.845Z",
+      "trigger": "initial",
+      "approvalId": "approval_1763797984839_y8k0ua0oj",
+      "approvalTitle": "Tasks: Theme Naming Refactor"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-22T07:54:27.736Z",
+      "trigger": "approved",
+      "approvalId": "approval_1763797984839_y8k0ua0oj",
+      "approvalTitle": "Tasks: Theme Naming Refactor"
+    }
+  ]
+}
