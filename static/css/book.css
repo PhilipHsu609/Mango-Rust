@@ -266,3 +266,68 @@
     }
 }
 
+/* Dark mode styles */
+body.uk-light .title-header h2 {
+    color: #e5e5e5;
+}
+
+body.uk-light .breadcrumb {
+    color: #999;
+}
+
+body.uk-light .breadcrumb a {
+    color: #1e87f0;
+}
+
+body.uk-light .subtitle {
+    color: #999;
+}
+
+body.uk-light .uk-search .uk-search-input {
+    background: #2a2a2a;
+    border-color: #3a3a3a;
+    color: #e5e5e5;
+}
+
+body.uk-light .uk-search .uk-search-input::placeholder {
+    color: #666;
+}
+
+body.uk-light .uk-select {
+    background: #2a2a2a;
+    border-color: #3a3a3a;
+    color: #e5e5e5;
+}
+
+body.uk-light .entry-card {
+    background: #2a2a2a;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+
+body.uk-light .entry-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+
+body.uk-light .entry-thumbnail {
+    background: #1a1a1a;
+}
+
+body.uk-light .entry-name {
+    color: #e5e5e5;
+}
+
+body.uk-light .entry-stats {
+    color: #c5a06d;
+}
+
+body.uk-light .modal-entry-path {
+    color: #999;
+}
+
+body.uk-light .modal-entry-pages {
+    color: #aaa;
+}
+
+body.uk-light .modal-section h4 {
+    color: #e5e5e5;
+}

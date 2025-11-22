@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mango - {% block title %}{% endblock %}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/css/uikit.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
     <style>
         html {
             height: 100%;
@@ -105,6 +106,215 @@
         .uk-offcanvas-bar h3 {
             color: #333;
         }
+
+        /* Dark mode styles */
+        body.uk-light {
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-navbar-container {
+            background: #2a2a2a !important;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        body.uk-light .nav-item {
+            color: #aaa !important;
+        }
+
+        body.uk-light .nav-item:hover {
+            color: #fff !important;
+        }
+
+        body.uk-light .uk-active .nav-item {
+            color: #fff !important;
+        }
+
+        body.uk-light .main-content {
+            background: rgb(20, 20, 20);
+        }
+
+        body.uk-light .uk-offcanvas-bar {
+            background: #2a2a2a;
+        }
+
+        body.uk-light .uk-offcanvas-bar h3 {
+            color: #e5e5e5;
+        }
+
+        body.uk-light #mobile-nav .uk-nav > li > a {
+            color: #aaa;
+        }
+
+        body.uk-light #mobile-nav .uk-nav > li.uk-active > a {
+            color: #1e87f0;
+        }
+
+        body.uk-light #mobile-nav .uk-nav > li > a:hover {
+            color: #fff;
+        }
+
+        /* Dark mode - UIKit Modal styles */
+        body.uk-light .uk-modal-dialog {
+            background: #2a2a2a;
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-modal-title {
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-modal-body {
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-modal-header {
+            border-bottom-color: #3a3a3a;
+        }
+
+        body.uk-light .uk-modal-footer {
+            border-top-color: #3a3a3a;
+        }
+
+        body.uk-light .uk-button-default {
+            background: #3a3a3a;
+            color: #e5e5e5;
+            border-color: #4a4a4a;
+        }
+
+        body.uk-light .uk-button-default:hover {
+            background: #4a4a4a;
+            color: #fff;
+        }
+
+        body.uk-light .uk-button-primary {
+            background: #1e87f0;
+            color: #fff;
+        }
+
+        body.uk-light .uk-button-primary:hover {
+            background: #0f7ae5;
+        }
+
+        body.uk-light .uk-input,
+        body.uk-light .uk-textarea,
+        body.uk-light .uk-select {
+            background: #1a1a1a;
+            border-color: #3a3a3a;
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-input:focus,
+        body.uk-light .uk-textarea:focus,
+        body.uk-light .uk-select:focus {
+            background: #1a1a1a;
+            border-color: #1e87f0;
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-input::placeholder,
+        body.uk-light .uk-textarea::placeholder {
+            color: #666;
+        }
+
+        body.uk-light .uk-select option {
+            background: #1a1a1a;
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-form-label {
+            color: #aaa;
+        }
+
+        body.uk-light .uk-close {
+            color: #aaa;
+        }
+
+        body.uk-light .uk-close:hover {
+            color: #fff;
+        }
+
+        /* Dark mode - Admin/User Management pages */
+        body.uk-light .uk-card {
+            background: #2a2a2a;
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-card-title {
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-table {
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-table th {
+            color: #aaa;
+        }
+
+        body.uk-light .uk-table-hover tbody tr:hover {
+            background: #333;
+        }
+
+        body.uk-light .uk-table-divider > tr:not(:first-child),
+        body.uk-light .uk-table-divider > :not(:first-child) > tr,
+        body.uk-light .uk-table-divider > :first-child > tr:not(:first-child) {
+            border-top-color: #3a3a3a;
+        }
+
+        body.uk-light .uk-badge {
+            background: #3a3a3a;
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-list > li {
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-list-divider > li:nth-child(n+2) {
+            border-top-color: #3a3a3a;
+        }
+
+        body.uk-light .uk-link-reset {
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-link-reset:hover {
+            color: #fff;
+        }
+
+        body.uk-light .uk-checkbox {
+            background: #1a1a1a;
+            border-color: #3a3a3a;
+        }
+
+        body.uk-light .uk-checkbox:checked {
+            background-color: #1e87f0;
+            border-color: #1e87f0;
+        }
+
+        body.uk-light .uk-alert {
+            background: #333;
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-alert-warning {
+            background: #5a4a1a;
+            color: #e5e5e5;
+        }
+
+        body.uk-light .uk-alert-success {
+            background: #1a4a2a;
+            color: #e5e5e5;
+        }
+
+        body.uk-light code {
+            background: #1a1a1a;
+            color: #e5e5e5;
+        }
+
+        body.uk-light h3 {
+            color: #e5e5e5;
+        }
     </style>
     {% block styles %}{% endblock %}
 </head>
@@ -134,11 +344,7 @@
         </div>
         <div class="uk-navbar-right uk-visible@m uk-margin-right">
             <ul class="uk-navbar-nav">
-                <li>
-                    <a class="nav-item" href="#">
-                        <span uk-icon="icon: moon; ratio: 0.9"></span>
-                    </a>
-                </li>
+                <li><a class="nav-item" onclick="toggleTheme()"><i class="fas fa-adjust"></i></a></li>
                 <li><a class="nav-item" href="/change-password">CHANGE PASSWORD</a></li>
                 <li><a class="nav-item" href="/logout">LOGOUT</a></li>
             </ul>
@@ -157,6 +363,7 @@
                 {% if is_admin %}<li{% if admin_active %} class="uk-active"{% endif %}><a href="/admin">Admin</a></li>{% endif %}
                 <li><a href="#">Download</a></li>
                 <li class="uk-nav-divider"></li>
+                <li><a onclick="toggleTheme()"><i class="fas fa-adjust"></i></a></li>
                 <li><a href="/change-password">Change Password</a></li>
                 <li><a href="/logout">Logout</a></li>
             </ul>
@@ -170,6 +377,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <script src="/static/js/theme.js"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

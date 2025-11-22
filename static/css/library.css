@@ -196,3 +196,48 @@ h2 {
     }
 }
 
+/* Dark mode styles */
+body.uk-light h2 {
+    color: #e5e5e5;
+}
+
+body.uk-light .subtitle {
+    color: #999;
+}
+
+body.uk-light .uk-search .uk-search-input {
+    background: #2a2a2a;
+    border-color: #3a3a3a;
+    color: #e5e5e5;
+}
+
+body.uk-light .uk-search .uk-search-input::placeholder {
+    color: #666;
+}
+
+body.uk-light .uk-select {
+    background: #2a2a2a;
+    border-color: #3a3a3a;
+    color: #e5e5e5;
+}
+
+body.uk-light .title-card {
+    background: #2a2a2a;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+
+body.uk-light .title-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+
+body.uk-light .title-thumbnail {
+    background: #1a1a1a;
+}
+
+body.uk-light .title-name {
+    color: #e5e5e5;
+}
+
+body.uk-light .title-stats {
+    color: #c5a06d;
+}
