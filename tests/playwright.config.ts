@@ -59,8 +59,8 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // Run headless in CI, headed in local dev for debugging
-        headless: process.env.CI ? true : false,
+        // Run headless by default (set HEADED=1 to see browser)
+        headless: process.env.HEADED ? false : true,
       },
     },
 
