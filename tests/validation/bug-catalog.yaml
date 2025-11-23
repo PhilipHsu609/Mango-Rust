@@ -142,8 +142,8 @@ tests:
         description: "Break toggleTheme function completely"
         targetFile: "static/src/js/core.js"
         strategy: "replace"
-        find: "function toggleTheme() {"
-        replace: "function toggleTheme() { return; // BUG: Disabled"
+        find: "function toggleTheme() {\n    const currentTheme = getTheme();\n    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';\n    applyTheme(newTheme);\n}"
+        replace: "function toggleTheme() {\n    return; // BUG: Disabled\n}"
         expectedFailure: "Theme should toggle on home page"
 
   - testId: "theme.spec.ts:232:3"
@@ -344,8 +344,8 @@ tests:
         description: "Don't load preferences from localStorage"
         targetFile: "templates/reader.js"
         strategy: "replace"
-        find: "function loadPreferences() {\n    mode = localStorage.getItem('reader-mode') || mode;"
-        replace: "function loadPreferences() {\n    // BUG: Always use default mode\n    mode = mode;"
+        find: "    const savedMode = localStorage.getItem('reader-mode');"
+        replace: "    const savedMode = null; // BUG: Don't read from localStorage"
         expectedFailure: "Mode should be 'continuous' after reload but is 'paged'"
 
   - testId: "reader.spec.ts:297:3"
@@ -357,8 +357,8 @@ tests:
         description: "Hide settings button"
         targetFile: "templates/reader.html"
         strategy: "replace"
-        find: "id=\"settings-btn\""
-        replace: "id=\"settings-btn\" style=\"display: none;\" <!-- BUG: Hidden -->"
+        find: "<button id=\"settings-btn\" onclick=\"UIkit.modal('#settings-modal').show()\">⚙️</button>"
+        replace: "<button id=\"settings-btn\" onclick=\"UIkit.modal('#settings-modal').show()\" style=\"display: none;\">⚙️</button> <!-- BUG: Hidden -->"
         expectedFailure: "Settings button should be visible"
 
   # Reader Theme Tests (reader-theme.spec.ts)
@@ -385,8 +385,8 @@ tests:
         description: "Clear theme localStorage on page load"
         targetFile: "static/src/js/core.js"
         strategy: "replace"
-        find: "    applyTheme(getTheme());"
-        replace: "    localStorage.removeItem('theme'); // BUG: Clear theme\n    applyTheme(getTheme());"
+        find: "document.addEventListener('DOMContentLoaded', () => {\n    // Apply theme on page load\n    applyTheme(getTheme());"
+        replace: "document.addEventListener('DOMContentLoaded', () => {\n    // BUG: Clear theme\n    localStorage.removeItem('theme');\n    // Apply theme on page load\n    applyTheme(getTheme());"
         expectedFailure: "localStorage should be 'dark' but is cleared"
 
   - testId: "reader-theme.spec.ts:75:3"
@@ -398,8 +398,8 @@ tests:
         description: "Break settings button click handler"
         targetFile: "templates/reader.html"
         strategy: "replace"
-        find: "onclick=\"UIkit.modal('#settings-modal').show()\""
-        replace: "<!-- BUG: onclick removed -->"
+        find: "<button id=\"settings-btn\" onclick=\"UIkit.modal('#settings-modal').show()\">⚙️</button>"
+        replace: "<button id=\"settings-btn\">⚙️</button> <!-- BUG: onclick removed -->"
         expectedFailure: "Settings modal should open when button clicked"
 
   - testId: "reader-theme.spec.ts:116:3"
@@ -411,8 +411,8 @@ tests:
         description: "Clear localStorage on every page load"
         targetFile: "static/src/js/core.js"
         strategy: "replace"
-        find: "document.addEventListener('DOMContentLoaded', function() {\n    applyTheme(getTheme());"
-        replace: "document.addEventListener('DOMContentLoaded', function() {\n    localStorage.clear(); // BUG: Clear all storage\n    applyTheme(getTheme());"
+        find: "document.addEventListener('DOMContentLoaded', () => {\n    // Apply theme on page load\n    applyTheme(getTheme());"
+        replace: "document.addEventListener('DOMContentLoaded', () => {\n    localStorage.clear(); // BUG: Clear all storage\n    // Apply theme on page load\n    applyTheme(getTheme());"
         expectedFailure: "Theme should persist as 'dark' but is cleared"
 
   - testId: "reader-theme.spec.ts:148:3"
@@ -424,8 +424,8 @@ tests:
         description: "Make settings button invisible"
         targetFile: "templates/reader.html"
         strategy: "replace"
-        find: "<button id=\"settings-btn\""
-        replace: "<button id=\"settings-btn\" style=\"visibility: hidden;\" <!-- BUG: Invisible -->"
+        find: "<button id=\"settings-btn\" onclick=\"UIkit.modal('#settings-modal').show()\">⚙️</button>"
+        replace: "<button id=\"settings-btn\" onclick=\"UIkit.modal('#settings-modal').show()\" style=\"visibility: hidden;\">⚙️</button> <!-- BUG: Invisible -->"
         expectedFailure: "Settings button should be visible"
 
 # ============================================================================
@@ -467,8 +467,8 @@ tests:
         description: "Break matchesSearch function"
         targetFile: "static/js/library.js"
         strategy: "replace"
-        find: "matchesSearch(titleName) {"
-        replace: "matchesSearch(titleName) {\n            return true; // BUG: Always show all"
+        find: "        matchesSearch(titleName) {\n            if (!this.searchQuery.trim()) {\n                return true;\n            }\n            const regex = new RegExp(this.searchQuery, 'i');\n            return regex.test(titleName);\n        },"
+        replace: "        matchesSearch(titleName) {\n            return true; // BUG: Always show all\n        },"
         expectedFailure: "Filtered count should be less than initial but stays same"
 
       - id: "library-search-2"
@@ -512,10 +512,10 @@ tests:
     bugs:
       - id: "library-sort-name-1"
         description: "Break sort parameter handling"
-        targetFile: "src/routes/main.rs"
+        targetFile: "src/library/manager.rs"
         strategy: "replace"
-        find: "\"name\" => entries.sort_by_cached_key(|e| e.title.to_lowercase()),"
-        replace: "\"name\" => {}, // BUG: Don't sort"
+        find: "            SortMethod::Name | SortMethod::Progress | SortMethod::Auto => {\n                // Progress sorting is handled at route level (after calculating progress with username context)\n                // Auto uses name sorting (future: smart chapter detection)\n                sort_by_name(&mut titles, ascending);\n            }"
+        replace: "            SortMethod::Name | SortMethod::Progress | SortMethod::Auto => {\n                // BUG: Don't sort by name\n            }"
         expectedFailure: "Titles not sorted alphabetically"
 
   - testId: "library.spec.ts:178:3"
@@ -525,10 +525,10 @@ tests:
     bugs:
       - id: "library-sort-date-1"
         description: "Break date sorting"
-        targetFile: "src/routes/main.rs"
+        targetFile: "src/library/manager.rs"
         strategy: "replace"
-        find: "\"date\" => entries.sort_by_key(|e| e.created_at),"
-        replace: "\"date\" => {}, // BUG: Don't sort by date"
+        find: "            SortMethod::TimeModified => {\n                sort_by_mtime(&mut titles, ascending);\n            }"
+        replace: "            SortMethod::TimeModified => {\n                // BUG: Don't sort by mtime\n            }"
         expectedFailure: "Title count should match but order isn't by date"
 
   - testId: "library.spec.ts:202:3"
@@ -540,8 +540,8 @@ tests:
         description: "Break progress sorting"
         targetFile: "src/routes/main.rs"
         strategy: "replace"
-        find: "\"progress\" => entries.sort_by_key(|e| e.last_visited_at),"
-        replace: "\"progress\" => {}, // BUG: Don't sort by progress"
+        find: "    // Sort by progress if requested (after calculating progress)\n    if matches!(sort_method, SortMethod::Progress) {\n        sort_by_progress(&mut titles, ascending);\n    }"
+        replace: "    // Sort by progress if requested (after calculating progress)\n    if matches!(sort_method, SortMethod::Progress) {\n        // BUG: Don't sort by progress\n    }"
         expectedFailure: "Titles not ordered by progress"
 
   - testId: "library.spec.ts:226:3"
@@ -700,8 +700,8 @@ tests:
         description: "Remove href from mobile library link"
         targetFile: "templates/base.html"
         strategy: "replace"
-        find: "<a class=\"uk-offcanvas-close\" href=\"/library\">LIBRARY</a>"
-        replace: "<a class=\"uk-offcanvas-close\">LIBRARY</a> <!-- BUG: No href -->"
+        find: "<li{% if library_active %} class=\"uk-active\"{% endif %}><a href=\"/library\">Library</a></li>"
+        replace: "<li{% if library_active %} class=\"uk-active\"{% endif %}><a>Library</a></li> <!-- BUG: No href -->"
         expectedFailure: "URL should contain /library from mobile menu"
 
   - testId: "navigation.spec.ts:163:3"
