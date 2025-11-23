@@ -454,8 +454,8 @@ tests:
         description: "Hide title cards"
         targetFile: "templates/library.html"
         strategy: "replace"
-        find: "class=\"title-card\""
-        replace: "class=\"title-card\" style=\"display: none;\" <!-- BUG: Hidden -->"
+        find: "        <a href=\"/book/{{ title.id }}\" class=\"title-card\"\n           x-show=\"matchesSearch('{{ title.name }}')\">"
+        replace: "        <a href=\"/book/{{ title.id }}\" class=\"title-card\" style=\"display: none;\"\n           x-show=\"matchesSearch('{{ title.name }}')\">"
         expectedFailure: "Title cards not visible"
 
   - testId: "library.spec.ts:57:3"
