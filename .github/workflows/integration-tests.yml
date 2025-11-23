@@ -56,6 +56,9 @@ jobs:
           cd tests
           npx playwright install --with-deps chromium
 
+      - name: Install LESS compiler
+        run: npm install -g less
+
       - name: Build CSS
         run: ./build-css.sh
 
