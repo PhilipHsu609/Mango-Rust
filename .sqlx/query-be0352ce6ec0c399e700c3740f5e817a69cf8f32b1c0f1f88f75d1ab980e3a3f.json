@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR REPLACE INTO thumbnails (id, data, filename, mime, size) VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "be0352ce6ec0c399e700c3740f5e817a69cf8f32b1c0f1f88f75d1ab980e3a3f"
+}

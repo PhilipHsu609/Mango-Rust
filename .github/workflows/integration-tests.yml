@@ -36,6 +36,8 @@ jobs:
 
       - name: Build Mango (release mode)
         run: cargo build --release
+        env:
+          SQLX_OFFLINE: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
