@@ -1,0 +1,14 @@
+{
+  "filePath": ".spec-workflow/specs/test-validation/requirements.md",
+  "currentVersion": 1,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-23T07:47:37.641Z",
+      "trigger": "initial",
+      "approvalId": "approval_1763884057611_cnmlexllq",
+      "approvalTitle": "Requirements: Test Validation Framework"
+    }
+  ]
+}

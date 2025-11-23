@@ -28,7 +28,7 @@
             <ul class="uk-navbar-nav">
                 <li{% if home_active %} class="uk-active"{% endif %}><a class="nav-item" href="/">HOME</a></li>
                 <li{% if library_active %} class="uk-active"{% endif %}><a class="nav-item" href="/library">LIBRARY</a></li>
-                <li><a class="nav-item" href="/tags">TAGS</a></li>
+                <li{% if tags_active %} class="uk-active"{% endif %}><a class="nav-item" href="/tags">TAGS</a></li>
                 {% if is_admin %}<li{% if admin_active %} class="uk-active"{% endif %}><a class="nav-item" href="/admin">ADMIN</a></li>{% endif %}
                 <li><a class="nav-item" href="#">DOWNLOAD</a></li>
             </ul>
@@ -50,7 +50,7 @@
             <ul class="uk-nav uk-nav-default">
                 <li{% if home_active %} class="uk-active"{% endif %}><a href="/">Home</a></li>
                 <li{% if library_active %} class="uk-active"{% endif %}><a href="/library">Library</a></li>
-                <li><a href="/tags">Tags</a></li>
+                <li{% if tags_active %} class="uk-active"{% endif %}><a href="/tags">Tags</a></li>
                 {% if is_admin %}<li{% if admin_active %} class="uk-active"{% endif %}><a href="/admin">Admin</a></li>{% endif %}
                 <li><a href="#">Download</a></li>
                 <li class="uk-nav-divider"></li>

@@ -16,6 +16,7 @@ use crate::{auth::AdminOnly, error::Result, util::render_error, AppState};
 struct AdminTemplate {
     home_active: bool,
     library_active: bool,
+    tags_active: bool,
     admin_active: bool,
     is_admin: bool,
     missing_count: usize,
@@ -37,6 +38,7 @@ pub async fn admin_dashboard(
     let template = AdminTemplate {
         home_active: false,
         library_active: false,
+        tags_active: false,
         admin_active: true,
         is_admin: true,
         missing_count,
@@ -118,6 +120,7 @@ pub async fn delete_all_missing_entries(
 struct MissingItemsTemplate {
     home_active: bool,
     library_active: bool,
+    tags_active: bool,
     admin_active: bool,
     is_admin: bool,
 }
@@ -128,6 +131,7 @@ pub async fn missing_items_page(AdminOnly(_username): AdminOnly) -> Result<Html<
     let template = MissingItemsTemplate {
         home_active: false,
         library_active: false,
+        tags_active: false,
         admin_active: true,
         is_admin: true,
     };
@@ -141,6 +145,7 @@ pub async fn missing_items_page(AdminOnly(_username): AdminOnly) -> Result<Html<
 struct UsersTemplate {
     home_active: bool,
     library_active: bool,
+    tags_active: bool,
     admin_active: bool,
     is_admin: bool,
     username: String,
@@ -152,6 +157,7 @@ pub async fn users_page(AdminOnly(username): AdminOnly) -> Result<Html<String>> 
     let template = UsersTemplate {
         home_active: false,
         library_active: false,
+        tags_active: false,
         admin_active: true,
         is_admin: true,
         username,

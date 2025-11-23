@@ -35,6 +35,7 @@ impl HasProgress for TitleData {
 struct LibraryTemplate {
     home_active: bool,
     library_active: bool,
+    tags_active: bool,
     admin_active: bool,
     is_admin: bool,
     title_count: usize,
@@ -53,6 +54,7 @@ struct LibraryTemplate {
 struct HomeTemplate {
     home_active: bool,
     library_active: bool,
+    tags_active: bool,
     admin_active: bool,
     is_admin: bool,
 }
@@ -66,6 +68,7 @@ pub async fn home(
     let template = HomeTemplate {
         home_active: true,
         library_active: false,
+        tags_active: false,
         admin_active: false,
         is_admin: user.is_admin,
     };
@@ -133,6 +136,7 @@ pub async fn library(
     let template = LibraryTemplate {
         home_active: false,
         library_active: true,
+        tags_active: false,
         admin_active: false,
         is_admin: user.is_admin,
         title_count,
@@ -154,6 +158,7 @@ pub async fn library(
 struct ChangePasswordTemplate {
     home_active: bool,
     library_active: bool,
+    tags_active: bool,
     admin_active: bool,
     is_admin: bool,
 }
@@ -163,6 +168,7 @@ pub async fn change_password_page(user: User) -> Result<Html<String>> {
     let template = ChangePasswordTemplate {
         home_active: false,
         library_active: false,
+        tags_active: false,
         admin_active: false,
         is_admin: user.is_admin,
     };
@@ -207,6 +213,7 @@ pub async fn change_password_api(
 struct TagsTemplate {
     home_active: bool,
     library_active: bool,
+    tags_active: bool,
     admin_active: bool,
     is_admin: bool,
     tags: Vec<TagWithCount>,
@@ -255,6 +262,7 @@ pub async fn list_tags_page(
     let template = TagsTemplate {
         home_active: false,
         library_active: false,
+        tags_active: true,
         admin_active: false,
         is_admin: user.is_admin,
         tags: tags_with_counts,
@@ -267,6 +275,7 @@ pub async fn list_tags_page(
 struct TagTemplate {
     home_active: bool,
     library_active: bool,
+    tags_active: bool,
     admin_active: bool,
     is_admin: bool,
     tag: String,
@@ -377,6 +386,7 @@ pub async fn view_tag_page(
     let template = TagTemplate {
         home_active: false,
         library_active: false,
+        tags_active: true,
         admin_active: false,
         is_admin: user.is_admin,
         tag,
