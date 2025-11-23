@@ -174,12 +174,19 @@ test.describe('Navigation', () => {
     const mobileNav = page.locator('#mobile-nav');
     await expect(mobileNav).toBeVisible();
 
-    // Verify offcanvas close functionality works by checking UIkit attributes
-    const hasOffcanvasAttr = await page.evaluate(() => {
+    // CRITICAL: Verify offcanvas has uk-offcanvas AND close button has uk-close
+    const offcanvasStatus = await page.evaluate(() => {
       const navEl = document.querySelector('#mobile-nav');
-      return navEl && navEl.hasAttribute('uk-offcanvas');
+      const hasOffcanvasAttr = navEl && navEl.hasAttribute('uk-offcanvas');
+
+      // Check that close button has uk-close attribute (required for ESC to work)
+      const closeBtn = navEl?.querySelector('.uk-offcanvas-close');
+      const hasCloseAttr = closeBtn && closeBtn.hasAttribute('uk-close');
+
+      return { hasOffcanvasAttr, hasCloseAttr };
     });
-    expect(hasOffcanvasAttr).toBe(true);
+    expect(offcanvasStatus.hasOffcanvasAttr).toBe(true);
+    expect(offcanvasStatus.hasCloseAttr).toBe(true); // uk-close enables ESC key
 
     // Close with escape
     await nav.closeMobileMenu();

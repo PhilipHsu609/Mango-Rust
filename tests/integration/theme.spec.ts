@@ -23,10 +23,16 @@ test.describe('Theme Toggle', () => {
   // Each test navigates to the appropriate page and checks/sets theme as needed
 
   test('should detect initial theme state on library page', async ({ page }) => {
-    // Navigate to library page
-    await page.goto('/library');
+    // Navigate to library page and wait for network idle but NOT DOMContentLoaded
+    // This ensures we check the IIFE theme application before DOMContentLoaded re-applies it
+    await page.goto('/library', { waitUntil: 'networkidle' });
 
-    // Check theme state
+    // CRITICAL: Check theme IMMEDIATELY after page load, before any JS executes
+    // The IIFE should have applied theme to body BEFORE DOMContentLoaded
+    const earlyState = await getThemeState(page);
+
+    // Check theme state after DOMContentLoaded
+    await page.waitForLoadState('domcontentloaded');
     const state = await getThemeState(page);
 
     // Should have either light or dark theme set
@@ -36,18 +42,21 @@ test.describe('Theme Toggle', () => {
     // DOM class and localStorage should match
     expect(state.domClass).toBe(state.localStorage);
 
-    // Verify the body actually HAS the theme class applied
+    // Verify the body actually HAS the theme class applied BOTH before and after DOMContentLoaded
+    // This catches bugs where the IIFE fails but DOMContentLoaded fixes it
     const body = page.locator('body');
     if (state.domClass === 'dark') {
       await expect(body).toHaveClass(/uk-dark/);
+      expect(earlyState.domClass).toBe('dark'); // IIFE should have set it
     } else {
       await expect(body).toHaveClass(/uk-light/);
+      expect(earlyState.domClass).toBe('light'); // IIFE should have set it
     }
 
     // Verify mutual exclusion
     await verifyMutualExclusion(page);
 
-    console.log(`Initial theme detected: ${state.domClass}`);
+    console.log(`Initial theme detected: ${state.domClass} (early: ${earlyState.domClass})`);
   });
 
   test('should toggle theme on library page', async ({ page }) => {

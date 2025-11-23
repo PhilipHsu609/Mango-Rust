@@ -275,8 +275,9 @@ test.describe('Reader Functionality', () => {
     // Ensure in paged mode
     await reader.changeMode('paged');
 
-    // Get initial page
+    // Get initial page and initial image src
     const initialPage = await reader.getCurrentPage();
+    const initialSrc = await page.locator('#paged-image').getAttribute('src');
 
     // Get total pages to pick a valid target
     const totalPages = await page.evaluate(() => {
@@ -288,6 +289,17 @@ test.describe('Reader Functionality', () => {
       // Jump to page 3
       await reader.jumpToPage(3);
 
+      // CRITICAL: Wait for the image src to actually change
+      // This ensures loadPage() was called and executed successfully
+      await page.waitForFunction(
+        (expectedSrc) => {
+          const img = document.querySelector('#paged-image') as HTMLImageElement;
+          return img && img.src !== expectedSrc;
+        },
+        initialSrc,
+        { timeout: 5000 }
+      );
+
       // Verify on page 3
       const currentPage = await reader.getCurrentPage();
       expect(currentPage).toBe(3);
@@ -298,6 +310,7 @@ test.describe('Reader Functionality', () => {
       // Verify the image src URL contains the correct page number
       const imageSrc = await page.locator('#paged-image').getAttribute('src');
       expect(imageSrc).toContain('/3');
+      expect(imageSrc).not.toBe(initialSrc); // Image must have changed
 
       console.log('✓ Jump to page works correctly');
     } else {

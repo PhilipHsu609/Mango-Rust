@@ -14,12 +14,19 @@ test.describe('Library Search and Sort', () => {
 
     await library.navigate();
 
-    // Verify Alpine.js initialized properly by checking for x-data attribute
-    const alpineInitialized = await page.evaluate(() => {
+    // Verify Alpine.js initialized properly by checking for x-data attribute AND no JS errors
+    const alpineStatus = await page.evaluate(() => {
       const appDiv = document.querySelector('[x-data]');
-      return appDiv !== null && appDiv.hasAttribute('x-data');
+      const hasAttribute = appDiv !== null && appDiv.hasAttribute('x-data');
+
+      // CRITICAL: Check that Alpine actually bound to the element
+      // If libraryData() has syntax error, Alpine won't initialize
+      const hasAlpineData = appDiv && '__x' in appDiv; // Alpine adds __x property
+
+      return { hasAttribute, hasAlpineData };
     });
-    expect(alpineInitialized).toBe(true);
+    expect(alpineStatus.hasAttribute).toBe(true);
+    expect(alpineStatus.hasAlpineData).toBe(true); // Alpine must have initialized
 
     // Get title count
     const titleCount = await library.getTitleCount();
@@ -31,7 +38,7 @@ test.describe('Library Search and Sort', () => {
     // Capture screenshot
     await captureEvidence(page, 'library-loaded');
 
-    console.log(`✓ Library loaded with ${titleCount} titles`);
+    console.log(`✓ Library loaded with ${titleCount} titles (Alpine initialized: ${alpineStatus.hasAlpineData})`);
   });
 
   test('should display title cards with correct structure', async ({ page }) => {
@@ -68,7 +75,7 @@ test.describe('Library Search and Sort', () => {
 
     const initialCount = await library.getTitleCount();
 
-    if (initialCount > 0) {
+    if (initialCount > 1) { // Need at least 2 titles to verify filtering works
       // Get text from first title
       const firstCard = page.locator('.title-card').first();
       const titleElement = firstCard.locator('.uk-card-title, h3').first();
@@ -83,17 +90,31 @@ test.describe('Library Search and Sort', () => {
         // Capture screenshot
         await captureEvidence(page, 'library-search-filtered');
 
-        // Should have some results
+        // CRITICAL: Search MUST actually filter (not just return all cards)
         const filteredCount = await library.getTitleCount();
         expect(filteredCount).toBeGreaterThan(0);
-        expect(filteredCount).toBeLessThanOrEqual(initialCount);
+
+        // If bug makes regex.test() always return true, filteredCount === initialCount
+        // So we verify it's actually less (search filtered something out)
+        // OR if all titles match the search, we need a different search term
+        if (filteredCount === initialCount && initialCount > 1) {
+          // Try searching for something that won't match all titles
+          await library.search('xyzzynotfound123');
+          const noMatchCount = await library.getTitleCount();
+          expect(noMatchCount).toBe(0); // Proves filtering actually works
+
+          // Search back to verify original search worked
+          await library.search(searchTerm);
+          const retryCount = await library.getTitleCount();
+          expect(retryCount).toBeGreaterThan(0);
+        }
 
         console.log(`✓ Search filtered from ${initialCount} to ${filteredCount} titles`);
       } else {
         console.log('⊘ Skipped: Title text too short for search test');
       }
     } else {
-      console.log('⊘ Skipped: No titles to search');
+      console.log('⊘ Skipped: Need at least 2 titles to verify search filtering');
     }
   });
 
@@ -297,11 +318,18 @@ test.describe('Library Search and Sort', () => {
     const titleCount = await library.getTitleCount();
 
     if (titleCount > 0) {
-      // Verify title card has href attribute (clickable link)
+      // CRITICAL: Verify title card HAS href attribute and it's a valid link
       const firstCard = page.locator('.title-card').first();
       const href = await firstCard.getAttribute('href');
-      expect(href).toBeTruthy();
-      expect(href).toMatch(/^\/book\//);
+      expect(href).toBeTruthy(); // href must exist
+      expect(href).toMatch(/^\/book\//); // must be book link
+
+      // Also verify the <a> tag actually has the href in the HTML
+      const hasHrefInHtml = await page.evaluate(() => {
+        const card = document.querySelector('.title-card') as HTMLAnchorElement;
+        return card && card.hasAttribute('href') && card.href.includes('/book/');
+      });
+      expect(hasHrefInHtml).toBe(true);
 
       // Get first title name
       const titleElement = firstCard.locator('.uk-card-title, h3').first();
@@ -317,6 +345,7 @@ test.describe('Library Search and Sort', () => {
         // Verify we're on a different page (not library)
         const currentUrl = page.url();
         expect(currentUrl).not.toContain('/library');
+        expect(currentUrl).toContain('/book/'); // Must be on book page
 
         console.log('✓ Clicked title card and navigated to book page');
       }
