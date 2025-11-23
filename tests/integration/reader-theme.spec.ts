@@ -41,6 +41,15 @@ test.describe('Reader Page Theme', () => {
     const themeState = await getThemeState(page);
     expect(themeState.localStorage).toBe('light');
 
+    // CRITICAL: Verify theme was actually loaded from localStorage and applied
+    // Check that applyTheme was called with the localStorage value
+    const themeApplied = await page.evaluate(() => {
+      const storedTheme = localStorage.getItem('theme');
+      const bodyHasClass = document.body.classList.contains(`uk-${storedTheme}`);
+      return storedTheme === 'light' && bodyHasClass;
+    });
+    expect(themeApplied).toBe(true);
+
     // Verify settings button exists and is functional
     const settingsBtn = page.locator('#settings-btn');
     await expect(settingsBtn).toBeVisible();

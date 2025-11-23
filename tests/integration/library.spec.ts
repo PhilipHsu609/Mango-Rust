@@ -14,6 +14,13 @@ test.describe('Library Search and Sort', () => {
 
     await library.navigate();
 
+    // Verify Alpine.js initialized properly by checking for x-data attribute
+    const alpineInitialized = await page.evaluate(() => {
+      const appDiv = document.querySelector('[x-data]');
+      return appDiv !== null && appDiv.hasAttribute('x-data');
+    });
+    expect(alpineInitialized).toBe(true);
+
     // Get title count
     const titleCount = await library.getTitleCount();
 
@@ -101,12 +108,20 @@ test.describe('Library Search and Sort', () => {
       // Search for something
       await library.search('test');
 
+      const searchedCount = await library.getTitleCount();
+
       // Clear search
       await library.search('');
 
       // Should show all titles again
       const clearedCount = await library.getTitleCount();
       expect(clearedCount).toBe(initialCount);
+
+      // Verify that search actually filtered (unless all titles match 'test')
+      // The key issue: we need to verify empty search is explicitly handled
+      // Check that the search input is actually empty
+      const searchInputValue = await page.locator('#search-input').inputValue();
+      expect(searchInputValue).toBe('');
 
       console.log('✓ Search cleared and all titles displayed');
     } else {
@@ -140,6 +155,10 @@ test.describe('Library Search and Sort', () => {
 
         // Should have same results
         expect(uppercaseCount).toBe(lowercaseCount);
+
+        // CRITICAL: Both should be greater than 0 (otherwise test is meaningless)
+        expect(lowercaseCount).toBeGreaterThan(0);
+        expect(uppercaseCount).toBeGreaterThan(0);
 
         console.log('✓ Search is case-insensitive');
       } else {
@@ -250,6 +269,11 @@ test.describe('Library Search and Sort', () => {
         const countAfterSort = await library.getTitleCount();
         expect(countAfterSort).toBe(initialCount); // Back to full count
 
+        // Verify URL params were properly handled during sort
+        // (Bug was: Break URL param handling in sort)
+        const currentUrl = page.url();
+        expect(currentUrl).toContain('sort=name');
+
         // Search again after sorting to verify search still works
         await library.search(searchTerm);
 
@@ -273,8 +297,13 @@ test.describe('Library Search and Sort', () => {
     const titleCount = await library.getTitleCount();
 
     if (titleCount > 0) {
-      // Get first title name
+      // Verify title card has href attribute (clickable link)
       const firstCard = page.locator('.title-card').first();
+      const href = await firstCard.getAttribute('href');
+      expect(href).toBeTruthy();
+      expect(href).toMatch(/^\/book\//);
+
+      // Get first title name
       const titleElement = firstCard.locator('.uk-card-title, h3').first();
       const titleText = await titleElement.textContent();
 

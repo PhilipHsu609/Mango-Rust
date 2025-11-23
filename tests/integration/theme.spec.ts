@@ -36,6 +36,14 @@ test.describe('Theme Toggle', () => {
     // DOM class and localStorage should match
     expect(state.domClass).toBe(state.localStorage);
 
+    // Verify the body actually HAS the theme class applied
+    const body = page.locator('body');
+    if (state.domClass === 'dark') {
+      await expect(body).toHaveClass(/uk-dark/);
+    } else {
+      await expect(body).toHaveClass(/uk-light/);
+    }
+
     // Verify mutual exclusion
     await verifyMutualExclusion(page);
 

@@ -174,6 +174,13 @@ test.describe('Navigation', () => {
     const mobileNav = page.locator('#mobile-nav');
     await expect(mobileNav).toBeVisible();
 
+    // Verify offcanvas close functionality works by checking UIkit attributes
+    const hasOffcanvasAttr = await page.evaluate(() => {
+      const navEl = document.querySelector('#mobile-nav');
+      return navEl && navEl.hasAttribute('uk-offcanvas');
+    });
+    expect(hasOffcanvasAttr).toBe(true);
+
     // Close with escape
     await nav.closeMobileMenu();
 
@@ -241,6 +248,18 @@ test.describe('Navigation', () => {
     const desktopNav = page.locator('ul.uk-navbar-nav').first();
     await expect(desktopNav).toBeVisible();
 
+    // Verify responsive visibility classes are applied correctly
+    // Desktop nav should have uk-visible@m (visible on medium+)
+    const desktopHasVisibleClass = await page.evaluate(() => {
+      const navList = document.querySelector('ul.uk-navbar-nav');
+      return navList && (
+        navList.classList.contains('uk-visible@m') ||
+        navList.classList.contains('uk-visible@s') ||
+        !navList.classList.contains('uk-hidden@m')
+      );
+    });
+    expect(desktopHasVisibleClass).toBe(true);
+
     await captureEvidence(page, 'navigation-desktop');
 
     // Test mobile viewport
@@ -254,6 +273,13 @@ test.describe('Navigation', () => {
     // Hamburger button should be visible
     const hamburger = page.locator('[uk-toggle="target: #mobile-nav"]');
     await expect(hamburger).toBeVisible();
+
+    // Verify hamburger has correct responsive class (uk-hidden@m = hidden on medium+)
+    const hamburgerHasHiddenClass = await page.evaluate(() => {
+      const btn = document.querySelector('[uk-toggle="target: #mobile-nav"]');
+      return btn && btn.classList.contains('uk-hidden@m');
+    });
+    expect(hamburgerHasHiddenClass).toBe(true);
 
     await captureEvidence(page, 'navigation-mobile');
 

@@ -162,6 +162,15 @@ test.describe('Reader Functionality', () => {
       { timeout: 10000 }
     );
 
+    // Verify that ALL images were created (not just a few)
+    const totalPages = await page.evaluate(() => {
+      return (window as any).TOTAL_PAGES || 0;
+    });
+
+    const imageCount = await page.locator('#continuous-container img').count();
+    expect(imageCount).toBe(totalPages);
+    expect(imageCount).toBeGreaterThan(0);
+
     // Capture screenshot
     await captureEvidence(page, 'reader-continuous-mode');
 
@@ -202,12 +211,20 @@ test.describe('Reader Functionality', () => {
     const reader = new ReaderPage(page);
     await reader.verifyReaderLoaded();
 
-    // Open settings
+    // Open settings via button
     await reader.openSettings();
 
     // Check settings modal is visible
     const settingsModal = page.locator('#settings-modal');
     await expect(settingsModal).toBeVisible();
+
+    // Close modal
+    await page.keyboard.press('Escape');
+    await expect(settingsModal).not.toBeVisible();
+
+    // Test keyboard shortcut to open settings
+    await page.keyboard.press('s');
+    await expect(settingsModal).toBeVisible({ timeout: 2000 });
 
     // Capture screenshot
     await captureEvidence(page, 'reader-settings-modal');
@@ -237,6 +254,14 @@ test.describe('Reader Functionality', () => {
       const pagedImage = page.locator('#paged-image');
       await expect(pagedImage).toBeVisible();
 
+      // Verify the body class reflects the fit option
+      const bodyClass = await page.evaluate(() => document.body.className);
+      expect(bodyClass).toContain(`fit-${fit}`);
+
+      // Verify localStorage was updated
+      const storedFit = await page.evaluate(() => localStorage.getItem('reader-fit'));
+      expect(storedFit).toBe(fit);
+
       console.log(`✓ Fit option '${fit}' applied successfully`);
     }
   });
@@ -249,6 +274,9 @@ test.describe('Reader Functionality', () => {
 
     // Ensure in paged mode
     await reader.changeMode('paged');
+
+    // Get initial page
+    const initialPage = await reader.getCurrentPage();
 
     // Get total pages to pick a valid target
     const totalPages = await page.evaluate(() => {
@@ -263,6 +291,13 @@ test.describe('Reader Functionality', () => {
       // Verify on page 3
       const currentPage = await reader.getCurrentPage();
       expect(currentPage).toBe(3);
+
+      // Verify the image actually changed (different page loaded)
+      expect(currentPage).not.toBe(initialPage);
+
+      // Verify the image src URL contains the correct page number
+      const imageSrc = await page.locator('#paged-image').getAttribute('src');
+      expect(imageSrc).toContain('/3');
 
       console.log('✓ Jump to page works correctly');
     } else {
