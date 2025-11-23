@@ -34,12 +34,11 @@ export interface ReportGeneratorOptions {
  */
 export class ReportGenerator {
     private projectPath: string;
-    private includeOutput: boolean;
     private includeCodeSnippets: boolean;
 
     constructor(options: ReportGeneratorOptions) {
         this.projectPath = options.projectPath;
-        this.includeOutput = options.includeOutput ?? false;
+        // includeOutput option reserved for future use
         this.includeCodeSnippets = options.includeCodeSnippets ?? true;
     }
 

@@ -6,7 +6,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as yaml from 'yaml';
-import ora, { Ora } from 'ora';
+import ora from 'ora';
 import chalk from 'chalk';
 import { SimpleGit } from 'simple-git';
 import {
