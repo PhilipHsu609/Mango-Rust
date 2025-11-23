@@ -5,17 +5,17 @@
   "type": "module",
   "main": "cli.js",
   "scripts": {
-    "validate": "node cli.js",
-    "validate:single": "node cli.js --test",
-    "validate:report": "node cli.js --report-only",
-    "validate:dry-run": "node cli.js --dry-run",
-    "validate:verbose": "node cli.js --verbose",
+    "validate": "node dist/cli.js",
+    "validate:single": "node dist/cli.js --test",
+    "validate:report": "node dist/cli.js --report-only",
+    "validate:dry-run": "node dist/cli.js --dry-run",
+    "validate:verbose": "node dist/cli.js --verbose",
     "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "clean": "rm -rf .validation-results/*/",
-    "help": "node cli.js --help"
+    "help": "node dist/cli.js --help"
   },
   "keywords": [
     "testing",

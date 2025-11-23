@@ -44,7 +44,7 @@ function parseArgs(): CLIConfig {
             h: 'help',
         },
         default: {
-            catalog: 'tests/validation/bug-catalog.yaml',
+            catalog: 'bug-catalog.yaml',
             output: '.validation-results',
             timeout: 60000,
         },
