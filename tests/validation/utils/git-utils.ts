@@ -155,6 +155,9 @@ export async function cleanupValidationBranch(
     branchInfo: BranchInfo
 ): Promise<void> {
     try {
+        // Discard all uncommitted changes in the validation branch
+        await git.reset(['--hard']);
+
         // Switch back to original branch
         await switchBranch(git, branchInfo.originalBranch);
 
