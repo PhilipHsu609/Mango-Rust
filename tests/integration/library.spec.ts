@@ -223,15 +223,22 @@ test.describe('Library Search and Sort', () => {
     const titleCount = await library.getTitleCount();
 
     if (titleCount >= 2) {
+      // Get initial order
+      const initialOrder = await library.getTitleNames();
+
       // Select date sort
       await library.selectSort('date');
 
       // Capture screenshot
       await captureEvidence(page, 'library-sorted-by-date');
 
-      // Just verify sort completed without error
+      // Verify sort completed without error
       const countAfterSort = await library.getTitleCount();
       expect(countAfterSort).toBe(titleCount);
+
+      // Verify order changed (date sort should reorder titles)
+      const newOrder = await library.getTitleNames();
+      expect(newOrder).not.toEqual(initialOrder);
 
       console.log('✓ Titles sorted by date');
     } else {
@@ -247,15 +254,22 @@ test.describe('Library Search and Sort', () => {
     const titleCount = await library.getTitleCount();
 
     if (titleCount >= 2) {
+      // Get initial order
+      const initialOrder = await library.getTitleNames();
+
       // Select progress sort
       await library.selectSort('progress');
 
       // Capture screenshot
       await captureEvidence(page, 'library-sorted-by-progress');
 
-      // Just verify sort completed without error
+      // Verify sort completed without error
       const countAfterSort = await library.getTitleCount();
       expect(countAfterSort).toBe(titleCount);
+
+      // Verify order changed (progress sort should reorder titles)
+      const newOrder = await library.getTitleNames();
+      expect(newOrder).not.toEqual(initialOrder);
 
       console.log('✓ Titles sorted by progress');
     } else {

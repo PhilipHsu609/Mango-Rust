@@ -290,6 +290,25 @@ export class LibraryPage {
   }
 
   /**
+   * Get visible title names in order
+   */
+  async getTitleNames(): Promise<string[]> {
+    const allCards = await this.titleCards.all();
+    const names: string[] = [];
+
+    for (const card of allCards) {
+      const display = await card.evaluate((el) => window.getComputedStyle(el).display);
+      if (display !== 'none') {
+        const nameElement = card.locator('.title-name');
+        const name = await nameElement.textContent();
+        if (name) names.push(name.trim());
+      }
+    }
+
+    return names;
+  }
+
+  /**
    * Verify title exists by name
    * @param name - Title name to search for
    */
