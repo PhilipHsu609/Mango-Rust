@@ -62,6 +62,9 @@ jobs:
       - name: Build CSS
         run: ./build-css.sh
 
+      - name: Setup test manga library
+        run: bash tests/fixtures/setup-test-library.sh
+
       - name: Run integration tests
         run: |
           cd tests

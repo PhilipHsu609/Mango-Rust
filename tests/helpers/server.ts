@@ -44,6 +44,7 @@ export async function startServer(config: Partial<ServerConfig> = {}): Promise<v
       RUST_LOG: 'info',
       MANGO_PORT: cfg.port.toString(),
       MANGO_HOST: cfg.host,
+      MANGO_LIBRARY_PATH: process.env.HOME + '/test-manga-library',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

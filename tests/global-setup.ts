@@ -43,6 +43,26 @@ async function globalSetup(): Promise<void> {
     await createTestUser(dbPath);
     console.log('✅ Test user ready');
 
+    // Step 5: Trigger library scan
+    console.log('📚 Triggering library scan...');
+    try {
+      const response = await fetch('http://localhost:9000/api/admin/scan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (response.ok) {
+        console.log('✅ Library scan initiated');
+        // Wait a bit for scan to complete
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      } else {
+        console.warn(`⚠️  Library scan returned status ${response.status}`);
+      }
+    } catch (error) {
+      console.warn('⚠️  Failed to trigger library scan:', error);
+    }
+
     console.log('🎉 Global setup: Complete');
   } catch (error) {
     console.error('❌ Global setup failed:', error);
