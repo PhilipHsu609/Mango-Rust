@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/test-validation/design.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-23T08:43:10.580Z",
+      "trigger": "initial",
+      "approvalId": "approval_1763887390563_c0wlenuw5",
+      "approvalTitle": "Test Validation Framework - Design Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-23T08:44:40.377Z",
+      "trigger": "approved",
+      "approvalId": "approval_1763887390563_c0wlenuw5",
+      "approvalTitle": "Test Validation Framework - Design Document"
+    }
+  ]
+}

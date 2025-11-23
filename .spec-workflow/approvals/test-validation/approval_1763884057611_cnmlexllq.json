@@ -3,8 +3,10 @@
   "title": "Requirements: Test Validation Framework",
   "filePath": ".spec-workflow/specs/test-validation/requirements.md",
   "type": "document",
-  "status": "pending",
+  "status": "approved",
   "createdAt": "2025-11-23T07:47:37.611Z",
   "category": "spec",
-  "categoryName": "test-validation"
+  "categoryName": "test-validation",
+  "response": "Approved via dashboard",
+  "respondedAt": "2025-11-23T08:37:54.451Z"
 }
