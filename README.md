@@ -14,6 +14,7 @@ A self-hosted manga/comic reader written in Rust. Modern reimplementation of [Ma
 - 👥 User management (admin)
 - 🔍 Search and sorting
 - 📦 ZIP/CBZ archive support
+- 📡 OPDS catalog for e-reader apps
 
 ## Quick Start
 
@@ -42,6 +43,33 @@ log_level: info
 ```
 
 Environment variables: `MANGO_HOST`, `MANGO_PORT`, `MANGO_LIBRARY_PATH`, `MANGO_DB_PATH`, `MANGO_LOG_LEVEL`
+
+## OPDS Catalog
+
+Mango-Rust provides an OPDS catalog for accessing your library from e-reader apps like Chunky Reader, KyBook, or Panels.
+
+**Endpoints:**
+- Main catalog: `http://localhost:9000/opds`
+- Title details: `http://localhost:9000/opds/book/{title_id}`
+
+**Authentication:**
+OPDS endpoints require HTTP Basic Authentication. Use your Mango username and password:
+
+```bash
+# Test with curl
+curl -u username:password http://localhost:9000/opds
+```
+
+**E-Reader Setup:**
+Most OPDS-compatible apps allow adding custom catalogs. Use:
+- **URL**: `http://your-server:9000/opds`
+- **Authentication**: Basic Auth with your credentials
+
+The catalog provides:
+- Browse all titles in your library
+- View chapters/volumes for each title
+- Direct download links for reading offline
+- Cover thumbnails
 
 ## Development
 
@@ -101,9 +129,9 @@ templates/           # Askama templates
 - ✅ Mobile-responsive UI
 - ✅ Home page with Continue/Start/Recently Added sections
 - ✅ LESS build system with organized CSS architecture
+- ✅ OPDS catalog support (HTTP Basic Auth)
 
 **Remaining for v1.0:**
-- 🚧 OPDS catalog support
 - 🚧 RAR/CBR archive format
 
 **Future (v2.0+):**
