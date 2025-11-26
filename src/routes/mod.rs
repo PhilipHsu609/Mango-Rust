@@ -3,6 +3,7 @@ pub mod api;
 pub mod book;
 pub mod login;
 pub mod main;
+pub mod opds;
 pub mod progress;
 pub mod reader;
 
@@ -12,12 +13,13 @@ pub use admin::{
     update_user, users_page,
 };
 pub use api::{
-    add_tag, continue_reading, delete_tag, get_cover, get_library, get_page, get_stats, get_title,
-    get_title_tags, list_tags, recently_added, start_reading,
+    add_tag, continue_reading, delete_tag, download_entry, get_cover, get_library, get_page,
+    get_stats, get_title, get_title_tags, list_tags, recently_added, start_reading,
 };
 pub use book::get_book;
 pub use login::{get_login, logout, post_login};
 pub use main::{change_password_api, change_password_page, home, library, list_tags_page, view_tag_page};
+pub use opds::{opds_index, opds_title};
 pub use progress::{get_all_progress, get_progress, save_progress};
 pub use reader::reader;
 

@@ -1,0 +1,30 @@
+{% raw %}<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:mango:{{ title.id }}</id>
+
+  <link rel="self" href="{{ base_url }}opds/book/{{ title.id }}" type="application/atom+xml;profile=opds-catalog;kind=navigation" />
+  <link rel="start" href="{{ base_url }}opds/" type="application/atom+xml;profile=opds-catalog;kind=navigation" />
+
+  <title>{{ title.name }}</title>
+
+  <author>
+    <name>Mango</name>
+    <uri>https://github.com/hkalexling/Mango</uri>
+  </author>
+
+  {% for entry in entries %}
+  <entry>
+    <title>{{ entry.title }}</title>
+    <id>urn:mango:{{ entry.id }}</id>
+
+    <link rel="http://opds-spec.org/image" href="{{ base_url }}api/cover/{{ title.id }}/{{ entry.id }}" />
+    <link rel="http://opds-spec.org/image/thumbnail" href="{{ base_url }}api/cover/{{ title.id }}/{{ entry.id }}" />
+
+    <link rel="http://opds-spec.org/acquisition" href="{{ base_url }}api/download/{{ title.id }}/{{ entry.id }}" title="Read" type="{{ entry.mime_type }}" />
+
+    <link type="text/html" rel="alternate" title="Read in Mango" href="{{ base_url }}reader/{{ title.id }}/{{ entry.id }}/1" />
+    <link type="text/html" rel="alternate" title="Open in Mango" href="{{ base_url }}book/{{ title.id }}" />
+  </entry>
+  {% endfor %}
+</feed>
+{% endraw %}

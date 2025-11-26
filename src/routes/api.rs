@@ -446,6 +446,51 @@ pub async fn delete_tag(
     Ok(StatusCode::OK)
 }
 
+/// API route: GET /api/download/:tid/:eid
+/// Download the original archive file for an entry (used by OPDS clients)
+pub async fn download_entry(
+    State(state): State<AppState>,
+    Path((title_id, entry_id)): Path<(String, String)>,
+    _username: crate::auth::Username,
+) -> Result<impl IntoResponse> {
+    let lib = state.library.read().await;
+
+    // Get entry
+    let entry = lib
+        .get_entry(&title_id, &entry_id)
+        .ok_or_else(|| Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id)))?;
+
+    // Read the archive file
+    let file_data = tokio::fs::read(&entry.path).await.map_err(|e| {
+        Error::Internal(format!("Failed to read file {}: {}", entry.path.display(), e))
+    })?;
+
+    // Determine MIME type from file extension
+    let mime_type = match entry.path.extension().and_then(|e| e.to_str()) {
+        Some("cbz") | Some("zip") => "application/zip",
+        Some("cbr") | Some("rar") => "application/x-rar-compressed",
+        _ => "application/octet-stream",
+    };
+
+    // Get filename
+    let filename = entry.path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("download");
+
+    // Set headers for file download
+    let content_disposition = format!("attachment; filename=\"{}\"", filename);
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime_type),
+            (header::CONTENT_DISPOSITION, content_disposition.as_str()),
+        ],
+        file_data,
+    )
+        .into_response())
+}
+
 /// Guess MIME type from image data magic bytes
 fn guess_mime_type(data: &[u8]) -> &'static str {
     if data.len() < 4 {

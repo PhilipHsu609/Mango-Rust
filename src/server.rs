@@ -17,11 +17,11 @@ use crate::{
     routes::{
         add_tag, admin_dashboard, change_password_api, change_password_page, continue_reading,
         create_user, delete_all_missing_entries, delete_missing_entry, delete_tag, delete_user,
-        get_all_progress, get_book, get_cover, get_library, get_login, get_missing_entries,
-        get_page, get_progress, get_stats, get_title, get_title_tags, get_users, home,
-        library as library_page, list_tags, list_tags_page, logout, missing_items_page, post_login, reader,
-        recently_added, save_progress, scan_library, start_reading, update_user, users_page,
-        view_tag_page,
+        download_entry, get_all_progress, get_book, get_cover, get_library, get_login,
+        get_missing_entries, get_page, get_progress, get_stats, get_title, get_title_tags,
+        get_users, home, library as library_page, list_tags, list_tags_page, logout,
+        missing_items_page, opds_index, opds_title, post_login, reader, recently_added,
+        save_progress, scan_library, start_reading, update_user, users_page, view_tag_page,
     },
     Storage,
 };
@@ -113,6 +113,10 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/page/:tid/:eid/:page", get(get_page))
         .route("/api/cover/:tid/:eid", get(get_cover))
         .route("/api/stats", get(get_stats))
+        .route("/api/download/:tid/:eid", get(download_entry))
+        // OPDS catalog routes
+        .route("/opds", get(opds_index))
+        .route("/opds/book/:title_id", get(opds_title))
         // Tags API routes
         .route("/api/tags", get(list_tags))
         .route("/api/tags/:tid", get(get_title_tags))

@@ -29,6 +29,20 @@ pub async fn require_auth(
         return next.run(request).await;
     }
 
+    // For OPDS paths, try Basic Auth first (for e-reader support)
+    if path.starts_with("/opds") || path.starts_with("/api/download") {
+        if let Some(auth_header) = request.headers().get("authorization") {
+            if let Ok(auth_str) = auth_header.to_str() {
+                if auth_str.starts_with("Basic ") {
+                    if let Some(username) = verify_basic_auth(&state, &auth_str[6..]).await {
+                        request.extensions_mut().insert(username.clone());
+                        return next.run(request).await;
+                    }
+                }
+            }
+        }
+    }
+
     // Check if user has valid session
     if let Ok(Some(token)) = session.get::<String>(SESSION_TOKEN_KEY).await {
         // Verify token in database
@@ -89,6 +103,27 @@ fn is_public_path(path: &str) -> bool {
         || path.starts_with("/img/")
         || path.starts_with("/css/")
         || path.starts_with("/js/")
+}
+
+/// Verify HTTP Basic Auth credentials
+/// Returns username if credentials are valid
+async fn verify_basic_auth(state: &AppState, base64_credentials: &str) -> Option<String> {
+    use base64::{engine::general_purpose, Engine as _};
+
+    // Decode base64
+    let decoded = general_purpose::STANDARD.decode(base64_credentials).ok()?;
+    let credentials = String::from_utf8(decoded).ok()?;
+
+    // Split into username:password
+    let mut parts = credentials.splitn(2, ':');
+    let username = parts.next()?;
+    let password = parts.next()?;
+
+    // Verify credentials against database
+    match state.storage.verify_user(username, password).await {
+        Ok(Some(_token)) => Some(username.to_string()),
+        _ => None,
+    }
 }
 
 /// Helper to get username from request extensions
