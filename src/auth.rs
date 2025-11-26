@@ -31,15 +31,23 @@ pub async fn require_auth(
 
     // For OPDS paths, try Basic Auth first (for e-reader support)
     if path.starts_with("/opds") || path.starts_with("/api/download") {
+        tracing::debug!("OPDS path detected: {}", path);
         if let Some(auth_header) = request.headers().get("authorization") {
+            tracing::debug!("Authorization header found");
             if let Ok(auth_str) = auth_header.to_str() {
                 if auth_str.starts_with("Basic ") {
+                    tracing::debug!("Basic auth detected");
                     if let Some(username) = verify_basic_auth(&state, &auth_str[6..]).await {
+                        tracing::debug!("Basic auth successful for user: {}", username);
                         request.extensions_mut().insert(username.clone());
                         return next.run(request).await;
+                    } else {
+                        tracing::debug!("Basic auth failed");
                     }
                 }
             }
+        } else {
+            tracing::debug!("No authorization header found");
         }
     }
 
@@ -110,19 +118,36 @@ fn is_public_path(path: &str) -> bool {
 async fn verify_basic_auth(state: &AppState, base64_credentials: &str) -> Option<String> {
     use base64::{engine::general_purpose, Engine as _};
 
+    tracing::debug!("Verifying basic auth credentials");
+
     // Decode base64
     let decoded = general_purpose::STANDARD.decode(base64_credentials).ok()?;
+    tracing::debug!("Base64 decoded successfully");
+
     let credentials = String::from_utf8(decoded).ok()?;
+    tracing::debug!("Credentials string: {}", credentials);
 
     // Split into username:password
     let mut parts = credentials.splitn(2, ':');
     let username = parts.next()?;
     let password = parts.next()?;
 
+    tracing::debug!("Attempting to verify user: {}", username);
+
     // Verify credentials against database
     match state.storage.verify_user(username, password).await {
-        Ok(Some(_token)) => Some(username.to_string()),
-        _ => None,
+        Ok(Some(_token)) => {
+            tracing::debug!("User verified successfully: {}", username);
+            Some(username.to_string())
+        }
+        Ok(None) => {
+            tracing::debug!("User verification failed - invalid credentials");
+            None
+        }
+        Err(e) => {
+            tracing::error!("Error verifying user: {}", e);
+            None
+        }
     }
 }
 
