@@ -282,9 +282,11 @@ test.describe('Navigation', () => {
     await expect(hamburger).toBeVisible();
 
     // Verify hamburger has correct responsive class (uk-hidden@m = hidden on medium+)
+    // The class is on the parent wrapper, not the button itself
     const hamburgerHasHiddenClass = await page.evaluate(() => {
-      const btn = document.querySelector('[uk-toggle="target: #mobile-nav"]');
-      return btn && btn.classList.contains('uk-hidden@m');
+      const wrapper = document.querySelector('.uk-navbar-left.uk-hidden\\@m');
+      const toggleInside = wrapper?.querySelector('[uk-toggle="target: #mobile-nav"]');
+      return wrapper !== null && toggleInside !== null;
     });
     expect(hamburgerHasHiddenClass).toBe(true);
 

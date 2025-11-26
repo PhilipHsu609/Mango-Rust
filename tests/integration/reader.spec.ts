@@ -163,8 +163,10 @@ test.describe('Reader Functionality', () => {
     );
 
     // Verify that ALL images were created (not just a few)
+    // Get total pages from the page-select dropdown
     const totalPages = await page.evaluate(() => {
-      return (window as any).TOTAL_PAGES || 0;
+      const select = document.querySelector('#page-select') as HTMLSelectElement;
+      return select ? select.options.length : 0;
     });
 
     const imageCount = await page.locator('#continuous-container img').count();
