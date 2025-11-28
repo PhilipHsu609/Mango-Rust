@@ -20,6 +20,9 @@ sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "macros", "migr
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+rmp-serde = "1.1"  # MessagePack serialization for cache
+flate2 = "1.0"  # gzip compression for cache files
+sha2 = "0.10"  # SHA256 for cache keys
 
 # Authentication
 bcrypt = "0.15"
@@ -52,3 +55,6 @@ natord = "1.0"  # Natural number ordering for sorting
 crc32fast = "1.4"  # CRC32 for directory signatures
 sha1 = "0.10"  # SHA1 for contents signatures
 percent-encoding = "2.3.2"
+
+[dev-dependencies]
+tempfile = "3.8"  # For test file isolation

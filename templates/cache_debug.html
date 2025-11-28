@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Cache Debug - Mango{% endblock %}
+
+{% block content %}
+<div x-data="cacheDebugData()">
+    <h2>Cache Debug</h2>
+
+    <div class="uk-card uk-card-default uk-card-body uk-margin-medium">
+        <h3 class="uk-card-title">LRU Cache Statistics</h3>
+
+        <dl class="uk-description-list">
+            <dt>Cache Status</dt>
+            <dd>
+                {% if stats.size_limit > 0 %}
+                    <span class="uk-badge uk-badge-success">Enabled</span>
+                {% else %}
+                    <span class="uk-badge">Disabled</span>
+                {% endif %}
+            </dd>
+
+            <dt>Memory Usage</dt>
+            <dd>
+                {{ stats.size_bytes / 1024 / 1024 }} MB / {{ stats.size_limit / 1024 / 1024 }} MB
+                ({{ stats.usage_percent() }}%)
+                <progress class="uk-progress" value="{{ stats.size_bytes }}" max="{{ stats.size_limit }}"></progress>
+            </dd>
+
+            <dt>Cache Entries</dt>
+            <dd>{{ stats.entry_count }} entries</dd>
+
+            <dt>Hit Rate</dt>
+            <dd>
+                {{ stats.hit_rate() }}%
+                ({{ stats.hit_count }} hits / {{ stats.miss_count }} misses)
+            </dd>
+
+            <dt>Evictions</dt>
+            <dd>{{ stats.eviction_count }} entries evicted</dd>
+
+            <dt>Total Requests</dt>
+            <dd>{{ stats.hit_count + stats.miss_count }}</dd>
+        </dl>
+    </div>
+
+    <div class="uk-card uk-card-default uk-card-body uk-margin-medium">
+        <h3 class="uk-card-title">Library Cache File</h3>
+
+        <dl class="uk-description-list">
+            <dt>File Path</dt>
+            <dd class="uk-text-break">{{ cache_file_path }}</dd>
+
+            {% if cache_file_exists %}
+                <dt>File Size</dt>
+                <dd>{{ cache_file_size / 1024 }} KB</dd>
+
+                <dt>Last Modified</dt>
+                <dd>{{ cache_file_modified }}</dd>
+
+                <dt>Status</dt>
+                <dd><span class="uk-badge uk-badge-success">Valid</span></dd>
+            {% else %}
+                <dt>Status</dt>
+                <dd><span class="uk-badge uk-badge-warning">No cache file</span></dd>
+            {% endif %}
+        </dl>
+    </div>
+
+    <div class="uk-card uk-card-default uk-card-body uk-margin-medium">
+        <h3 class="uk-card-title">Cache Operations</h3>
+
+        <div class="uk-grid-small uk-child-width-auto" uk-grid>
+            <div>
+                <button
+                    class="uk-button uk-button-default"
+                    @click="refreshStats()"
+                    :disabled="loading">
+                    <span uk-spinner="ratio: 0.6" x-show="loading"></span>
+                    <span x-show="!loading">Refresh Statistics</span>
+                </button>
+            </div>
+
+            <div>
+                <button
+                    class="uk-button uk-button-primary"
+                    @click="saveLibraryCache()"
+                    :disabled="loading">
+                    Save Library to Cache
+                </button>
+            </div>
+
+            <div>
+                <button
+                    class="uk-button uk-button-secondary"
+                    @click="loadLibraryCache()"
+                    :disabled="loading">
+                    Load Library from Cache
+                </button>
+            </div>
+
+            <div>
+                <button
+                    class="uk-button uk-button-danger"
+                    @click="clearCache()"
+                    :disabled="loading"
+                    uk-toggle="target: #clear-confirm">
+                    Clear All Cache
+                </button>
+            </div>
+        </div>
+
+        <div x-show="message" class="uk-alert uk-margin-top" :class="messageType === 'success' ? 'uk-alert-success' : 'uk-alert-danger'">
+            <p x-text="message"></p>
+        </div>
+    </div>
+
+    <!-- Cache Entries (Top 20) -->
+    <div class="uk-card uk-card-default uk-card-body uk-margin-medium">
+        <h3 class="uk-card-title">Recent Cache Entries (Top 20 by Access)</h3>
+
+        <div class="uk-overflow-auto">
+            <table class="uk-table uk-table-small uk-table-divider uk-table-striped">
+                <thead>
+                    <tr>
+                        <th>Key (truncated)</th>
+                        <th class="uk-text-right">Size</th>
+                        <th class="uk-text-right">Access Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if entries.len() > 0 %}
+                        {% for entry in entries %}
+                        <tr>
+                            <td class="uk-text-truncate" style="max-width: 400px;">
+                                {{ entry.key }}
+                            </td>
+                            <td class="uk-text-right uk-text-nowrap">
+                                {{ entry.size_bytes / 1024 }} KB
+                            </td>
+                            <td class="uk-text-right">{{ entry.access_count }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="3" class="uk-text-center uk-text-muted">
+                                No cache entries
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Clear Cache Confirmation Modal -->
+    <div id="clear-confirm" uk-modal>
+        <div class="uk-modal-dialog uk-modal-body">
+            <h2 class="uk-modal-title">Clear All Cache?</h2>
+            <p>This will remove all cached sorted lists from memory. The library cache file will remain.</p>
+            <p class="uk-text-right">
+                <button class="uk-button uk-button-default uk-modal-close" type="button">Cancel</button>
+                <button class="uk-button uk-button-danger uk-modal-close" type="button" @click="confirmClearCache()">Clear Cache</button>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/cache_debug.js"></script>
+{% endblock %}

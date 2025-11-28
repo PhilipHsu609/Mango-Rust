@@ -58,6 +58,7 @@ struct BookTemplate {
     sort_progress_asc: bool,
     sort_progress_desc: bool,
     entries: Vec<EntryData>,
+    #[allow(dead_code)] // Reserved for future use
     tags: Vec<String>,
 }
 

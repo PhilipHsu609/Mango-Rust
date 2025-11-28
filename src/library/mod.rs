@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod entry;
 pub mod progress;
 pub mod title;

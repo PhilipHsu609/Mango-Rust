@@ -45,6 +45,10 @@ pub async fn save_progress(
     title
         .save_entry_progress(&username, &entry_id, request.page)
         .await?;
+
+    // Invalidate cache after progress update
+    lib.invalidate_cache_for_progress(&title_id, &username)
+        .await;
     drop(lib); // Release lock
 
     tracing::debug!(

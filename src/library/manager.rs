@@ -2,15 +2,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use super::entry::Entry;
 use super::title::Title;
 use crate::error::Result;
 use crate::Storage;
 
-/// Main library manager
-/// Handles scanning, ID tracking, and title registry
 pub struct Library {
     /// Library root directory
     path: PathBuf,
@@ -20,15 +18,54 @@ pub struct Library {
 
     /// Database storage for ID persistence
     storage: Storage,
+
+    /// Cache for sorted lists and library data (uses Mutex for thread-safe interior mutability)
+    cache: Mutex<super::cache::Cache>,
 }
 
 impl Library {
     /// Create a new Library instance
-    pub fn new(path: PathBuf, storage: Storage) -> Self {
+    pub fn new(path: PathBuf, storage: Storage, config: &crate::Config) -> Self {
         Self {
             path,
             titles: HashMap::new(),
             storage,
+            cache: Mutex::new(super::cache::Cache::new(config)),
+        }
+    }
+
+    /// Try to load library from cache
+    /// Returns Ok(true) if loaded from cache, Ok(false) if cache miss/invalid
+    pub async fn try_load_from_cache(&mut self) -> Result<bool> {
+        tracing::info!("Attempting to load library from cache");
+
+        // Get database title count for validation
+        let db_title_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM ids WHERE type = 'title' AND unavailable = 0",
+        )
+        .fetch_one(self.storage.pool())
+        .await? as usize;
+
+        // Try to load from cache
+        let cache = self.cache.lock().await;
+        match cache.load_library(&self.path, db_title_count).await? {
+            Some(cached_data) => {
+                drop(cache); // Release lock before modifying self.titles
+
+                self.titles = cached_data.titles;
+                let entry_count: usize = self.titles.values().map(|t| t.entries.len()).sum();
+
+                tracing::info!(
+                    "Library loaded from cache: {} titles, {} entries",
+                    self.titles.len(),
+                    entry_count
+                );
+                Ok(true)
+            }
+            None => {
+                tracing::info!("Cache miss or invalid - will perform full scan");
+                Ok(false)
+            }
         }
     }
 
@@ -72,7 +109,11 @@ impl Library {
 
                         // Populate date_added for newly discovered entries
                         if let Err(e) = title.populate_date_added().await {
-                            tracing::warn!("Failed to populate date_added for {}: {}", title.title, e);
+                            tracing::warn!(
+                                "Failed to populate date_added for {}: {}",
+                                title.title,
+                                e
+                            );
                         }
 
                         new_titles.insert(title.id.clone(), title);
@@ -98,7 +139,36 @@ impl Library {
             entry_count
         );
 
+        // Save library to cache in background (non-blocking)
+        self.save_to_cache_background().await;
+
         Ok(())
+    }
+
+    /// Save library to cache in background task (non-blocking)
+    async fn save_to_cache_background(&self) {
+        // Clone data needed for background save (to satisfy 'static requirement)
+        let cached_data = super::cache::CachedLibraryData {
+            path: self.path.clone(),
+            titles: self.titles.clone(),
+        };
+
+        // Get file manager for background save
+        let file_manager = {
+            let cache = self.cache.lock().await;
+            if cache.stats().size_limit == 0 {
+                return; // Cache disabled
+            }
+            cache.file_manager()
+        };
+
+        // Spawn background task to save cache (non-blocking)
+        tokio::spawn(async move {
+            match file_manager.save_data(cached_data).await {
+                Ok(_) => tracing::info!("Library cache saved successfully in background"),
+                Err(e) => tracing::warn!("Failed to save library cache in background: {}", e),
+            }
+        });
     }
 
     /// Find existing title ID from database (by path or signature)
@@ -235,6 +305,63 @@ impl Library {
         titles
     }
 
+    /// Get all titles sorted by specified method with caching
+    /// This version uses cache when username is provided
+    pub async fn get_titles_sorted_cached(
+        &self,
+        username: &str,
+        method: SortMethod,
+        ascending: bool,
+    ) -> Vec<&Title> {
+        // Generate cache key signature from current title IDs
+        let mut all_title_ids: Vec<String> = self.titles.keys().cloned().collect();
+        all_title_ids.sort(); // Consistent ordering for cache key
+
+        let sort_method_str = match method {
+            SortMethod::Name => "name",
+            SortMethod::TimeModified => "modified",
+            SortMethod::Progress => "progress",
+            SortMethod::Auto => "auto",
+        };
+
+        // Try to get cached sorted list
+        let mut cache = self.cache.lock().await;
+        let cache_key = super::cache::key::sorted_titles_key(
+            username,
+            &all_title_ids,
+            sort_method_str,
+            ascending,
+        );
+
+        if let Some(cached_ids) = cache.get_sorted_titles(&cache_key) {
+            drop(cache); // Release lock before building result
+
+            // Build result from cached IDs
+            let mut result = Vec::with_capacity(cached_ids.len());
+            for id in &cached_ids {
+                if let Some(title) = self.titles.get(id) {
+                    result.push(title);
+                }
+            }
+            return result;
+        }
+
+        drop(cache); // Release lock before sorting
+
+        // Cache miss - compute sort
+        let sorted_titles = self.get_titles_sorted(method, ascending);
+
+        // Extract IDs in sorted order
+        let sorted_ids: Vec<String> = sorted_titles.iter().map(|t| t.id.clone()).collect();
+
+        // Cache the sorted IDs
+        let mut cache = self.cache.lock().await;
+        cache.set_sorted_titles(cache_key, sorted_ids);
+        drop(cache);
+
+        sorted_titles
+    }
+
     /// Get a specific title by ID
     pub fn get_title(&self, id: &str) -> Option<&Title> {
         self.titles.get(id)
@@ -249,9 +376,85 @@ impl Library {
             .find(|e| e.id == entry_id)
     }
 
+    /// Get sorted entries for a title with caching
+    pub async fn get_entries_sorted_cached(
+        &self,
+        title_id: &str,
+        username: &str,
+        method: SortMethod,
+        ascending: bool,
+    ) -> Option<Vec<&Entry>> {
+        let title = self.titles.get(title_id)?;
+
+        // Generate cache key signature from current entry IDs
+        let mut all_entry_ids: Vec<String> = title.entries.iter().map(|e| e.id.clone()).collect();
+        all_entry_ids.sort(); // Consistent ordering for cache key
+
+        let sort_method_str = match method {
+            SortMethod::Name => "name",
+            SortMethod::TimeModified => "modified",
+            SortMethod::Progress => "progress",
+            SortMethod::Auto => "auto",
+        };
+
+        // Try to get cached sorted list
+        let mut cache = self.cache.lock().await;
+        let cache_key = super::cache::key::sorted_entries_key(
+            title_id,
+            username,
+            &all_entry_ids,
+            sort_method_str,
+            ascending,
+        );
+
+        if let Some(cached_ids) = cache.get_sorted_entries(&cache_key) {
+            drop(cache); // Release lock before building result
+
+            // Build result from cached IDs
+            let mut result = Vec::with_capacity(cached_ids.len());
+            for id in &cached_ids {
+                if let Some(entry) = title.entries.iter().find(|e| e.id == *id) {
+                    result.push(entry);
+                }
+            }
+            return Some(result);
+        }
+
+        drop(cache); // Release lock before sorting
+
+        // Cache miss - compute sort
+        let sorted_entries = title.get_entries_sorted(method, ascending);
+
+        // Extract IDs in sorted order
+        let sorted_ids: Vec<String> = sorted_entries.iter().map(|e| e.id.clone()).collect();
+
+        // Cache the sorted IDs
+        let mut cache = self.cache.lock().await;
+        cache.set_sorted_entries(cache_key, sorted_ids);
+        drop(cache);
+
+        Some(sorted_entries)
+    }
+
     /// Get library root path
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Invalidate cache for a title after progress update
+    pub async fn invalidate_cache_for_progress(&self, title_id: &str, username: &str) {
+        let mut cache = self.cache.lock().await;
+        cache.invalidate_progress(title_id, username);
+    }
+
+    /// Get cache reference for admin/debug access
+    pub fn cache(&self) -> &Mutex<super::cache::Cache> {
+        &self.cache
+    }
+
+    /// Get all titles as a HashMap
+    pub fn titles(&self) -> &HashMap<String, Title> {
+        &self.titles
     }
 
     /// Get total library statistics

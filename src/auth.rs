@@ -35,9 +35,9 @@ pub async fn require_auth(
         if let Some(auth_header) = request.headers().get("authorization") {
             tracing::debug!("Authorization header found");
             if let Ok(auth_str) = auth_header.to_str() {
-                if auth_str.starts_with("Basic ") {
+                if let Some(stripped) = auth_str.strip_prefix("Basic ") {
                     tracing::debug!("Basic auth detected");
-                    if let Some(username) = verify_basic_auth(&state, &auth_str[6..]).await {
+                    if let Some(username) = verify_basic_auth(&state, stripped).await {
                         tracing::debug!("Basic auth successful for user: {}", username);
                         request.extensions_mut().insert(username.clone());
                         return next.run(request).await;
@@ -128,9 +128,7 @@ async fn verify_basic_auth(state: &AppState, base64_credentials: &str) -> Option
     tracing::debug!("Credentials string: {}", credentials);
 
     // Split into username:password
-    let mut parts = credentials.splitn(2, ':');
-    let username = parts.next()?;
-    let password = parts.next()?;
+    let (username, password) = credentials.split_once(':')?;
 
     tracing::debug!("Attempting to verify user: {}", username);
 

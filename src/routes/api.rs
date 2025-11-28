@@ -303,7 +303,9 @@ pub async fn recently_added(
 
     // Group consecutive entries from same title added on same day
     let mut result: Vec<RecentlyAddedEntry> = Vec::new();
-    for (title_id, title_name, entry_id, entry_name, pages, percentage, date_added) in entries_with_dates {
+    for (title_id, title_name, entry_id, entry_name, pages, percentage, date_added) in
+        entries_with_dates
+    {
         if result.len() >= 8 {
             break;
         }
@@ -403,7 +405,8 @@ pub async fn list_tags(
         .collect();
 
     tags_with_counts.sort_by(|a, b| {
-        b.count.cmp(&a.count)
+        b.count
+            .cmp(&a.count)
             .then_with(|| a.tag.to_lowercase().cmp(&b.tag.to_lowercase()))
     });
 
@@ -462,7 +465,11 @@ pub async fn download_entry(
 
     // Read the archive file
     let file_data = tokio::fs::read(&entry.path).await.map_err(|e| {
-        Error::Internal(format!("Failed to read file {}: {}", entry.path.display(), e))
+        Error::Internal(format!(
+            "Failed to read file {}: {}",
+            entry.path.display(),
+            e
+        ))
     })?;
 
     // Determine MIME type from file extension
@@ -473,7 +480,8 @@ pub async fn download_entry(
     };
 
     // Get filename
-    let filename = entry.path
+    let filename = entry
+        .path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("download");

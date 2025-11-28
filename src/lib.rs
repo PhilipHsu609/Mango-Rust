@@ -38,6 +38,12 @@ pub mod error {
         #[error("JSON error: {0}")]
         Json(#[from] serde_json::Error),
 
+        #[error("Cache corrupted: {0}")]
+        CacheCorrupted(String),
+
+        #[error("Cache serialization failed: {0}")]
+        CacheSerialization(String),
+
         #[error("Config error: {0}")]
         Config(String),
 
@@ -64,7 +70,9 @@ pub mod error {
                 | Error::Io(_)
                 | Error::Internal(_)
                 | Error::Archive(_)
-                | Error::Json(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                | Error::Json(_)
+                | Error::CacheCorrupted(_)
+                | Error::CacheSerialization(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 Error::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
             };
 

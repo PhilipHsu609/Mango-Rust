@@ -60,10 +60,7 @@ struct HomeTemplate {
 }
 
 /// GET / - Home page with Continue Reading, Start Reading, Recently Added (requires authentication)
-pub async fn home(
-    State(_state): State<AppState>,
-    user: User,
-) -> Result<Html<String>> {
+pub async fn home(State(_state): State<AppState>, user: User) -> Result<Html<String>> {
     // TODO: Implement Continue Reading, Start Reading, Recently Added logic
     let template = HomeTemplate {
         home_active: true,
@@ -199,12 +196,15 @@ pub async fn change_password_api(
     // Change the password
     state
         .storage
-        .change_password(&user.username, &request.current_password, &request.new_password)
+        .change_password(
+            &user.username,
+            &request.current_password,
+            &request.new_password,
+        )
         .await?;
 
     Ok(axum::http::StatusCode::OK)
 }
-
 
 // ========== Tags Page Handlers ==========
 
@@ -227,10 +227,7 @@ struct TagWithCount {
 }
 
 /// GET /tags - List all tags with their usage counts
-pub async fn list_tags_page(
-    State(state): State<AppState>,
-    user: User,
-) -> Result<Html<String>> {
+pub async fn list_tags_page(State(state): State<AppState>, user: User) -> Result<Html<String>> {
     let storage = &state.storage;
     let tags = storage.list_tags().await?;
 
@@ -239,13 +236,12 @@ pub async fn list_tags_page(
     for tag in tags {
         let title_ids = storage.get_tag_titles(&tag).await?;
         let count = title_ids.len();
-        
+
         // URL-encode the tag for links
-        let encoded_tag = percent_encoding::percent_encode(
-            tag.as_bytes(),
-            percent_encoding::NON_ALPHANUMERIC,
-        ).to_string();
-        
+        let encoded_tag =
+            percent_encoding::percent_encode(tag.as_bytes(), percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
+
         tags_with_counts.push(TagWithCount {
             tag,
             encoded_tag,
@@ -255,7 +251,8 @@ pub async fn list_tags_page(
 
     // Sort by count desc, then by tag name asc (case-insensitive)
     tags_with_counts.sort_by(|a, b| {
-        b.count.cmp(&a.count)
+        b.count
+            .cmp(&a.count)
             .then_with(|| a.tag.to_lowercase().cmp(&b.tag.to_lowercase()))
     });
 
@@ -301,9 +298,12 @@ pub async fn view_tag_page(
 
     // Get all title IDs with this tag
     let title_ids = storage.get_tag_titles(&tag).await?;
-    
+
     if title_ids.is_empty() {
-        return Err(crate::error::Error::NotFound(format!("Tag '{}' not found", tag)));
+        return Err(crate::error::Error::NotFound(format!(
+            "Tag '{}' not found",
+            tag
+        )));
     }
 
     // Get title objects for these IDs
@@ -372,16 +372,26 @@ pub async fn view_tag_page(
     }
 
     // Determine which sort option is active
-    let (sort_name_asc, sort_name_desc, sort_time_asc, sort_time_desc, sort_progress_asc, sort_progress_desc) =
-        match (sort_method, ascending) {
-            (crate::library::SortMethod::Name, true) => (true, false, false, false, false, false),
-            (crate::library::SortMethod::Name, false) => (false, true, false, false, false, false),
-            (crate::library::SortMethod::TimeModified, true) => (false, false, true, false, false, false),
-            (crate::library::SortMethod::TimeModified, false) => (false, false, false, true, false, false),
-            (crate::library::SortMethod::Progress, true) => (false, false, false, false, true, false),
-            (crate::library::SortMethod::Progress, false) => (false, false, false, false, false, true),
-            (crate::library::SortMethod::Auto, _) => (true, false, false, false, false, false),
-        };
+    let (
+        sort_name_asc,
+        sort_name_desc,
+        sort_time_asc,
+        sort_time_desc,
+        sort_progress_asc,
+        sort_progress_desc,
+    ) = match (sort_method, ascending) {
+        (crate::library::SortMethod::Name, true) => (true, false, false, false, false, false),
+        (crate::library::SortMethod::Name, false) => (false, true, false, false, false, false),
+        (crate::library::SortMethod::TimeModified, true) => {
+            (false, false, true, false, false, false)
+        }
+        (crate::library::SortMethod::TimeModified, false) => {
+            (false, false, false, true, false, false)
+        }
+        (crate::library::SortMethod::Progress, true) => (false, false, false, false, true, false),
+        (crate::library::SortMethod::Progress, false) => (false, false, false, false, false, true),
+        (crate::library::SortMethod::Auto, _) => (true, false, false, false, false, false),
+    };
 
     let template = TagTemplate {
         home_active: false,

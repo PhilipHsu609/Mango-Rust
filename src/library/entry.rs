@@ -5,7 +5,7 @@ use crate::error::Result;
 
 /// Represents a single readable entry (chapter/volume)
 /// Can be a ZIP/CBZ archive or a directory containing images
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Entry {
     /// Unique identifier (persisted in database)
     pub id: String,

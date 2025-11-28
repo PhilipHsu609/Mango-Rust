@@ -71,7 +71,10 @@ pub async fn opds_index(
 
     Ok((
         StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")],
+        [(
+            header::CONTENT_TYPE,
+            "application/atom+xml;profile=opds-catalog;kind=navigation",
+        )],
         xml,
     ))
 }
@@ -117,7 +120,10 @@ pub async fn opds_title(
 
     Ok((
         StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")],
+        [(
+            header::CONTENT_TYPE,
+            "application/atom+xml;profile=opds-catalog;kind=navigation",
+        )],
         xml,
     ))
 }

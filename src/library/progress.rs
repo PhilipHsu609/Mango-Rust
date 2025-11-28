@@ -150,7 +150,9 @@ impl TitleInfo {
 
     /// Set date added for an entry if not already set
     pub fn set_date_added_if_new(&mut self, entry_id: &str, timestamp: i64) {
-        self.date_added.entry(entry_id.to_string()).or_insert(timestamp);
+        self.date_added
+            .entry(entry_id.to_string())
+            .or_insert(timestamp);
     }
 
     /// Get sort preference for a specific user
@@ -161,6 +163,7 @@ impl TitleInfo {
 
     /// Set sort preference for a specific user
     pub fn set_sort_by(&mut self, username: &str, method: &str, ascending: bool) {
-        self.sort_by.insert(username.to_string(), (method.to_string(), ascending));
+        self.sort_by
+            .insert(username.to_string(), (method.to_string(), ascending));
     }
 }

@@ -6,7 +6,7 @@ use super::manager::SortMethod;
 use crate::error::Result;
 
 /// Represents a manga series (directory containing chapters/volumes)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Title {
     /// Unique identifier (persisted in database)
     pub id: String,

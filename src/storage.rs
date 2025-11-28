@@ -241,10 +241,11 @@ impl Storage {
         new_password: &str,
     ) -> Result<()> {
         // First, get the current password hash
-        let row: Option<(String,)> = sqlx::query_as("SELECT password FROM users WHERE username = ?")
-            .bind(username)
-            .fetch_optional(&self.pool)
-            .await?;
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT password FROM users WHERE username = ?")
+                .bind(username)
+                .fetch_optional(&self.pool)
+                .await?;
 
         let current_hash = row
             .ok_or_else(|| Error::BadRequest(format!("User not found: {}", username)))?
@@ -252,7 +253,9 @@ impl Storage {
 
         // Verify the current password
         if !verify_password(current_password, &current_hash)? {
-            return Err(Error::BadRequest("Current password is incorrect".to_string()));
+            return Err(Error::BadRequest(
+                "Current password is incorrect".to_string(),
+            ));
         }
 
         // Hash the new password
@@ -365,7 +368,6 @@ impl Storage {
         Ok(count as usize)
     }
 
-
     // ========== Tags Methods ==========
 
     /// Get all tags for a specific title
@@ -376,10 +378,7 @@ impl Storage {
             .fetch_all(&self.pool)
             .await?;
 
-        let tags = rows
-            .into_iter()
-            .map(|row| row.get("tag"))
-            .collect();
+        let tags = rows.into_iter().map(|row| row.get("tag")).collect();
 
         Ok(tags)
     }
@@ -392,10 +391,7 @@ impl Storage {
             .fetch_all(&self.pool)
             .await?;
 
-        let title_ids = rows
-            .into_iter()
-            .map(|row| row.get("id"))
-            .collect();
+        let title_ids = rows.into_iter().map(|row| row.get("id")).collect();
 
         Ok(title_ids)
     }
@@ -405,15 +401,12 @@ impl Storage {
     pub async fn list_tags(&self) -> Result<Vec<String>> {
         let rows = sqlx::query(
             "SELECT DISTINCT tag FROM tags \
-             ORDER BY tag"
+             ORDER BY tag",
         )
         .fetch_all(&self.pool)
         .await?;
 
-        let tags = rows
-            .into_iter()
-            .map(|row| row.get("tag"))
-            .collect();
+        let tags = rows.into_iter().map(|row| row.get("tag")).collect();
 
         Ok(tags)
     }

@@ -15,12 +15,13 @@ use crate::{
     error::Result,
     library::Library,
     routes::{
-        add_tag, admin_dashboard, change_password_api, change_password_page, continue_reading,
-        create_user, delete_all_missing_entries, delete_missing_entry, delete_tag, delete_user,
-        download_entry, get_all_progress, get_book, get_cover, get_library, get_login,
-        get_missing_entries, get_page, get_progress, get_stats, get_title, get_title_tags,
-        get_users, home, library as library_page, list_tags, list_tags_page, logout,
-        missing_items_page, opds_index, opds_title, post_login, reader, recently_added,
+        add_tag, admin_dashboard, cache_clear_api, cache_debug_page, cache_invalidate_api,
+        cache_load_library_api, cache_save_library_api, change_password_api, change_password_page,
+        continue_reading, create_user, delete_all_missing_entries, delete_missing_entry,
+        delete_tag, delete_user, download_entry, get_all_progress, get_book, get_cover,
+        get_library, get_login, get_missing_entries, get_page, get_progress, get_stats, get_title,
+        get_title_tags, get_users, home, library as library_page, list_tags, list_tags_page,
+        logout, missing_items_page, opds_index, opds_title, post_login, reader, recently_added,
         save_progress, scan_library, start_reading, update_user, users_page, view_tag_page,
     },
     Storage,
@@ -31,6 +32,7 @@ use crate::{
 pub struct AppState {
     pub storage: Storage,
     pub library: Arc<RwLock<Library>>,
+    pub config: Arc<Config>,
 }
 
 /// Build and run the Axum server
@@ -48,16 +50,23 @@ pub async fn run(config: Config) -> Result<()> {
     tracing::info!("Database initialized at {}", config.db_path.display());
 
     // Initialize library scanner
-    tracing::info!("Initializing library scanner");
-    let mut library = Library::new(config.library_path.clone(), storage.clone());
-    library.scan().await?;
+    tracing::info!("Initializing library");
+    let mut library = Library::new(config.library_path.clone(), storage.clone(), &config);
+
+    // Try to load from cache first, fall back to scan if needed
+    if !library.try_load_from_cache().await? {
+        library.scan().await?;
+    }
+
     let library = Arc::new(RwLock::new(library));
-    tracing::info!("Library scan complete");
+    tracing::info!("Library initialization complete");
 
     // Create application state
+    let config = Arc::new(config);
     let app_state = AppState {
         storage: storage.clone(),
         library,
+        config: config.clone(),
     };
 
     // Create session store (uses same database)
@@ -90,8 +99,15 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/admin", get(admin_dashboard))
         .route("/admin/missing-items", get(missing_items_page))
         .route("/admin/users", get(users_page))
+        // Cache debug route
+        .route("/debug/cache", get(cache_debug_page))
         // Admin API routes
         .route("/api/admin/scan", post(scan_library))
+        // Cache API routes
+        .route("/api/cache/clear", post(cache_clear_api))
+        .route("/api/cache/save-library", post(cache_save_library_api))
+        .route("/api/cache/load-library", post(cache_load_library_api))
+        .route("/api/cache/invalidate", post(cache_invalidate_api))
         .route(
             "/api/admin/entries/missing",
             get(get_missing_entries).delete(delete_all_missing_entries),
