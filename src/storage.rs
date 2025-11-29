@@ -38,8 +38,22 @@ impl Storage {
             }
         }
 
-        // Connect to database
-        let pool = SqlitePool::connect(database_url).await?;
+        // Configure connection pool for better concurrency
+        use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+        use std::str::FromStr;
+
+        let options = SqliteConnectOptions::from_str(database_url)?
+            .busy_timeout(std::time::Duration::from_secs(30)) // Wait up to 30s for locks
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal) // Use WAL mode for better concurrency
+            .synchronous(sqlx::sqlite::SqliteSynchronous::Normal); // Balance between safety and performance
+
+        // Connect to database with optimized pool settings
+        let pool = SqlitePoolOptions::new()
+            .max_connections(20) // Support up to 20 concurrent connections for parallel scanning
+            .min_connections(3) // Keep 3 connections warm
+            .acquire_timeout(std::time::Duration::from_secs(30))
+            .connect_with(options)
+            .await?;
 
         // Run migrations
         sqlx::migrate!("./migrations")

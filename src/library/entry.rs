@@ -45,8 +45,8 @@ impl Entry {
             .unwrap()
             .as_secs() as i64;
 
-        // Extract image list from archive
-        let image_files = extract_image_list(&path)?;
+        // Extract image list from archive (moved to blocking task to avoid blocking async runtime)
+        let image_files = extract_image_list(&path).await?;
         let pages = image_files.len();
 
         Ok(Self {
@@ -71,7 +71,7 @@ impl Entry {
         }
 
         let image_name = &self.image_files[page];
-        extract_image_from_archive(&self.path, image_name)
+        extract_image_from_archive(&self.path, image_name).await
     }
 
     /// Generate file signature for change detection
@@ -174,39 +174,54 @@ impl Entry {
 }
 
 /// Extract list of image filenames from a ZIP archive
-fn extract_image_list(archive_path: &Path) -> Result<Vec<String>> {
-    let file = std::fs::File::open(archive_path)?;
-    let mut archive = zip::ZipArchive::new(file)?;
+/// Uses spawn_blocking to avoid blocking the async runtime
+async fn extract_image_list(archive_path: &Path) -> Result<Vec<String>> {
+    let path = archive_path.to_path_buf();
 
-    let mut images = Vec::new();
+    tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::open(&path)?;
+        let mut archive = zip::ZipArchive::new(file)?;
 
-    for i in 0..archive.len() {
-        let file = archive.by_index(i)?;
-        let name = file.name().to_string();
+        let mut images = Vec::new();
 
-        if is_image_file(&name) {
-            images.push(name);
+        for i in 0..archive.len() {
+            let file = archive.by_index(i)?;
+            let name = file.name().to_string();
+
+            if is_image_file(&name) {
+                images.push(name);
+            }
         }
-    }
 
-    // Sort naturally (Chapter 2 before Chapter 10)
-    images.sort_by(|a, b| natord::compare(a, b));
+        // Sort naturally (Chapter 2 before Chapter 10)
+        images.sort_by(|a, b| natord::compare(a, b));
 
-    Ok(images)
+        Ok(images)
+    })
+    .await
+    .map_err(|e| crate::error::Error::Internal(format!("Task join error: {}", e)))?
 }
 
 /// Extract a single image from ZIP archive
-fn extract_image_from_archive(archive_path: &Path, image_name: &str) -> Result<Vec<u8>> {
+/// Uses spawn_blocking to avoid blocking the async runtime
+async fn extract_image_from_archive(archive_path: &Path, image_name: &str) -> Result<Vec<u8>> {
     use std::io::Read;
 
-    let file = std::fs::File::open(archive_path)?;
-    let mut archive = zip::ZipArchive::new(file)?;
+    let path = archive_path.to_path_buf();
+    let name = image_name.to_string();
 
-    let mut image_file = archive.by_name(image_name)?;
-    let mut buffer = Vec::new();
-    image_file.read_to_end(&mut buffer)?;
+    tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::open(&path)?;
+        let mut archive = zip::ZipArchive::new(file)?;
 
-    Ok(buffer)
+        let mut image_file = archive.by_name(&name)?;
+        let mut buffer = Vec::new();
+        image_file.read_to_end(&mut buffer)?;
+
+        Ok(buffer)
+    })
+    .await
+    .map_err(|e| crate::error::Error::Internal(format!("Task join error: {}", e)))?
 }
 
 /// Check if filename has an image extension

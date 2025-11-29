@@ -36,6 +36,7 @@ impl Library {
 
     /// Convert absolute path to relative path (relative to library root)
     /// Example: "/home/user/library/Series/Chapter.zip" -> "Series/Chapter.zip"
+    #[allow(dead_code)]
     fn to_relative_path(&self, absolute_path: &Path) -> Result<String> {
         absolute_path
             .strip_prefix(&self.path)
@@ -85,58 +86,91 @@ impl Library {
     }
 
     /// Scan the library directory for manga titles
+    /// Uses parallel processing with controlled concurrency for improved performance
     pub async fn scan(&mut self) -> Result<()> {
         tracing::info!("Starting library scan: {}", self.path.display());
 
-        let mut new_titles = HashMap::new();
+        // Collect all directory paths first
+        let mut title_paths = Vec::new();
         let mut dir_entries = tokio::fs::read_dir(&self.path).await?;
-
         while let Some(entry) = dir_entries.next_entry().await? {
             let entry_path = entry.path();
-
             if entry_path.is_dir() {
-                // Each top-level directory is a manga title (series)
-                match Title::from_directory(entry_path.clone()).await {
-                    Ok(mut title) => {
-                        // Try to match with existing ID from database
-                        if let Some(existing_id) = self.find_existing_id(&title).await? {
-                            title.id = existing_id;
-                            tracing::debug!(
-                                "Matched existing title: {} ({})",
-                                title.title,
-                                title.id
-                            );
-                        } else {
-                            // New title, persist ID to database
-                            self.persist_title_id(&title).await?;
-                            tracing::info!("Discovered new title: {} ({})", title.title, title.id);
-                        }
+                title_paths.push(entry_path);
+            }
+        }
 
-                        // Persist entry IDs
-                        for entry in &mut title.entries {
-                            if let Some(existing_id) = self.find_existing_entry_id(entry).await? {
-                                entry.id = existing_id;
-                            } else {
-                                self.persist_entry_id(entry).await?;
-                                tracing::debug!("  New entry: {} ({})", entry.title, entry.id);
-                            }
-                        }
+        tracing::info!("Found {} directories to scan", title_paths.len());
 
-                        // Populate date_added for newly discovered entries
-                        if let Err(e) = title.populate_date_added().await {
-                            tracing::warn!(
-                                "Failed to populate date_added for {}: {}",
-                                title.title,
-                                e
-                            );
-                        }
+        // Process titles in parallel with controlled concurrency
+        let concurrency_limit = 5; // Process 5 titles concurrently
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency_limit));
+        let storage = self.storage.clone();
+        let library_path = self.path.clone();
 
-                        new_titles.insert(title.id.clone(), title);
-                    }
+        let mut tasks = Vec::new();
+
+        for title_path in title_paths {
+            let sem = semaphore.clone();
+            let storage_clone = storage.clone();
+            let lib_path = library_path.clone();
+
+            let task = tokio::spawn(async move {
+                let _permit = sem.acquire().await.unwrap();
+
+                // Scan title directory
+                let mut title = match Title::from_directory(title_path.clone()).await {
+                    Ok(t) => t,
                     Err(e) => {
-                        tracing::warn!("Failed to scan title at {}: {}", entry_path.display(), e);
+                        tracing::warn!("Failed to scan title at {}: {}", title_path.display(), e);
+                        return None;
+                    }
+                };
+
+                // Find or create title ID
+                let existing_id = Self::find_existing_id_static(&lib_path, &title, &storage_clone).await.ok()?;
+                if let Some(id) = existing_id {
+                    title.id = id;
+                    tracing::debug!("Matched existing title: {} ({})", title.title, title.id);
+                } else {
+                    // New title, persist ID
+                    if let Err(e) = Self::persist_title_id_static(&lib_path, &title, &storage_clone).await {
+                        tracing::warn!("Failed to persist title ID: {}", e);
+                        return None;
+                    }
+                    tracing::info!("Discovered new title: {} ({})", title.title, title.id);
+                }
+
+                // Find or create entry IDs
+                for entry in &mut title.entries {
+                    let existing_entry_id = Self::find_existing_entry_id_static(&lib_path, entry, &storage_clone).await.ok()?;
+                    if let Some(id) = existing_entry_id {
+                        entry.id = id;
+                    } else {
+                        if let Err(e) = Self::persist_entry_id_static(&lib_path, entry, &storage_clone).await {
+                            tracing::warn!("Failed to persist entry ID: {}", e);
+                        } else {
+                            tracing::debug!("  New entry: {} ({})", entry.title, entry.id);
+                        }
                     }
                 }
+
+                // Populate date_added
+                if let Err(e) = title.populate_date_added().await {
+                    tracing::warn!("Failed to populate date_added for {}: {}", title.title, e);
+                }
+
+                Some(title)
+            });
+
+            tasks.push(task);
+        }
+
+        // Collect results
+        let mut new_titles = HashMap::new();
+        for task in tasks {
+            if let Ok(Some(title)) = task.await {
+                new_titles.insert(title.id.clone(), title);
             }
         }
 
@@ -156,6 +190,174 @@ impl Library {
 
         // Save library to cache in background (non-blocking)
         self.save_to_cache_background().await;
+
+        Ok(())
+    }
+
+    /// Static helper for finding existing title ID (for use in spawned tasks)
+    async fn find_existing_id_static(
+        library_path: &Path,
+        title: &Title,
+        storage: &Storage,
+    ) -> Result<Option<String>> {
+        let relative_path = title
+            .path
+            .strip_prefix(library_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .map_err(|_| {
+                crate::error::Error::Internal(format!(
+                    "Path {} is not within library root {}",
+                    title.path.display(),
+                    library_path.display()
+                ))
+            })?;
+
+        // Tier 1: Exact match
+        if let Some(id) = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0"
+        )
+        .bind(&relative_path)
+        .bind(&title.signature)
+        .fetch_optional(storage.pool())
+        .await?
+        {
+            return Ok(Some(id));
+        }
+
+        // Tier 2: Path-only match
+        if let Some(id) = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM titles WHERE path = ? AND unavailable = 0",
+        )
+        .bind(&relative_path)
+        .fetch_optional(storage.pool())
+        .await?
+        {
+            // Update signature
+            sqlx::query("UPDATE titles SET signature = ? WHERE id = ?")
+                .bind(&title.signature)
+                .bind(&id)
+                .execute(storage.pool())
+                .await?;
+
+            return Ok(Some(id));
+        }
+
+        Ok(None)
+    }
+
+    /// Static helper for persisting title ID (for use in spawned tasks)
+    async fn persist_title_id_static(
+        library_path: &Path,
+        title: &Title,
+        storage: &Storage,
+    ) -> Result<()> {
+        let relative_path = title
+            .path
+            .strip_prefix(library_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .map_err(|_| {
+                crate::error::Error::Internal(format!(
+                    "Path {} is not within library root {}",
+                    title.path.display(),
+                    library_path.display()
+                ))
+            })?;
+
+        sqlx::query(
+            "INSERT INTO titles (id, path, signature) VALUES (?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
+        )
+        .bind(&title.id)
+        .bind(&relative_path)
+        .bind(&title.signature)
+        .bind(&relative_path)
+        .bind(&title.signature)
+        .execute(storage.pool())
+        .await?;
+
+        Ok(())
+    }
+
+    /// Static helper for finding existing entry ID (for use in spawned tasks)
+    async fn find_existing_entry_id_static(
+        library_path: &Path,
+        entry: &Entry,
+        storage: &Storage,
+    ) -> Result<Option<String>> {
+        let relative_path = entry
+            .path
+            .strip_prefix(library_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .map_err(|_| {
+                crate::error::Error::Internal(format!(
+                    "Path {} is not within library root {}",
+                    entry.path.display(),
+                    library_path.display()
+                ))
+            })?;
+
+        // Tier 1: Exact match
+        if let Some(id) = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0"
+        )
+        .bind(&relative_path)
+        .bind(&entry.signature)
+        .fetch_optional(storage.pool())
+        .await?
+        {
+            return Ok(Some(id));
+        }
+
+        // Tier 2: Path-only match
+        if let Some(id) = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM ids WHERE path = ? AND unavailable = 0",
+        )
+        .bind(&relative_path)
+        .fetch_optional(storage.pool())
+        .await?
+        {
+            // Update signature
+            sqlx::query("UPDATE ids SET signature = ? WHERE id = ?")
+                .bind(&entry.signature)
+                .bind(&id)
+                .execute(storage.pool())
+                .await?;
+
+            return Ok(Some(id));
+        }
+
+        Ok(None)
+    }
+
+    /// Static helper for persisting entry ID (for use in spawned tasks)
+    async fn persist_entry_id_static(
+        library_path: &Path,
+        entry: &Entry,
+        storage: &Storage,
+    ) -> Result<()> {
+        let relative_path = entry
+            .path
+            .strip_prefix(library_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .map_err(|_| {
+                crate::error::Error::Internal(format!(
+                    "Path {} is not within library root {}",
+                    entry.path.display(),
+                    library_path.display()
+                ))
+            })?;
+
+        sqlx::query(
+            "INSERT INTO ids (path, id, signature) VALUES (?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
+        )
+        .bind(&relative_path)
+        .bind(&entry.id)
+        .bind(&entry.signature)
+        .bind(&relative_path)
+        .bind(&entry.signature)
+        .execute(storage.pool())
+        .await?;
 
         Ok(())
     }
@@ -187,6 +389,7 @@ impl Library {
     }
 
     /// Find existing title ID from database (by path or signature)
+    #[allow(dead_code)]
     async fn find_existing_id(&self, title: &Title) -> Result<Option<String>> {
         let relative_path = self.to_relative_path(&title.path)?;
 
@@ -229,6 +432,7 @@ impl Library {
     }
 
     /// Find existing entry ID from database
+    #[allow(dead_code)]
     async fn find_existing_entry_id(&self, entry: &Entry) -> Result<Option<String>> {
         let relative_path = self.to_relative_path(&entry.path)?;
 
@@ -266,6 +470,7 @@ impl Library {
     }
 
     /// Persist title ID to database
+    #[allow(dead_code)]
     async fn persist_title_id(&self, title: &Title) -> Result<()> {
         let relative_path = self.to_relative_path(&title.path)?;
 
@@ -285,6 +490,7 @@ impl Library {
     }
 
     /// Persist entry ID to database
+    #[allow(dead_code)]
     async fn persist_entry_id(&self, entry: &Entry) -> Result<()> {
         let relative_path = self.to_relative_path(&entry.path)?;
 
