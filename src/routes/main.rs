@@ -94,11 +94,11 @@ pub async fn library(
         let stats = lib.stats();
 
         // For progress sorting, we need to calculate progress first, then sort
-        // For other methods, use the library's built-in sorting
+        // For other methods, use the library's cached sorting
         let sorted_titles = if matches!(sort_method, SortMethod::Progress) {
-            lib.get_titles_sorted(SortMethod::Name, true) // Get unsorted (well, name-sorted as base)
+            lib.get_titles_sorted_cached(&user.username, SortMethod::Name, true).await // Get name-sorted as base
         } else {
-            lib.get_titles_sorted(sort_method, ascending)
+            lib.get_titles_sorted_cached(&user.username, sort_method, ascending).await
         };
 
         // Calculate progress for each title
