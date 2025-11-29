@@ -29,8 +29,11 @@ pub async fn require_auth(
         return next.run(request).await;
     }
 
+    // Track if this is an OPDS/download path (needs RFC 7235 compliant 401 on auth failure)
+    let is_opds_path = path.starts_with("/opds") || path.starts_with("/api/download");
+
     // For OPDS paths, try Basic Auth first (for e-reader support)
-    if path.starts_with("/opds") || path.starts_with("/api/download") {
+    if is_opds_path {
         tracing::debug!("OPDS path detected: {}", path);
         if let Some(auth_header) = request.headers().get("authorization") {
             tracing::debug!("Authorization header found");
@@ -70,7 +73,19 @@ pub async fn require_auth(
         }
     }
 
-    // Not authenticated, redirect to login
+    // Not authenticated - response depends on path type
+    if is_opds_path {
+        // OPDS/download clients need RFC 7235 compliant response
+        // Return 401 Unauthorized with WWW-Authenticate header
+        use axum::http::header;
+        return (
+            StatusCode::UNAUTHORIZED,
+            [(header::WWW_AUTHENTICATE, "Basic realm=\"Mango\"")],
+        )
+            .into_response();
+    }
+
+    // Browser clients get redirect to login page
     Redirect::to("/login").into_response()
 }
 
