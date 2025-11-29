@@ -45,10 +45,10 @@ impl Title {
             .unwrap_or("Unknown")
             .to_string();
 
-        let mut entries = Vec::new();
         let nested_titles = Vec::new();
 
-        // Scan directory contents
+        // Collect all archive paths first
+        let mut archive_paths = Vec::new();
         let mut dir_entries = tokio::fs::read_dir(&path).await?;
 
         while let Some(entry) = dir_entries.next_entry().await? {
@@ -59,10 +59,33 @@ impl Title {
                 // TODO Week 5: Add proper nested title support
                 continue;
             } else if is_archive(&entry_path) {
-                // It's a manga chapter/volume archive
-                let mut manga_entry = Entry::from_archive(entry_path).await?;
-                manga_entry.calculate_signature()?;
-                entries.push(manga_entry);
+                archive_paths.push(entry_path);
+            }
+        }
+
+        // Process all entries in parallel for better performance
+        let entry_tasks: Vec<_> = archive_paths
+            .into_iter()
+            .map(|entry_path| {
+                tokio::spawn(async move {
+                    let mut manga_entry = Entry::from_archive(entry_path).await?;
+                    manga_entry.calculate_signature()?;
+                    Ok::<Entry, crate::error::Error>(manga_entry)
+                })
+            })
+            .collect();
+
+        // Collect all results
+        let mut entries = Vec::new();
+        for task in entry_tasks {
+            match task.await {
+                Ok(Ok(entry)) => entries.push(entry),
+                Ok(Err(e)) => {
+                    tracing::warn!("Failed to process entry: {}", e);
+                }
+                Err(e) => {
+                    tracing::warn!("Entry processing task failed: {}", e);
+                }
             }
         }
 

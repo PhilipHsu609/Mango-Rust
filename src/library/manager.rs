@@ -103,8 +103,12 @@ impl Library {
 
         tracing::info!("Found {} directories to scan", title_paths.len());
 
+        // Collections for bulk database inserts (matching original Mango pattern)
+        let new_title_ids = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        let new_entry_ids = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
         // Process titles in parallel with controlled concurrency
-        let concurrency_limit = 5; // Process 5 titles concurrently
+        let concurrency_limit = 20; // Increased from 5 to 20 for better parallelism
         let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency_limit));
         let storage = self.storage.clone();
         let library_path = self.path.clone();
@@ -115,6 +119,8 @@ impl Library {
             let sem = semaphore.clone();
             let storage_clone = storage.clone();
             let lib_path = library_path.clone();
+            let title_ids = new_title_ids.clone();
+            let entry_ids = new_entry_ids.clone();
 
             let task = tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
@@ -130,15 +136,22 @@ impl Library {
 
                 // Find or create title ID
                 let existing_id = Self::find_existing_id_static(&lib_path, &title, &storage_clone).await.ok()?;
+                let is_new_title = existing_id.is_none();
                 if let Some(id) = existing_id {
                     title.id = id;
                     tracing::debug!("Matched existing title: {} ({})", title.title, title.id);
                 } else {
-                    // New title, persist ID
-                    if let Err(e) = Self::persist_title_id_static(&lib_path, &title, &storage_clone).await {
-                        tracing::warn!("Failed to persist title ID: {}", e);
-                        return None;
-                    }
+                    // New title - collect for bulk insert
+                    let relative_path = title.path.strip_prefix(&lib_path)
+                        .ok()?
+                        .to_string_lossy()
+                        .to_string();
+                    
+                    title_ids.lock().await.push((
+                        title.id.clone(),
+                        relative_path,
+                        title.signature.clone(),
+                    ));
                     tracing::info!("Discovered new title: {} ({})", title.title, title.id);
                 }
 
@@ -148,9 +161,19 @@ impl Library {
                     if let Some(id) = existing_entry_id {
                         entry.id = id;
                     } else {
-                        if let Err(e) = Self::persist_entry_id_static(&lib_path, entry, &storage_clone).await {
-                            tracing::warn!("Failed to persist entry ID: {}", e);
-                        } else {
+                        // New entry - collect for bulk insert
+                        let relative_path = entry.path.strip_prefix(&lib_path)
+                            .ok()?
+                            .to_string_lossy()
+                            .to_string();
+                        
+                        entry_ids.lock().await.push((
+                            entry.id.clone(),
+                            relative_path,
+                            entry.signature.clone(),
+                        ));
+                        
+                        if is_new_title {
                             tracing::debug!("  New entry: {} ({})", entry.title, entry.id);
                         }
                     }
@@ -178,6 +201,19 @@ impl Library {
         let title_count = new_titles.len();
         let entry_count: usize = new_titles.values().map(|t| t.entries.len()).sum();
 
+        // Bulk insert all new IDs in a single transaction
+        let title_ids_vec = new_title_ids.lock().await;
+        let entry_ids_vec = new_entry_ids.lock().await;
+        
+        if !title_ids_vec.is_empty() || !entry_ids_vec.is_empty() {
+            self.bulk_insert_ids(&title_ids_vec, &entry_ids_vec).await?;
+            tracing::info!(
+                "Bulk inserted {} new titles and {} new entries to database",
+                title_ids_vec.len(),
+                entry_ids_vec.len()
+            );
+        }
+
         self.titles = new_titles;
 
         // Mark items in database as unavailable if not found during scan
@@ -194,6 +230,49 @@ impl Library {
         // Save library to cache in background (non-blocking)
         self.save_to_cache_background().await;
 
+        Ok(())
+    }
+
+    /// Bulk insert title and entry IDs in a single transaction
+    /// Matches the pattern from original Mango for performance
+    async fn bulk_insert_ids(
+        &self,
+        title_ids: &[(String, String, String)], // (id, path, signature)
+        entry_ids: &[(String, String, String)], // (id, path, signature)
+    ) -> Result<()> {
+        let mut tx = self.storage.pool().begin().await?;
+
+        // Insert all title IDs
+        for (id, path, signature) in title_ids {
+            sqlx::query(
+                "INSERT INTO titles (id, path, signature, unavailable) VALUES (?, ?, ?, 0)
+                 ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
+            )
+            .bind(id)
+            .bind(path)
+            .bind(signature)
+            .bind(path)
+            .bind(signature)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        // Insert all entry IDs
+        for (id, path, signature) in entry_ids {
+            sqlx::query(
+                "INSERT INTO ids (id, path, signature, unavailable) VALUES (?, ?, ?, 0)
+                 ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
+            )
+            .bind(id)
+            .bind(path)
+            .bind(signature)
+            .bind(path)
+            .bind(signature)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 
@@ -248,39 +327,6 @@ impl Library {
         Ok(None)
     }
 
-    /// Static helper for persisting title ID (for use in spawned tasks)
-    async fn persist_title_id_static(
-        library_path: &Path,
-        title: &Title,
-        storage: &Storage,
-    ) -> Result<()> {
-        let relative_path = title
-            .path
-            .strip_prefix(library_path)
-            .map(|p| p.to_string_lossy().to_string())
-            .map_err(|_| {
-                crate::error::Error::Internal(format!(
-                    "Path {} is not within library root {}",
-                    title.path.display(),
-                    library_path.display()
-                ))
-            })?;
-
-        sqlx::query(
-            "INSERT INTO titles (id, path, signature) VALUES (?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
-        )
-        .bind(&title.id)
-        .bind(&relative_path)
-        .bind(&title.signature)
-        .bind(&relative_path)
-        .bind(&title.signature)
-        .execute(storage.pool())
-        .await?;
-
-        Ok(())
-    }
-
     /// Static helper for finding existing entry ID (for use in spawned tasks)
     async fn find_existing_entry_id_static(
         library_path: &Path,
@@ -330,39 +376,6 @@ impl Library {
         }
 
         Ok(None)
-    }
-
-    /// Static helper for persisting entry ID (for use in spawned tasks)
-    async fn persist_entry_id_static(
-        library_path: &Path,
-        entry: &Entry,
-        storage: &Storage,
-    ) -> Result<()> {
-        let relative_path = entry
-            .path
-            .strip_prefix(library_path)
-            .map(|p| p.to_string_lossy().to_string())
-            .map_err(|_| {
-                crate::error::Error::Internal(format!(
-                    "Path {} is not within library root {}",
-                    entry.path.display(),
-                    library_path.display()
-                ))
-            })?;
-
-        sqlx::query(
-            "INSERT INTO ids (path, id, signature) VALUES (?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
-        )
-        .bind(&relative_path)
-        .bind(&entry.id)
-        .bind(&entry.signature)
-        .bind(&relative_path)
-        .bind(&entry.signature)
-        .execute(storage.pool())
-        .await?;
-
-        Ok(())
     }
 
     /// Save library to cache in background task (non-blocking)
