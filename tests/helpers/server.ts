@@ -36,6 +36,9 @@ export async function startServer(config: Partial<ServerConfig> = {}): Promise<v
 
   console.log('Starting Mango server...');
 
+  // Use isolated test directory for all test data
+  const testDataDir = process.env.HOME + '/test-manga-library';
+
   // Spawn cargo run process
   serverProcess = spawn('cargo', ['run', '--release'], {
     cwd: process.cwd().replace('/tests', ''), // Run from project root
@@ -44,7 +47,11 @@ export async function startServer(config: Partial<ServerConfig> = {}): Promise<v
       RUST_LOG: 'info',
       MANGO_PORT: cfg.port.toString(),
       MANGO_HOST: cfg.host,
-      MANGO_LIBRARY_PATH: process.env.HOME + '/test-manga-library',
+      // All test data in test library directory
+      MANGO_LIBRARY_PATH: testDataDir,
+      MANGO_DB_PATH: `${testDataDir}/mango-test.db`,
+      MANGO_CACHE_PATH: `${testDataDir}/mango-test-cache.bin`,
+      MANGO_CONFIG_PATH: `${testDataDir}/config-test.yml`,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

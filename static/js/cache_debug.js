@@ -54,10 +54,10 @@ function cacheDebugData() {
                 }
 
                 const result = await response.json();
-                if (result.loaded) {
+                if (result.success) {
                     this.showSuccess('Library loaded from cache successfully');
                 } else {
-                    this.showError('Cache miss or invalid cache');
+                    this.showError(result.message || 'Cache miss or invalid cache');
                 }
 
                 // Refresh stats after a brief delay

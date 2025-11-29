@@ -229,6 +229,9 @@ impl Config {
         if let Ok(val) = std::env::var("MANGO_DB_PATH") {
             self.db_path = PathBuf::from(val);
         }
+        if let Ok(val) = std::env::var("MANGO_CACHE_PATH") {
+            self.library_cache_path = PathBuf::from(val);
+        }
         if let Ok(val) = std::env::var("MANGO_LOG_LEVEL") {
             self.log_level = val;
         }

@@ -11,6 +11,27 @@ async function globalSetup(): Promise<void> {
   console.log('🔧 Global setup: Starting...');
 
   try {
+    // Step 0: Create test config file
+    const testDataDir = path.join(process.env.HOME || '', 'test-manga-library');
+    const configPath = path.join(testDataDir, 'config-test.yml');
+
+    // Ensure test directory exists
+    const fs = await import('fs/promises');
+    await fs.mkdir(testDataDir, { recursive: true });
+
+    // Create minimal test config
+    const testConfig = `host: localhost
+port: 9000
+library_path: ${testDataDir}
+db_path: ${testDataDir}/mango-test.db
+log_level: info
+cache_enabled: true
+cache_size_mbs: 50
+library_cache_path: ${testDataDir}/mango-test-cache.bin
+`;
+    await fs.writeFile(configPath, testConfig, 'utf-8');
+    console.log('✅ Test config created at:', configPath);
+
     // Step 1: Build CSS
     console.log('📦 Building CSS with LESS...');
     const projectRoot = process.cwd().replace('/tests', '');
@@ -39,7 +60,7 @@ async function globalSetup(): Promise<void> {
 
     // Step 4: Create test user
     console.log('👤 Creating test user...');
-    const dbPath = path.join(process.env.HOME || '', 'mango', 'mango.db');
+    const dbPath = path.join(testDataDir, 'mango-test.db');
     await createTestUser(dbPath);
     console.log('✅ Test user ready');
 
