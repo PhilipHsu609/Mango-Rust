@@ -1,5 +1,5 @@
 # ===== Stage 1: Build static binary =====
-FROM rust:1.83-alpine AS builder
+FROM rust:1.91-alpine AS builder
 
 # Install musl-dev and build tools for static linking
 RUN apk add --no-cache musl-dev sqlite-dev sqlite-static
