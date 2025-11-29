@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { login, logout, TEST_USER, REGULAR_USER } from '../helpers/auth.js';
 
 /**
- * Basic Authentication Flow Tests (Task 1.1)
+ * Basic Authentication Flow Tests
  *
  * IMPORTANT: These tests use raw Playwright test, NOT the auto-login fixture
  * from helpers/fixtures.ts, because we're testing authentication boundaries
@@ -121,7 +121,7 @@ test.describe('Authentication: Basic Flows', () => {
 });
 
 /**
- * Authorization and Role-Based Access Tests (Task 1.2)
+ * Authorization and Role-Based Access Tests
  *
  * Tests authorization enforcement (AdminOnly extractor) and multi-user session isolation.
  * Uses separate browser contexts to simulate multiple concurrent users.
@@ -224,7 +224,7 @@ test.describe('Authorization: Role-Based Access', () => {
 });
 
 /**
- * OPDS Authentication Tests (Task 1.3)
+ * OPDS Authentication Tests
  *
  * Tests RFC 7235 compliant HTTP Basic Auth for OPDS endpoints.
  * OPDS paths return 401 + WWW-Authenticate header for e-reader compatibility.
