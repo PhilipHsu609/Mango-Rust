@@ -267,38 +267,10 @@ fn is_archive(path: &Path) -> bool {
     }
 }
 
-/// Calculate directory signature (CRC32 of all file inodes, sorted)
-/// Matches original Mango's Dir.signature behavior
+/// Calculate directory signature (matches original Mango's Dir.signature behavior)
+/// This is now a simple wrapper around util::dir_signature for consistency
 fn calculate_dir_signature(path: &Path) -> Result<String> {
-    use crc32fast::Hasher;
-    use std::fs;
-
-    let mut signatures = Vec::new();
-
-    // Collect signatures of all archive files
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let entry_path = entry.path();
-
-        if entry_path.is_file() && is_archive(&entry_path) {
-            let sig = crate::util::file_signature(&entry_path)?;
-            signatures.push(sig);
-        }
-    }
-
-    // Sort signatures
-    signatures.sort_unstable();
-
-    // CRC32 of all signatures
-    let mut hasher = Hasher::new();
-    for sig in signatures {
-        // Parse signature back to u64 for hashing
-        if let Ok(sig_u64) = sig.parse::<u64>() {
-            hasher.update(&sig_u64.to_le_bytes());
-        }
-    }
-
-    Ok((hasher.finalize() as u64).to_string())
+    crate::util::dir_signature(path)
 }
 
 /// Calculate contents signature (SHA1 of all filenames, sorted)

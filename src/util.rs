@@ -29,6 +29,85 @@ pub fn file_signature(path: &Path) -> Result<String> {
     Ok((hasher.finalize() as u64).to_string())
 }
 
+/// Get directory inode (Unix only)
+#[cfg(unix)]
+fn dir_inode(path: &Path) -> Result<String> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = std::fs::metadata(path)?;
+    Ok(metadata.ino().to_string())
+}
+
+/// Get directory signature using CRC32 (Windows fallback)
+#[cfg(not(unix))]
+fn dir_inode(path: &Path) -> Result<String> {
+    use crc32fast::Hasher;
+    let mut hasher = Hasher::new();
+    hasher.update(path.to_string_lossy().as_bytes());
+    Ok((hasher.finalize() as u64).to_string())
+}
+
+/// Calculate directory signature recursively (matches original Mango behavior)
+/// Includes:
+/// - Directory's own inode
+/// - All supported file inodes
+/// - All nested directory signatures (recursive)
+/// Returns CRC32 checksum as String
+pub fn dir_signature(path: &Path) -> Result<String> {
+    let mut signatures = Vec::new();
+
+    // Include directory's own inode
+    signatures.push(dir_inode(path)?);
+
+    // Recursively collect all signatures
+    let entries = std::fs::read_dir(path)?;
+    for entry in entries {
+        let entry = entry?;
+        let entry_path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        // Skip hidden files
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        if entry_path.is_dir() {
+            // Recursively get subdirectory signature
+            signatures.push(dir_signature(&entry_path)?);
+        } else if is_supported_file(&entry_path) {
+            // Get file signature
+            let sig = file_signature(&entry_path)?;
+            // Only add if non-zero (original Mango behavior)
+            if sig != "0" {
+                signatures.push(sig);
+            }
+        }
+    }
+
+    // Sort signatures
+    signatures.sort();
+
+    // Join and calculate CRC32 (matching original: Digest::CRC32.checksum(signatures.sort.join))
+    let joined = signatures.join("");
+    let checksum = crc32fast::hash(joined.as_bytes());
+
+    Ok((checksum as u64).to_string())
+}
+
+/// Check if file is a supported archive or image file
+fn is_supported_file(path: &Path) -> bool {
+    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+        let ext_lower = ext.to_lowercase();
+        matches!(
+            ext_lower.as_str(),
+            "zip" | "cbz" | "rar" | "cbr" | "7z" | "cb7" | "tar" | "cbt"
+            | "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp"
+        )
+    } else {
+        false
+    }
+}
+
 /// Query parameters for sorting
 #[derive(Deserialize)]
 pub struct SortParams {
