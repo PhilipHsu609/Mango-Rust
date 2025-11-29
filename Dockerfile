@@ -2,7 +2,7 @@
 FROM rust:1.91-alpine AS builder
 
 # Install musl-dev and build tools for static linking
-RUN apk add --no-cache musl-dev sqlite-dev sqlite-static
+RUN apk add --no-cache musl-dev sqlite-dev sqlite-static nodejs npm
 
 WORKDIR /build
 
@@ -18,6 +18,11 @@ COPY build-css.sh ./
 
 # Copy sqlx offline data for compile-time query verification
 COPY .sqlx ./.sqlx
+
+# Install less compiler and build CSS
+RUN npm install -g less && \
+    mkdir -p static/dist/css && \
+    lessc static/src/css/main.less static/dist/css/main.css --compress --source-map
 
 # Set environment for static linking and offline sqlx
 ENV RUSTFLAGS='-C target-feature=+crt-static'
