@@ -180,6 +180,14 @@ body.uk-dark {
         background: @dark-bg-hover;
     }
 
+    .uk-table-striped tbody tr:nth-of-type(odd) {
+        background: @dark-bg;
+    }
+
+    .uk-table-striped tbody tr:nth-of-type(even) {
+        background: fade(@dark-bg-hover, 30%);
+    }
+
     .uk-table-divider > tr:not(:first-child),
     .uk-table-divider > :not(:first-child) > tr,
     .uk-table-divider > :first-child > tr:not(:first-child) {
@@ -196,6 +204,15 @@ body.uk-dark {
 
     .uk-list-divider > li:nth-child(n+2) {
         border-top-color: @dark-border;
+    }
+
+    // Description lists
+    .uk-description-list dt {
+        color: @dark-text-secondary;
+    }
+
+    .uk-description-list dd {
+        color: @dark-text-primary;
     }
 
     // ------------------------------------------------------------------------
@@ -372,6 +389,55 @@ body.uk-dark {
             background: @dark-bg-hover;
             border-color: @primary-color;
             box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Change Password Page
+    // ------------------------------------------------------------------------
+
+    .change-password-card {
+        background: @dark-bg-elevated;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+
+        h2 {
+            color: @dark-text-primary;
+        }
+    }
+
+    .form-group {
+        label {
+            color: @dark-text-secondary;
+        }
+
+        input {
+            background: @dark-bg-input;
+            border-color: @dark-border;
+            color: @dark-text-primary;
+
+            &:focus {
+                background: @dark-bg-input;
+                border-color: @primary-color;
+            }
+        }
+    }
+
+    .btn-primary {
+        // Keep the orange color for primary button (already defined)
+        background: #FF9500;
+        color: white;
+
+        &:hover {
+            background: #E68600;
+        }
+    }
+
+    .btn-secondary {
+        background: @dark-border;
+        color: @dark-text-primary;
+
+        &:hover {
+            background: @dark-border-light;
         }
     }
 }
