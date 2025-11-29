@@ -88,6 +88,7 @@ impl Library {
     /// Scan the library directory for manga titles
     /// Uses parallel processing with controlled concurrency for improved performance
     pub async fn scan(&mut self) -> Result<()> {
+        let scan_start = std::time::Instant::now();
         tracing::info!("Starting library scan: {}", self.path.display());
 
         // Collect all directory paths first
@@ -182,10 +183,12 @@ impl Library {
         // Mark items in database as unavailable if not found during scan
         self.mark_unavailable().await?;
 
+        let scan_duration = scan_start.elapsed();
         tracing::info!(
-            "Library scan complete: {} titles, {} entries",
+            "Library scan complete: {} titles, {} entries ({:.2}s)",
             title_count,
-            entry_count
+            entry_count,
+            scan_duration.as_secs_f64()
         );
 
         // Save library to cache in background (non-blocking)
@@ -847,9 +850,19 @@ pub fn spawn_periodic_scanner(
             interval.tick().await;
 
             tracing::info!("Starting periodic library scan");
+            let periodic_start = std::time::Instant::now();
             let mut lib = library.write().await;
-            if let Err(e) = lib.scan().await {
-                tracing::error!("Periodic scan failed: {}", e);
+            match lib.scan().await {
+                Ok(_) => {
+                    let periodic_duration = periodic_start.elapsed();
+                    tracing::info!(
+                        "Periodic library scan completed ({:.2}s)",
+                        periodic_duration.as_secs_f64()
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Periodic scan failed: {}", e);
+                }
             }
         }
     })
