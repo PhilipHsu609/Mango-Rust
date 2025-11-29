@@ -3,8 +3,12 @@ name: Build and Publish Docker Image
 on:
   workflow_dispatch:
     inputs:
+      custom_version:
+        description: 'Custom version (e.g., v2.0.0) - overrides auto-versioning and resets baseline'
+        required: false
+        type: string
       version_bump:
-        description: 'Version increment type'
+        description: 'Auto version bump type (ignored if custom version provided)'
         required: false
         type: choice
         default: 'patch'
@@ -12,10 +16,6 @@ on:
           - 'patch'
           - 'minor'
           - 'major'
-      tag:
-        description: 'Custom tag (optional, overrides auto-versioning)'
-        required: false
-        type: string
       platforms:
         description: 'Build platforms'
         required: false
@@ -44,47 +44,62 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Calculate next version
+      - name: Determine version
         id: version
         run: |
-          # Get the latest version tag (e.g., v1.2.3)
-          LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
-          echo "Latest tag: $LATEST_TAG"
-
-          # Extract version numbers
-          VERSION=${LATEST_TAG#v}
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          PATCH=$(echo $VERSION | cut -d. -f3)
-
-          # Increment based on input (default: patch)
-          BUMP_TYPE="${{ inputs.version_bump || 'patch' }}"
-
-          if [ "$BUMP_TYPE" = "major" ]; then
-            MAJOR=$((MAJOR + 1))
-            MINOR=0
-            PATCH=0
-          elif [ "$BUMP_TYPE" = "minor" ]; then
-            MINOR=$((MINOR + 1))
-            PATCH=0
+          # Custom version takes precedence
+          if [ -n "${{ inputs.custom_version }}" ]; then
+            VERSION="${{ inputs.custom_version }}"
+            # Ensure v prefix
+            if [[ ! "$VERSION" =~ ^v ]]; then
+              VERSION="v${VERSION}"
+            fi
+            echo "Using custom version: $VERSION"
           else
-            PATCH=$((PATCH + 1))
+            # Auto-calculate next version
+            LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
+            echo "Latest git tag: $LATEST_TAG"
+
+            # Parse version components
+            VERSION_NUM=${LATEST_TAG#v}
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NUM"
+
+            # Bump based on input
+            BUMP_TYPE="${{ inputs.version_bump }}"
+            case "$BUMP_TYPE" in
+              major)
+                MAJOR=$((MAJOR + 1))
+                MINOR=0
+                PATCH=0
+                ;;
+              minor)
+                MINOR=$((MINOR + 1))
+                PATCH=0
+                ;;
+              patch)
+                PATCH=$((PATCH + 1))
+                ;;
+            esac
+
+            VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+            echo "Auto-calculated version: $VERSION (bump type: $BUMP_TYPE)"
           fi
 
-          NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-          echo "Bump type: $BUMP_TYPE"
-          echo "Next version: $NEXT_VERSION"
-          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
-          echo "version_no_v=${MAJOR}.${MINOR}.${PATCH}" >> $GITHUB_OUTPUT
-
-      - name: Create and push version tag
-        if: ${{ inputs.tag == '' }}
+      - name: Create and push git tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a ${{ steps.version.outputs.version }} -m "Release ${{ steps.version.outputs.version }}"
-          git push origin ${{ steps.version.outputs.version }}
+
+          # Check if tag already exists
+          if git rev-parse "${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.version.outputs.version }} already exists, skipping git tag creation"
+          else
+            git tag -a ${{ steps.version.outputs.version }} -m "Release ${{ steps.version.outputs.version }}"
+            git push origin ${{ steps.version.outputs.version }}
+            echo "Created and pushed tag: ${{ steps.version.outputs.version }}"
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -107,8 +122,6 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=${{ steps.version.outputs.version_no_v }}
-            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
       - name: Build and push Docker image
         id: push
