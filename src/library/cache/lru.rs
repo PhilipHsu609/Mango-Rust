@@ -15,22 +15,24 @@ pub struct CacheStats {
 }
 
 impl CacheStats {
-    /// Calculate hit rate as a percentage (0-100)
+    /// Calculate hit rate as a percentage (0-100), rounded to 2 decimal places
     pub fn hit_rate(&self) -> f64 {
         let total = self.hit_count + self.miss_count;
         if total == 0 {
             0.0
         } else {
-            (self.hit_count as f64 / total as f64) * 100.0
+            let rate = (self.hit_count as f64 / total as f64) * 100.0;
+            (rate * 100.0).round() / 100.0
         }
     }
 
-    /// Calculate cache usage as a percentage (0-100)
+    /// Calculate cache usage as a percentage (0-100), rounded to 2 decimal places
     pub fn usage_percent(&self) -> f64 {
         if self.size_limit == 0 {
             0.0
         } else {
-            (self.size_bytes as f64 / self.size_limit as f64) * 100.0
+            let percent = (self.size_bytes as f64 / self.size_limit as f64) * 100.0;
+            (percent * 100.0).round() / 100.0
         }
     }
 }
