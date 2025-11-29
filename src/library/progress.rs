@@ -31,13 +31,15 @@ pub struct TitleInfo {
     #[serde(default)]
     pub entry_cover_url: HashMap<String, String>,
 
-    /// Last read timestamp: username -> entry_id -> unix_timestamp
-    #[serde(default)]
-    pub last_read: HashMap<String, HashMap<String, i64>>,
+    /// Last read timestamp: username -> entry_id -> ISO 8601 datetime
+    /// Matches original Mango format (Time serializes to ISO 8601)
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub last_read: HashMap<String, HashMap<String, String>>,
 
-    /// Date added timestamp: entry_id -> unix_timestamp
-    #[serde(default)]
-    pub date_added: HashMap<String, i64>,
+    /// Date added timestamp: entry_id -> ISO 8601 datetime
+    /// Matches original Mango format (Time serializes to ISO 8601)
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub date_added: HashMap<String, String>,
 
     /// Sorting preferences: username -> (sort_method, ascending)
     #[serde(default)]
@@ -123,36 +125,64 @@ impl TitleInfo {
     }
 
     /// Get last read timestamp for a specific user and entry
+    /// Returns Unix timestamp (i64) parsed from ISO 8601 string
     pub fn get_last_read(&self, username: &str, entry_id: &str) -> Option<i64> {
         self.last_read
             .get(username)
             .and_then(|user_last_read| user_last_read.get(entry_id))
-            .copied()
+            .and_then(|iso_string| {
+                chrono::DateTime::parse_from_rfc3339(iso_string)
+                    .ok()
+                    .map(|dt| dt.timestamp())
+            })
     }
 
     /// Set last read timestamp for a specific user and entry
+    /// Converts Unix timestamp to ISO 8601 string for storage (matches original Mango)
     pub fn set_last_read(&mut self, username: &str, entry_id: &str, timestamp: i64) {
+        // Convert Unix timestamp to ISO 8601 string (matching original Mango format)
+        let datetime = chrono::DateTime::from_timestamp(timestamp, 0)
+            .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
+        let iso_string = datetime.to_rfc3339();
+
         self.last_read
             .entry(username.to_string())
             .or_default()
-            .insert(entry_id.to_string(), timestamp);
+            .insert(entry_id.to_string(), iso_string);
     }
 
     /// Get date added timestamp for an entry
+    /// Returns Unix timestamp (i64) parsed from ISO 8601 string
     pub fn get_date_added(&self, entry_id: &str) -> Option<i64> {
-        self.date_added.get(entry_id).copied()
+        self.date_added.get(entry_id).and_then(|iso_string| {
+            chrono::DateTime::parse_from_rfc3339(iso_string)
+                .ok()
+                .map(|dt| dt.timestamp())
+        })
     }
 
     /// Set date added timestamp for an entry
+    /// Converts Unix timestamp to ISO 8601 string for storage (matches original Mango)
     pub fn set_date_added(&mut self, entry_id: &str, timestamp: i64) {
-        self.date_added.insert(entry_id.to_string(), timestamp);
+        // Convert Unix timestamp to ISO 8601 string
+        let datetime = chrono::DateTime::from_timestamp(timestamp, 0)
+            .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
+        let iso_string = datetime.to_rfc3339();
+
+        self.date_added.insert(entry_id.to_string(), iso_string);
     }
 
     /// Set date added for an entry if not already set
+    /// Converts Unix timestamp to ISO 8601 string for storage (matches original Mango)
     pub fn set_date_added_if_new(&mut self, entry_id: &str, timestamp: i64) {
+        // Convert Unix timestamp to ISO 8601 string
+        let datetime = chrono::DateTime::from_timestamp(timestamp, 0)
+            .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
+        let iso_string = datetime.to_rfc3339();
+
         self.date_added
             .entry(entry_id.to_string())
-            .or_insert(timestamp);
+            .or_insert(iso_string);
     }
 
     /// Get sort preference for a specific user
