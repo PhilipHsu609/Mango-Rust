@@ -12,3 +12,4 @@
 # Frontend compiled assets (build output)
 static/dist/
 node_modules/
+.spec-workflow
