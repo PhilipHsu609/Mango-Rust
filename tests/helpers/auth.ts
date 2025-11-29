@@ -127,11 +127,11 @@ export async function createTestUser(
     // Hash password
     const passwordHash = bcrypt.hashSync(credentials.password, 10);
 
-    // Insert test user (non-admin)
-    db.prepare('INSERT INTO users (username, password, token, admin) VALUES (?, ?, NULL, 0)')
+    // Insert test user (admin for access to all test features including /debug/cache)
+    db.prepare('INSERT INTO users (username, password, token, admin) VALUES (?, ?, NULL, 1)')
       .run(credentials.username, passwordHash);
 
-    console.log(`✓ Test user created: ${credentials.username}`);
+    console.log(`✓ Test user created: ${credentials.username} (admin)`);
   } finally {
     db.close();
   }
