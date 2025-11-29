@@ -1,13 +1,22 @@
-version: '3'
+version: '3.8'
 
 services:
-  mango:
-    image: hkalexling/mango
-    container_name: mango
+  mango-rust:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mango-rust
     ports:
-      - 9001:9001
+      - "${PORT:-9000}:9000"
     volumes:
-      - ~/mango-real:/root/mango
-      - ~/.config/mango/config-real.yml:/root/.config/mango/config.yml
-      - ~/mango/library:/library
-
+      # Database and library data
+      - ${MAIN_DIRECTORY_PATH:-./mango-data}:/root/mango
+      # Config file
+      - ${CONFIG_DIRECTORY_PATH:-./config}:/root/.config/mango
+    environment:
+      - MANGO_HOST=0.0.0.0
+      - MANGO_PORT=9000
+      - MANGO_DB_PATH=/root/mango/mango.db
+      - MANGO_LIBRARY_PATH=/root/mango/library
+      - MANGO_LOG_LEVEL=${LOG_LEVEL:-info}
+    restart: unless-stopped

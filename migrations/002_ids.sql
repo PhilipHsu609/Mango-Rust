@@ -1,13 +1,14 @@
 -- IDs table: Maps random UUIDs to file paths and signatures for tracking manga files
 -- This allows Mango to detect renames/moves and maintain reading progress across changes
+-- Schema matches original Mango for compatibility
 
 CREATE TABLE IF NOT EXISTS ids (
-    id TEXT NOT NULL PRIMARY KEY,      -- Random UUID for title/entry
     path TEXT NOT NULL,                 -- Absolute filesystem path
-    signature INTEGER NOT NULL,         -- Inode (Unix) or CRC32 hash (Windows) for change detection
-    type TEXT NOT NULL CHECK(type IN ('title', 'entry'))  -- Whether this is a series or chapter
+    id TEXT NOT NULL,                   -- Random UUID for title/entry
+    is_title INTEGER NOT NULL,          -- 1 for titles (series), 0 for entries (chapters/volumes)
+    signature TEXT,                     -- File signature for change detection (nullable for compatibility)
+    unavailable INTEGER NOT NULL DEFAULT 0  -- 1 if file no longer exists, 0 if available
 );
 
-CREATE INDEX idx_ids_path ON ids (path);
-CREATE INDEX idx_ids_signature ON ids (signature);
-CREATE INDEX idx_ids_type ON ids (type);
+CREATE UNIQUE INDEX IF NOT EXISTS path_idx ON ids (path);
+CREATE UNIQUE INDEX IF NOT EXISTS id_idx ON ids (id);

@@ -318,16 +318,19 @@ impl Storage {
     /// Matches original Storage#get_missing
     pub async fn get_missing_entries(&self) -> Result<Vec<MissingEntry>> {
         let rows =
-            sqlx::query("SELECT id, path, type FROM ids WHERE unavailable = 1 ORDER BY type, path")
+            sqlx::query("SELECT id, path, is_title FROM ids WHERE unavailable = 1 ORDER BY is_title DESC, path")
                 .fetch_all(&self.pool)
                 .await?;
 
         let entries = rows
             .into_iter()
-            .map(|row| MissingEntry {
-                id: row.get("id"),
-                path: row.get("path"),
-                entry_type: row.get("type"),
+            .map(|row| {
+                let is_title: i64 = row.get("is_title");
+                MissingEntry {
+                    id: row.get("id"),
+                    path: row.get("path"),
+                    entry_type: if is_title == 1 { "title".to_string() } else { "entry".to_string() },
+                }
             })
             .collect();
 

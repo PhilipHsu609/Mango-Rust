@@ -16,8 +16,8 @@ pub struct Entry {
     /// Display name (filename without extension)
     pub title: String,
 
-    /// File signature (inode on Unix, CRC32 on Windows)
-    pub signature: u64,
+    /// File signature (inode on Unix, CRC32 on Windows) - stored as TEXT for Mango compatibility
+    pub signature: String,
 
     /// Modification time (for sorting)
     pub mtime: i64,
@@ -53,7 +53,7 @@ impl Entry {
             id: Uuid::new_v4().to_string(),
             path,
             title,
-            signature: 0, // Will be set later
+            signature: String::new(), // Will be set later
             mtime,
             pages,
             image_files,

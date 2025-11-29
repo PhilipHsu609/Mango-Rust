@@ -41,7 +41,7 @@ impl Library {
 
         // Get database title count for validation
         let db_title_count = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM ids WHERE type = 'title' AND unavailable = 0",
+            "SELECT COUNT(*) FROM ids WHERE is_title = 1 AND unavailable = 0",
         )
         .fetch_one(self.storage.pool())
         .await? as usize;
@@ -175,10 +175,10 @@ impl Library {
     async fn find_existing_id(&self, title: &Title) -> Result<Option<String>> {
         // Tier 1: Exact match (path + signature)
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND type = 'title' AND unavailable = 0"
+            "SELECT id FROM ids WHERE path = ? AND signature = ? AND is_title = 1 AND unavailable = 0"
         )
         .bind(title.path.to_string_lossy().as_ref())
-        .bind(title.signature as i64)
+        .bind(&title.signature)
         .fetch_optional(self.storage.pool())
         .await?
         {
@@ -187,7 +187,7 @@ impl Library {
 
         // Tier 2: Path-only match (directory modified but not moved)
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND type = 'title' AND unavailable = 0",
+            "SELECT id FROM ids WHERE path = ? AND is_title = 1 AND unavailable = 0",
         )
         .bind(title.path.to_string_lossy().as_ref())
         .fetch_optional(self.storage.pool())
@@ -195,7 +195,7 @@ impl Library {
         {
             // Update signature
             sqlx::query("UPDATE ids SET signature = ? WHERE id = ?")
-                .bind(title.signature as i64)
+                .bind(&title.signature)
                 .bind(&id)
                 .execute(self.storage.pool())
                 .await?;
@@ -215,10 +215,10 @@ impl Library {
     async fn find_existing_entry_id(&self, entry: &Entry) -> Result<Option<String>> {
         // Tier 1: Exact match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND type = 'entry' AND unavailable = 0"
+            "SELECT id FROM ids WHERE path = ? AND signature = ? AND is_title = 0 AND unavailable = 0"
         )
         .bind(entry.path.to_string_lossy().as_ref())
-        .bind(entry.signature as i64)
+        .bind(&entry.signature)
         .fetch_optional(self.storage.pool())
         .await?
         {
@@ -227,7 +227,7 @@ impl Library {
 
         // Tier 2: Path-only match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND type = 'entry' AND unavailable = 0",
+            "SELECT id FROM ids WHERE path = ? AND is_title = 0 AND unavailable = 0",
         )
         .bind(entry.path.to_string_lossy().as_ref())
         .fetch_optional(self.storage.pool())
@@ -235,7 +235,7 @@ impl Library {
         {
             // Update signature
             sqlx::query("UPDATE ids SET signature = ? WHERE id = ?")
-                .bind(entry.signature as i64)
+                .bind(&entry.signature)
                 .bind(&id)
                 .execute(self.storage.pool())
                 .await?;
@@ -249,14 +249,14 @@ impl Library {
     /// Persist title ID to database
     async fn persist_title_id(&self, title: &Title) -> Result<()> {
         sqlx::query(
-            "INSERT INTO ids (id, path, signature, type) VALUES (?, ?, ?, 'title')
+            "INSERT INTO ids (path, id, is_title, signature) VALUES (?, ?, 1, ?)
              ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
         )
+        .bind(title.path.to_string_lossy().as_ref())
         .bind(&title.id)
+        .bind(&title.signature)
         .bind(title.path.to_string_lossy().as_ref())
-        .bind(title.signature as i64)
-        .bind(title.path.to_string_lossy().as_ref())
-        .bind(title.signature as i64)
+        .bind(&title.signature)
         .execute(self.storage.pool())
         .await?;
 
@@ -266,14 +266,14 @@ impl Library {
     /// Persist entry ID to database
     async fn persist_entry_id(&self, entry: &Entry) -> Result<()> {
         sqlx::query(
-            "INSERT INTO ids (id, path, signature, type) VALUES (?, ?, ?, 'entry')
+            "INSERT INTO ids (path, id, is_title, signature) VALUES (?, ?, 0, ?)
              ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
         )
+        .bind(entry.path.to_string_lossy().as_ref())
         .bind(&entry.id)
+        .bind(&entry.signature)
         .bind(entry.path.to_string_lossy().as_ref())
-        .bind(entry.signature as i64)
-        .bind(entry.path.to_string_lossy().as_ref())
-        .bind(entry.signature as i64)
+        .bind(&entry.signature)
         .execute(self.storage.pool())
         .await?;
 
@@ -484,7 +484,7 @@ impl Library {
 
         // Query all entry IDs from database where unavailable = 0
         let all_ids: Vec<String> = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE type = 'entry' AND unavailable = 0",
+            "SELECT id FROM ids WHERE is_title = 0 AND unavailable = 0",
         )
         .fetch_all(self.storage.pool())
         .await?;

@@ -4,18 +4,19 @@ use serde::Deserialize;
 use std::path::Path;
 
 /// Calculate file signature (inode on Unix, CRC32 hash on Windows)
-/// Matches original Mango's file signature behavior
+/// Returns as String for Mango database compatibility
 #[cfg(unix)]
-pub fn file_signature(path: &Path) -> Result<u64> {
+pub fn file_signature(path: &Path) -> Result<String> {
     use std::os::unix::fs::MetadataExt;
     let metadata = std::fs::metadata(path)?;
-    Ok(metadata.ino())
+    Ok(metadata.ino().to_string())
 }
 
 /// Calculate file signature using CRC32 hash of path + file size
 /// Used on Windows and other non-Unix systems
+/// Returns as String for Mango database compatibility
 #[cfg(not(unix))]
-pub fn file_signature(path: &Path) -> Result<u64> {
+pub fn file_signature(path: &Path) -> Result<String> {
     use crc32fast::Hasher;
 
     let metadata = std::fs::metadata(path)?;
@@ -25,7 +26,7 @@ pub fn file_signature(path: &Path) -> Result<u64> {
     hasher.update(path.to_string_lossy().as_bytes());
     hasher.update(&metadata.len().to_le_bytes());
 
-    Ok(hasher.finalize() as u64)
+    Ok((hasher.finalize() as u64).to_string())
 }
 
 /// Query parameters for sorting

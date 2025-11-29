@@ -17,8 +17,8 @@ pub struct Title {
     /// Display name (directory name by default)
     pub title: String,
 
-    /// Directory signature (CRC32 of file inodes)
-    pub signature: u64,
+    /// Directory signature (CRC32 of file inodes) - stored as TEXT for Mango compatibility
+    pub signature: String,
 
     /// Contents signature (SHA1 of filenames) for change detection
     pub contents_signature: String,
@@ -269,7 +269,7 @@ fn is_archive(path: &Path) -> bool {
 
 /// Calculate directory signature (CRC32 of all file inodes, sorted)
 /// Matches original Mango's Dir.signature behavior
-fn calculate_dir_signature(path: &Path) -> Result<u64> {
+fn calculate_dir_signature(path: &Path) -> Result<String> {
     use crc32fast::Hasher;
     use std::fs;
 
@@ -292,10 +292,13 @@ fn calculate_dir_signature(path: &Path) -> Result<u64> {
     // CRC32 of all signatures
     let mut hasher = Hasher::new();
     for sig in signatures {
-        hasher.update(&sig.to_le_bytes());
+        // Parse signature back to u64 for hashing
+        if let Ok(sig_u64) = sig.parse::<u64>() {
+            hasher.update(&sig_u64.to_le_bytes());
+        }
     }
 
-    Ok(hasher.finalize() as u64)
+    Ok((hasher.finalize() as u64).to_string())
 }
 
 /// Calculate contents signature (SHA1 of all filenames, sorted)
