@@ -11,10 +11,18 @@ export interface LoginCredentials {
 }
 
 /**
- * Default test user credentials
+ * Default test user credentials (admin)
  */
 export const TEST_USER: LoginCredentials = {
   username: 'testuser',
+  password: 'testpass123',
+};
+
+/**
+ * Regular (non-admin) test user credentials
+ */
+export const REGULAR_USER: LoginCredentials = {
+  username: 'testuser2',
   password: 'testpass123',
 };
 
@@ -105,10 +113,12 @@ export async function saveAuthState(
  * This should be called during global setup before tests run
  * @param dbPath - Path to SQLite database
  * @param credentials - User credentials to create
+ * @param admin - Whether the user should be an admin (default: true)
  */
 export async function createTestUser(
   dbPath: string,
-  credentials: LoginCredentials = TEST_USER
+  credentials: LoginCredentials = TEST_USER,
+  admin: boolean = true
 ): Promise<void> {
   const Database = await import('better-sqlite3');
   const bcrypt = await import('bcryptjs');
@@ -127,11 +137,11 @@ export async function createTestUser(
     // Hash password
     const passwordHash = bcrypt.hashSync(credentials.password, 10);
 
-    // Insert test user (admin for access to all test features including /debug/cache)
-    db.prepare('INSERT INTO users (username, password, token, admin) VALUES (?, ?, NULL, 1)')
-      .run(credentials.username, passwordHash);
+    // Insert test user with specified role
+    db.prepare('INSERT INTO users (username, password, token, admin) VALUES (?, ?, NULL, ?)')
+      .run(credentials.username, passwordHash, admin ? 1 : 0);
 
-    console.log(`✓ Test user created: ${credentials.username} (admin)`);
+    console.log(`✓ Test user created: ${credentials.username} (${admin ? 'admin' : 'regular'})`);
   } finally {
     db.close();
   }

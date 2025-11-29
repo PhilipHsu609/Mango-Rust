@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import * as path from 'path';
 import { startServer, waitForServerReady } from './helpers/server.js';
-import { createTestUser } from './helpers/auth.js';
+import { createTestUser, REGULAR_USER } from './helpers/auth.js';
 
 /**
  * Global setup - runs once before all tests
@@ -58,11 +58,12 @@ library_cache_path: ${testDataDir}/mango-test-cache.bin
     await waitForServerReady();
     console.log('✅ Server is ready');
 
-    // Step 4: Create test user
-    console.log('👤 Creating test user...');
+    // Step 4: Create test users
+    console.log('👤 Creating test users...');
     const dbPath = path.join(testDataDir, 'mango-test.db');
-    await createTestUser(dbPath);
-    console.log('✅ Test user ready');
+    await createTestUser(dbPath);                       // testuser (admin) - default
+    await createTestUser(dbPath, REGULAR_USER, false);  // testuser2 (regular)
+    console.log('✅ Test users ready');
 
     // Step 5: Trigger library scan
     console.log('📚 Triggering library scan...');

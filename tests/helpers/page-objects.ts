@@ -540,3 +540,267 @@ export class ReaderPage {
     return await this.continuousContainer.isVisible();
   }
 }
+
+/**
+ * Book Page Object (Task 3.1)
+ * Handles book detail page and entry modal interactions
+ */
+export class BookPage {
+  private page: Page;
+  private nav: NavigationComponent;
+
+  // Entry card selectors
+  private entryCards: Locator;
+
+  // Modal selectors
+  private modal: Locator;
+  private modalTitle: Locator;
+  private fromBeginningLink: Locator;
+  private continueLink: Locator;
+
+  constructor(page: Page) {
+    this.page = page;
+    this.nav = new NavigationComponent(page);
+
+    // Entry cards
+    this.entryCards = page.locator('.entry-card');
+
+    // Modal elements
+    this.modal = page.locator('#entry-modal');
+    this.modalTitle = this.modal.locator('h3');
+    this.fromBeginningLink = this.modal.locator('a.uk-button-default');
+    this.continueLink = this.modal.locator('a.uk-button-primary');
+  }
+
+  /**
+   * Navigate to book page
+   * @param titleId - Title ID to navigate to
+   */
+  async navigate(titleId: string): Promise<void> {
+    await this.page.goto(`/book/${titleId}`);
+    await this.page.waitForLoadState('domcontentloaded');
+  }
+
+  /**
+   * Get all entry cards
+   */
+  getEntryCards(): Locator {
+    return this.entryCards;
+  }
+
+  /**
+   * Get count of entry cards
+   */
+  async getEntryCount(): Promise<number> {
+    return await this.entryCards.count();
+  }
+
+  /**
+   * Click on an entry card by name
+   * @param entryName - Entry name to click
+   */
+  async clickEntry(entryName: string): Promise<void> {
+    const card = this.entryCards.filter({ hasText: entryName }).first();
+    await card.click();
+    await this.waitForModalOpen();
+  }
+
+  /**
+   * Wait for entry modal to open
+   * UIkit adds uk-open class when animation completes
+   */
+  async waitForModalOpen(): Promise<void> {
+    await this.page.waitForFunction(
+      () => {
+        const modal = document.querySelector('#entry-modal');
+        return modal && modal.classList.contains('uk-open');
+      },
+      { timeout: 3000 }
+    );
+  }
+
+  /**
+   * Check if entry modal is open
+   */
+  async isModalOpen(): Promise<boolean> {
+    return await this.modal.evaluate((el: HTMLElement) =>
+      el.classList.contains('uk-open')
+    );
+  }
+
+  /**
+   * Get FROM BEGINNING link href
+   */
+  async getFromBeginningHref(): Promise<string | null> {
+    return await this.fromBeginningLink.getAttribute('href');
+  }
+
+  /**
+   * Get CONTINUE link href (returns null if button not visible)
+   */
+  async getContinueHref(): Promise<string | null> {
+    if (!(await this.isContinueVisible())) return null;
+    return await this.continueLink.getAttribute('href');
+  }
+
+  /**
+   * Check if CONTINUE button is visible
+   * Alpine x-show="modalData.progress > 0 && modalData.progress < 100" sets display:none
+   */
+  async isContinueVisible(): Promise<boolean> {
+    const display = await this.continueLink.evaluate(
+      (el) => window.getComputedStyle(el).display
+    );
+    return display !== 'none';
+  }
+
+  /**
+   * Click FROM BEGINNING button and wait for reader navigation
+   */
+  async clickFromBeginning(): Promise<void> {
+    await this.fromBeginningLink.click();
+    await this.page.waitForURL('**/reader/**');
+  }
+
+  /**
+   * Click CONTINUE button and wait for reader navigation
+   */
+  async clickContinue(): Promise<void> {
+    await this.continueLink.click();
+    await this.page.waitForURL('**/reader/**');
+  }
+
+  /**
+   * Get navigation component
+   */
+  getNavigation(): NavigationComponent {
+    return this.nav;
+  }
+}
+
+/**
+ * Home Page Object (Task 3.2)
+ * Handles home page sections: Continue Reading, Start Reading, Recently Added
+ */
+export class HomePage {
+  private page: Page;
+  private nav: NavigationComponent;
+
+  // Section selectors
+  private sections: Locator;
+
+  constructor(page: Page) {
+    this.page = page;
+    this.nav = new NavigationComponent(page);
+
+    // All sections on home page
+    this.sections = page.locator('.section');
+  }
+
+  /**
+   * Navigate to home page
+   */
+  async navigate(): Promise<void> {
+    await this.page.goto('/');
+    await this.page.waitForLoadState('domcontentloaded');
+    // Wait for Alpine.js to finish loading data
+    await this.waitForSectionsLoaded();
+  }
+
+  /**
+   * Wait for Alpine.js to finish loading all sections
+   */
+  private async waitForSectionsLoaded(): Promise<void> {
+    // Wait for Alpine.js to render sections (either cards-grid or empty-state visible)
+    await this.page.waitForFunction(
+      () => {
+        // Check if at least one section has rendered content (cards-grid or empty-state visible)
+        const sections = document.querySelectorAll('.section');
+        for (const section of sections) {
+          const cardsGrid = section.querySelector('.cards-grid');
+          const emptyState = section.querySelector('.empty-state');
+
+          // Check if either cards or empty state is visible
+          if (cardsGrid && window.getComputedStyle(cardsGrid).display !== 'none') {
+            return true;
+          }
+          if (emptyState && window.getComputedStyle(emptyState).display !== 'none') {
+            return true;
+          }
+        }
+        return false;
+      },
+      { timeout: 5000 }
+    );
+  }
+
+  /**
+   * Get a section by its heading text
+   * @param name - Section name ('Continue Reading' | 'Start Reading' | 'Recently Added')
+   */
+  getSection(name: 'Continue Reading' | 'Start Reading' | 'Recently Added'): Locator {
+    return this.sections.filter({ has: this.page.locator(`h2:text("${name}")`) });
+  }
+
+  /**
+   * Get cards in a section
+   * Returns all .card elements within the section's cards-grid
+   */
+  getSectionCards(name: 'Continue Reading' | 'Start Reading' | 'Recently Added'): Locator {
+    return this.getSection(name).locator('.cards-grid .card');
+  }
+
+  /**
+   * Check if a section shows empty state
+   */
+  async isSectionEmpty(name: 'Continue Reading' | 'Start Reading' | 'Recently Added'): Promise<boolean> {
+    const emptyState = this.getSection(name).locator('.empty-state');
+    const display = await emptyState.evaluate((el) => window.getComputedStyle(el).display);
+    return display !== 'none';
+  }
+
+  /**
+   * Click on a card by entry name within a section
+   */
+  async clickCard(
+    sectionName: 'Continue Reading' | 'Start Reading' | 'Recently Added',
+    entryName: string
+  ): Promise<void> {
+    const card = this.getSectionCards(sectionName).filter({ hasText: entryName }).first();
+    await card.click();
+  }
+
+  /**
+   * Get progress percentage from a card's badge
+   * Returns null if no badge visible
+   */
+  async getCardProgress(card: Locator): Promise<number | null> {
+    const badge = card.locator('.progress-badge');
+    const display = await badge.evaluate((el) => window.getComputedStyle(el).display);
+    if (display === 'none') return null;
+
+    const text = await badge.textContent();
+    if (!text) return null;
+    return parseInt(text.replace('%', ''), 10);
+  }
+
+  /**
+   * Wait for entry modal to open (same as BookPage pattern)
+   */
+  async waitForModalOpen(): Promise<void> {
+    await this.page.waitForFunction(
+      () => {
+        const modal = document.querySelector('#entry-modal');
+        return modal && modal.classList.contains('uk-open');
+      },
+      { timeout: 3000 }
+    );
+  }
+
+  /**
+   * Get navigation component
+   */
+  getNavigation(): NavigationComponent {
+    return this.nav;
+  }
+}
