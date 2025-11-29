@@ -31,6 +31,58 @@ cargo build --release
 
 Access at `http://localhost:9000`. Admin credentials shown in logs on first run.
 
+## Docker Deployment
+
+Mango-Rust is compatible with existing Mango databases and can be deployed via Docker:
+
+```bash
+# Using docker-compose (recommended)
+docker-compose up -d
+
+# Or build and run manually
+docker build -t mango-rust .
+docker run -d \
+  -p 9000:9000 \
+  -v ~/mango:/root/mango \
+  -v ~/.config/mango:/root/.config/mango \
+  --name mango-rust \
+  mango-rust
+```
+
+**Environment Variables:**
+
+```bash
+# Copy example env file and customize
+cp env.example .env
+nano .env
+```
+
+```env
+# Main library directory (manga files)
+MAIN_DIRECTORY_PATH=./mango-data
+
+# Config directory
+CONFIG_DIRECTORY_PATH=./config
+
+# Port (default: 9000)
+PORT=9000
+```
+
+**Volume Mounts:**
+- `/root/mango` - Library directory (manga files and database)
+- `/root/.config/mango` - Configuration files
+
+### Migrating from Original Mango
+
+Mango-Rust is a **drop-in replacement** for the original Crystal-based Mango:
+
+1. **Stop original Mango**: `docker-compose down`
+2. **Backup your data**: `cp -r ~/mango ~/mango-backup`
+3. **Update docker-compose.yml**: Change image to `mango-rust`
+4. **Start Mango-Rust**: `docker-compose up -d`
+
+Your existing database, reading progress, tags, and thumbnails will work without modification. The schema is 100% compatible.
+
 ## Configuration
 
 Config file: `~/.config/mango/config.yml`
@@ -168,6 +220,9 @@ templates/           # Askama templates
 - ✅ Home page with Continue/Start/Recently Added sections
 - ✅ LESS build system with organized CSS architecture
 - ✅ OPDS catalog support (HTTP Basic Auth)
+- ✅ Two-tier caching system (library file + LRU cache)
+- ✅ Docker deployment with multi-stage build
+- ✅ Database schema 100% compatible with original Mango
 
 **Remaining for v1.0:**
 - 🚧 RAR/CBR archive format
