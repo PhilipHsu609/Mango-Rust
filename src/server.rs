@@ -13,7 +13,7 @@ use crate::{
     auth::require_auth,
     config::Config,
     error::Result,
-    library::Library,
+    library::{spawn_periodic_scanner, Library},
     routes::{
         add_tag, admin_dashboard, cache_clear_api, cache_debug_page, cache_invalidate_api,
         cache_load_library_api, cache_save_library_api, change_password_api, change_password_page,
@@ -53,13 +53,43 @@ pub async fn run(config: Config) -> Result<()> {
     tracing::info!("Initializing library");
     let mut library = Library::new(config.library_path.clone(), storage.clone(), &config);
 
-    // Try to load from cache first, fall back to scan if needed
-    if !library.try_load_from_cache().await? {
-        library.scan().await?;
-    }
+    // Try to load from cache first (fast)
+    let cache_loaded = library.try_load_from_cache().await?;
 
     let library = Arc::new(RwLock::new(library));
-    tracing::info!("Library initialization complete");
+
+    // If cache didn't load, spawn background scan task (non-blocking)
+    if !cache_loaded {
+        tracing::info!("Cache not available, starting background library scan...");
+        let library_clone = library.clone();
+        tokio::spawn(async move {
+            let start = std::time::Instant::now();
+            match library_clone.write().await.scan().await {
+                Ok(_) => {
+                    tracing::info!(
+                        "Background library scan completed in {:.2}s",
+                        start.elapsed().as_secs_f64()
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Background library scan failed: {}", e);
+                }
+            }
+        });
+    }
+
+    // Start periodic scanner if configured (similar to original Mango)
+    if config.scan_interval_minutes > 0 {
+        tracing::info!(
+            "Starting periodic library scanner (interval: {} minutes)",
+            config.scan_interval_minutes
+        );
+        spawn_periodic_scanner(library.clone(), config.scan_interval_minutes as u64);
+    } else {
+        tracing::info!("Periodic library scanning disabled (scan_interval_minutes = 0)");
+    }
+
+    tracing::info!("Library initialization complete (server ready)");
 
     // Create application state
     let config = Arc::new(config);
