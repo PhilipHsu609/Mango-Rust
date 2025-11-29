@@ -317,22 +317,37 @@ impl Storage {
     /// Get all unavailable (missing) entries
     /// Matches original Storage#get_missing
     pub async fn get_missing_entries(&self) -> Result<Vec<MissingEntry>> {
-        let rows =
-            sqlx::query("SELECT id, path, is_title FROM ids WHERE unavailable = 1 ORDER BY is_title DESC, path")
-                .fetch_all(&self.pool)
-                .await?;
+        // Query both titles and ids tables
+        let title_rows = sqlx::query("SELECT id, path FROM titles WHERE unavailable = 1")
+            .fetch_all(&self.pool)
+            .await?;
 
-        let entries = rows
-            .into_iter()
-            .map(|row| {
-                let is_title: i64 = row.get("is_title");
-                MissingEntry {
-                    id: row.get("id"),
-                    path: row.get("path"),
-                    entry_type: if is_title == 1 { "title".to_string() } else { "entry".to_string() },
-                }
-            })
-            .collect();
+        let entry_rows = sqlx::query("SELECT id, path FROM ids WHERE unavailable = 1")
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut entries = Vec::new();
+
+        // Add titles first
+        for row in title_rows {
+            entries.push(MissingEntry {
+                id: row.get("id"),
+                path: row.get("path"),
+                entry_type: "title".to_string(),
+            });
+        }
+
+        // Then add entries
+        for row in entry_rows {
+            entries.push(MissingEntry {
+                id: row.get("id"),
+                path: row.get("path"),
+                entry_type: "entry".to_string(),
+            });
+        }
+
+        // Sort by path
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
 
         Ok(entries)
     }
@@ -340,23 +355,38 @@ impl Storage {
     /// Delete a specific missing entry from database
     /// Matches original Storage#delete_missing
     pub async fn delete_missing_entry(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM ids WHERE id = ? AND unavailable = 1")
+        // Try deleting from titles first
+        let result1 = sqlx::query("DELETE FROM titles WHERE id = ? AND unavailable = 1")
             .bind(id)
             .execute(&self.pool)
             .await?;
 
-        tracing::info!("Deleted missing entry: {}", id);
+        // Then try ids table
+        let result2 = sqlx::query("DELETE FROM ids WHERE id = ? AND unavailable = 1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        let total = result1.rows_affected() + result2.rows_affected();
+        if total > 0 {
+            tracing::info!("Deleted missing entry: {}", id);
+        }
+
         Ok(())
     }
 
     /// Delete all missing entries from database
     /// Matches original Storage#delete_all_missing (custom implementation)
     pub async fn delete_all_missing_entries(&self) -> Result<u64> {
-        let result = sqlx::query("DELETE FROM ids WHERE unavailable = 1")
+        let result1 = sqlx::query("DELETE FROM titles WHERE unavailable = 1")
             .execute(&self.pool)
             .await?;
 
-        let rows_affected = result.rows_affected();
+        let result2 = sqlx::query("DELETE FROM ids WHERE unavailable = 1")
+            .execute(&self.pool)
+            .await?;
+
+        let rows_affected = result1.rows_affected() + result2.rows_affected();
         tracing::info!("Deleted {} missing entries", rows_affected);
         Ok(rows_affected)
     }
@@ -364,11 +394,15 @@ impl Storage {
     /// Get count of unavailable (missing) entries
     /// Used for admin dashboard
     pub async fn get_missing_count(&self) -> Result<usize> {
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ids WHERE unavailable = 1")
+        let title_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM titles WHERE unavailable = 1")
             .fetch_one(&self.pool)
             .await?;
 
-        Ok(count as usize)
+        let entry_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ids WHERE unavailable = 1")
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok((title_count + entry_count) as usize)
     }
 
     // ========== Tags Methods ==========

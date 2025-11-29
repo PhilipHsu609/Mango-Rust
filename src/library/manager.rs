@@ -34,6 +34,21 @@ impl Library {
         }
     }
 
+    /// Convert absolute path to relative path (relative to library root)
+    /// Example: "/home/user/library/Series/Chapter.zip" -> "Series/Chapter.zip"
+    fn to_relative_path(&self, absolute_path: &Path) -> Result<String> {
+        absolute_path
+            .strip_prefix(&self.path)
+            .map(|p| p.to_string_lossy().to_string())
+            .map_err(|_| {
+                crate::error::Error::Internal(format!(
+                    "Path {} is not within library root {}",
+                    absolute_path.display(),
+                    self.path.display()
+                ))
+            })
+    }
+
     /// Try to load library from cache
     /// Returns Ok(true) if loaded from cache, Ok(false) if cache miss/invalid
     pub async fn try_load_from_cache(&mut self) -> Result<bool> {
@@ -41,7 +56,7 @@ impl Library {
 
         // Get database title count for validation
         let db_title_count = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM ids WHERE is_title = 1 AND unavailable = 0",
+            "SELECT COUNT(*) FROM titles WHERE unavailable = 0",
         )
         .fetch_one(self.storage.pool())
         .await? as usize;
@@ -173,11 +188,13 @@ impl Library {
 
     /// Find existing title ID from database (by path or signature)
     async fn find_existing_id(&self, title: &Title) -> Result<Option<String>> {
+        let relative_path = self.to_relative_path(&title.path)?;
+
         // Tier 1: Exact match (path + signature)
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND is_title = 1 AND unavailable = 0"
+            "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0"
         )
-        .bind(title.path.to_string_lossy().as_ref())
+        .bind(&relative_path)
         .bind(&title.signature)
         .fetch_optional(self.storage.pool())
         .await?
@@ -187,14 +204,14 @@ impl Library {
 
         // Tier 2: Path-only match (directory modified but not moved)
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND is_title = 1 AND unavailable = 0",
+            "SELECT id FROM titles WHERE path = ? AND unavailable = 0",
         )
-        .bind(title.path.to_string_lossy().as_ref())
+        .bind(&relative_path)
         .fetch_optional(self.storage.pool())
         .await?
         {
             // Update signature
-            sqlx::query("UPDATE ids SET signature = ? WHERE id = ?")
+            sqlx::query("UPDATE titles SET signature = ? WHERE id = ?")
                 .bind(&title.signature)
                 .bind(&id)
                 .execute(self.storage.pool())
@@ -213,11 +230,13 @@ impl Library {
 
     /// Find existing entry ID from database
     async fn find_existing_entry_id(&self, entry: &Entry) -> Result<Option<String>> {
+        let relative_path = self.to_relative_path(&entry.path)?;
+
         // Tier 1: Exact match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND is_title = 0 AND unavailable = 0"
+            "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0"
         )
-        .bind(entry.path.to_string_lossy().as_ref())
+        .bind(&relative_path)
         .bind(&entry.signature)
         .fetch_optional(self.storage.pool())
         .await?
@@ -227,9 +246,9 @@ impl Library {
 
         // Tier 2: Path-only match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND is_title = 0 AND unavailable = 0",
+            "SELECT id FROM ids WHERE path = ? AND unavailable = 0",
         )
-        .bind(entry.path.to_string_lossy().as_ref())
+        .bind(&relative_path)
         .fetch_optional(self.storage.pool())
         .await?
         {
@@ -248,14 +267,16 @@ impl Library {
 
     /// Persist title ID to database
     async fn persist_title_id(&self, title: &Title) -> Result<()> {
+        let relative_path = self.to_relative_path(&title.path)?;
+
         sqlx::query(
-            "INSERT INTO ids (path, id, is_title, signature) VALUES (?, ?, 1, ?)
+            "INSERT INTO titles (id, path, signature) VALUES (?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
         )
-        .bind(title.path.to_string_lossy().as_ref())
         .bind(&title.id)
+        .bind(&relative_path)
         .bind(&title.signature)
-        .bind(title.path.to_string_lossy().as_ref())
+        .bind(&relative_path)
         .bind(&title.signature)
         .execute(self.storage.pool())
         .await?;
@@ -265,14 +286,16 @@ impl Library {
 
     /// Persist entry ID to database
     async fn persist_entry_id(&self, entry: &Entry) -> Result<()> {
+        let relative_path = self.to_relative_path(&entry.path)?;
+
         sqlx::query(
-            "INSERT INTO ids (path, id, is_title, signature) VALUES (?, ?, 0, ?)
+            "INSERT INTO ids (path, id, signature) VALUES (?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
         )
-        .bind(entry.path.to_string_lossy().as_ref())
+        .bind(&relative_path)
         .bind(&entry.id)
         .bind(&entry.signature)
-        .bind(entry.path.to_string_lossy().as_ref())
+        .bind(&relative_path)
         .bind(&entry.signature)
         .execute(self.storage.pool())
         .await?;
@@ -475,41 +498,77 @@ impl Library {
     async fn mark_unavailable(&self) -> Result<()> {
         use std::collections::HashSet;
 
+        // Collect IDs of all found titles
+        let found_title_ids: HashSet<String> = self.titles.keys().cloned().collect();
+
         // Collect IDs of all found entries
-        let found_ids: HashSet<String> = self
+        let found_entry_ids: HashSet<String> = self
             .titles
             .values()
             .flat_map(|title| title.entries.iter().map(|e| e.id.clone()))
             .collect();
 
-        // Query all entry IDs from database where unavailable = 0
-        let all_ids: Vec<String> = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE is_title = 0 AND unavailable = 0",
+        // Query all title IDs from database where unavailable = 0
+        let all_title_ids: Vec<String> = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM titles WHERE unavailable = 0",
         )
         .fetch_all(self.storage.pool())
         .await?;
 
-        // Find entries that are in DB but not found during scan
-        let missing_ids: Vec<String> = all_ids
+        // Query all entry IDs from database where unavailable = 0
+        let all_entry_ids: Vec<String> = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM ids WHERE unavailable = 0",
+        )
+        .fetch_all(self.storage.pool())
+        .await?;
+
+        // Find titles that are in DB but not found during scan
+        let missing_title_ids: Vec<String> = all_title_ids
             .into_iter()
-            .filter(|id| !found_ids.contains(id))
+            .filter(|id| !found_title_ids.contains(id))
             .collect();
 
-        if !missing_ids.is_empty() {
-            tracing::info!("Marking {} entries as unavailable", missing_ids.len());
+        // Find entries that are in DB but not found during scan
+        let missing_entry_ids: Vec<String> = all_entry_ids
+            .into_iter()
+            .filter(|id| !found_entry_ids.contains(id))
+            .collect();
 
-            // Mark entries as unavailable
-            for id in missing_ids {
-                sqlx::query("UPDATE ids SET unavailable = 1 WHERE id = ? AND type = 'entry'")
+        if !missing_title_ids.is_empty() {
+            tracing::info!("Marking {} titles as unavailable", missing_title_ids.len());
+
+            // Mark titles as unavailable
+            for id in missing_title_ids {
+                sqlx::query("UPDATE titles SET unavailable = 1 WHERE id = ?")
                     .bind(&id)
                     .execute(self.storage.pool())
                     .await?;
             }
         }
 
+        if !missing_entry_ids.is_empty() {
+            tracing::info!("Marking {} entries as unavailable", missing_entry_ids.len());
+
+            // Mark entries as unavailable
+            for id in missing_entry_ids {
+                sqlx::query("UPDATE ids SET unavailable = 1 WHERE id = ?")
+                    .bind(&id)
+                    .execute(self.storage.pool())
+                    .await?;
+            }
+        }
+
+        // Mark titles as available if they were previously unavailable but now found
+        for id in found_title_ids {
+            sqlx::query("UPDATE titles SET unavailable = 0 WHERE id = ? AND unavailable = 1")
+                .bind(&id)
+                .execute(self.storage.pool())
+                .await?;
+        }
+
         // Mark entries as available if they were previously unavailable but now found
-        for id in found_ids {
-            sqlx::query("UPDATE ids SET unavailable = 0 WHERE id = ? AND type = 'entry' AND unavailable = 1")
+        for id in found_entry_ids {
+            sqlx::query("UPDATE ids SET unavailable = 0 WHERE id = ? AND unavailable = 1")
                 .bind(&id)
                 .execute(self.storage.pool())
                 .await?;
