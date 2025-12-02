@@ -19,13 +19,13 @@ struct TitleData {
     id: String,
     name: String,
     entry_count: usize,
-    progress: String,               // Formatted with 1 decimal place
+    progress: f32,                  // Progress percentage (0.0 - 100.0)
     first_entry_id: Option<String>, // For cover thumbnail URL
 }
 
 impl HasProgress for TitleData {
-    fn progress(&self) -> &str {
-        &self.progress
+    fn progress(&self) -> f32 {
+        self.progress
     }
 }
 
@@ -33,11 +33,7 @@ impl HasProgress for TitleData {
 #[derive(Template)]
 #[template(path = "library.html")]
 struct LibraryTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
     title_count: usize,
     sort_name_asc: bool,
     sort_name_desc: bool,
@@ -52,22 +48,14 @@ struct LibraryTemplate {
 #[derive(Template)]
 #[template(path = "home.html")]
 struct HomeTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
 }
 
 /// GET / - Home page with Continue Reading, Start Reading, Recently Added (requires authentication)
 pub async fn home(State(_state): State<AppState>, user: User) -> Result<Html<String>> {
     // TODO: Implement Continue Reading, Start Reading, Recently Added logic
     let template = HomeTemplate {
-        home_active: true,
-        library_active: false,
-        tags_active: false,
-        admin_active: false,
-        is_admin: user.is_admin,
+        nav: crate::util::NavigationState::home().with_admin(user.is_admin),
     };
 
     Ok(Html(template.render().map_err(render_error)?))
@@ -96,9 +84,11 @@ pub async fn library(
         // For progress sorting, we need to calculate progress first, then sort
         // For other methods, use the library's cached sorting
         let sorted_titles = if matches!(sort_method, SortMethod::Progress) {
-            lib.get_titles_sorted_cached(&user.username, SortMethod::Name, true).await // Get name-sorted as base
+            lib.get_titles_sorted_cached(&user.username, SortMethod::Name, true)
+                .await // Get name-sorted as base
         } else {
-            lib.get_titles_sorted_cached(&user.username, sort_method, ascending).await
+            lib.get_titles_sorted_cached(&user.username, sort_method, ascending)
+                .await
         };
 
         // Calculate progress for each title
@@ -109,7 +99,7 @@ pub async fn library(
                 id: t.id.clone(),
                 name: t.title.clone(),
                 entry_count: t.entries.len(),
-                progress: format!("{:.1}", progress_pct),
+                progress: progress_pct,
                 first_entry_id: t.entries.first().map(|e| e.id.clone()),
             });
         }
@@ -131,11 +121,7 @@ pub async fn library(
     let sort_progress_desc = matches!(sort_method, SortMethod::Progress) && !ascending;
 
     let template = LibraryTemplate {
-        home_active: false,
-        library_active: true,
-        tags_active: false,
-        admin_active: false,
-        is_admin: user.is_admin,
+        nav: crate::util::NavigationState::library().with_admin(user.is_admin),
         title_count,
         sort_name_asc,
         sort_name_desc,
@@ -153,21 +139,13 @@ pub async fn library(
 #[derive(Template)]
 #[template(path = "change-password.html")]
 struct ChangePasswordTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
 }
 
 /// GET /change-password - Change password page (requires authentication)
 pub async fn change_password_page(user: User) -> Result<Html<String>> {
     let template = ChangePasswordTemplate {
-        home_active: false,
-        library_active: false,
-        tags_active: false,
-        admin_active: false,
-        is_admin: user.is_admin,
+        nav: crate::util::NavigationState::home().with_admin(user.is_admin), // No specific page active for change password
     };
 
     Ok(Html(template.render().map_err(render_error)?))
@@ -211,11 +189,7 @@ pub async fn change_password_api(
 #[derive(Template)]
 #[template(path = "tags.html")]
 struct TagsTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
     tags: Vec<TagWithCount>,
 }
 
@@ -257,11 +231,7 @@ pub async fn list_tags_page(State(state): State<AppState>, user: User) -> Result
     });
 
     let template = TagsTemplate {
-        home_active: false,
-        library_active: false,
-        tags_active: true,
-        admin_active: false,
-        is_admin: user.is_admin,
+        nav: crate::util::NavigationState::tags().with_admin(user.is_admin),
         tags: tags_with_counts,
     };
     Ok(Html(template.render().map_err(render_error)?))
@@ -270,11 +240,7 @@ pub async fn list_tags_page(State(state): State<AppState>, user: User) -> Result
 #[derive(Template)]
 #[template(path = "tag.html")]
 struct TagTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
     tag: String,
     title_count: usize,
     titles: Vec<TitleData>,
@@ -316,7 +282,7 @@ pub async fn view_tag_page(
                     name: title.title.clone(),
                     entry_count: title.entries.len(),
                     first_entry_id: title.entries.first().map(|e| e.id.clone()),
-                    progress: String::new(), // Will be filled later
+                    progress: 0.0, // Will be filled later
                 }
             })
         })
@@ -326,7 +292,7 @@ pub async fn view_tag_page(
     for title_data in &mut titles {
         let title = lib.get_title(&title_data.id).unwrap();
         let progress_pct = title.get_title_progress(&user.username).await?;
-        title_data.progress = format!("{:.1}", progress_pct);
+        title_data.progress = progress_pct;
     }
 
     // Determine sort method
@@ -394,11 +360,7 @@ pub async fn view_tag_page(
     };
 
     let template = TagTemplate {
-        home_active: false,
-        library_active: false,
-        tags_active: true,
-        admin_active: false,
-        is_admin: user.is_admin,
+        nav: crate::util::NavigationState::tags().with_admin(user.is_admin),
         tag,
         title_count: titles.len(),
         titles,

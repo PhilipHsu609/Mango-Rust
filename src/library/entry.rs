@@ -225,14 +225,14 @@ async fn extract_image_from_archive(archive_path: &Path, image_name: &str) -> Re
 }
 
 /// Check if filename has an image extension
+/// Takes &str because it's used for filenames from inside ZIP archives
 fn is_image_file(filename: &str) -> bool {
-    let lower = filename.to_lowercase();
-    lower.ends_with(".jpg")
-        || lower.ends_with(".jpeg")
-        || lower.ends_with(".png")
-        || lower.ends_with(".gif")
-        || lower.ends_with(".webp")
-        || lower.ends_with(".bmp")
+    if let Some(ext) = filename.rsplit('.').next() {
+        let ext_lower = ext.to_lowercase();
+        crate::util::IMAGE_EXTENSIONS.contains(&ext_lower.as_str())
+    } else {
+        false
+    }
 }
 
 impl super::Sortable for Entry {

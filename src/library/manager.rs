@@ -56,11 +56,10 @@ impl Library {
         tracing::info!("Attempting to load library from cache");
 
         // Get database title count for validation
-        let db_title_count = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM titles WHERE unavailable = 0",
-        )
-        .fetch_one(self.storage.pool())
-        .await? as usize;
+        let db_title_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM titles WHERE unavailable = 0")
+                .fetch_one(self.storage.pool())
+                .await? as usize;
 
         // Try to load from cache
         let cache = self.cache.lock().await;
@@ -135,18 +134,22 @@ impl Library {
                 };
 
                 // Find or create title ID
-                let existing_id = Self::find_existing_id_static(&lib_path, &title, &storage_clone).await.ok()?;
+                let existing_id = Self::find_existing_id_static(&lib_path, &title, &storage_clone)
+                    .await
+                    .ok()?;
                 let is_new_title = existing_id.is_none();
                 if let Some(id) = existing_id {
                     title.id = id;
                     tracing::debug!("Matched existing title: {} ({})", title.title, title.id);
                 } else {
                     // New title - collect for bulk insert
-                    let relative_path = title.path.strip_prefix(&lib_path)
+                    let relative_path = title
+                        .path
+                        .strip_prefix(&lib_path)
                         .ok()?
                         .to_string_lossy()
                         .to_string();
-                    
+
                     title_ids.lock().await.push((
                         title.id.clone(),
                         relative_path,
@@ -157,22 +160,27 @@ impl Library {
 
                 // Find or create entry IDs
                 for entry in &mut title.entries {
-                    let existing_entry_id = Self::find_existing_entry_id_static(&lib_path, entry, &storage_clone).await.ok()?;
+                    let existing_entry_id =
+                        Self::find_existing_entry_id_static(&lib_path, entry, &storage_clone)
+                            .await
+                            .ok()?;
                     if let Some(id) = existing_entry_id {
                         entry.id = id;
                     } else {
                         // New entry - collect for bulk insert
-                        let relative_path = entry.path.strip_prefix(&lib_path)
+                        let relative_path = entry
+                            .path
+                            .strip_prefix(&lib_path)
                             .ok()?
                             .to_string_lossy()
                             .to_string();
-                        
+
                         entry_ids.lock().await.push((
                             entry.id.clone(),
                             relative_path,
                             entry.signature.clone(),
                         ));
-                        
+
                         if is_new_title {
                             tracing::debug!("  New entry: {} ({})", entry.title, entry.id);
                         }
@@ -204,7 +212,7 @@ impl Library {
         // Bulk insert all new IDs in a single transaction
         let title_ids_vec = new_title_ids.lock().await;
         let entry_ids_vec = new_entry_ids.lock().await;
-        
+
         if !title_ids_vec.is_empty() || !entry_ids_vec.is_empty() {
             self.bulk_insert_ids(&title_ids_vec, &entry_ids_vec).await?;
             tracing::info!(
@@ -296,7 +304,7 @@ impl Library {
 
         // Tier 1: Exact match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0"
+            "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0",
         )
         .bind(&relative_path)
         .bind(&title.signature)
@@ -347,7 +355,7 @@ impl Library {
 
         // Tier 1: Exact match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0"
+            "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0",
         )
         .bind(&relative_path)
         .bind(&entry.signature)
@@ -358,12 +366,11 @@ impl Library {
         }
 
         // Tier 2: Path-only match
-        if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND unavailable = 0",
-        )
-        .bind(&relative_path)
-        .fetch_optional(storage.pool())
-        .await?
+        if let Some(id) =
+            sqlx::query_scalar::<_, String>("SELECT id FROM ids WHERE path = ? AND unavailable = 0")
+                .bind(&relative_path)
+                .fetch_optional(storage.pool())
+                .await?
         {
             // Update signature
             sqlx::query("UPDATE ids SET signature = ? WHERE id = ?")
@@ -411,7 +418,7 @@ impl Library {
 
         // Tier 1: Exact match (path + signature)
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0"
+            "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0",
         )
         .bind(&relative_path)
         .bind(&title.signature)
@@ -454,7 +461,7 @@ impl Library {
 
         // Tier 1: Exact match
         if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0"
+            "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0",
         )
         .bind(&relative_path)
         .bind(&entry.signature)
@@ -465,12 +472,11 @@ impl Library {
         }
 
         // Tier 2: Path-only match
-        if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND unavailable = 0",
-        )
-        .bind(&relative_path)
-        .fetch_optional(self.storage.pool())
-        .await?
+        if let Some(id) =
+            sqlx::query_scalar::<_, String>("SELECT id FROM ids WHERE path = ? AND unavailable = 0")
+                .bind(&relative_path)
+                .fetch_optional(self.storage.pool())
+                .await?
         {
             // Update signature
             sqlx::query("UPDATE ids SET signature = ? WHERE id = ?")
@@ -569,7 +575,9 @@ impl Library {
             SortMethod::Auto => "auto",
         };
 
-        // Try to get cached sorted list
+        // Acquire lock for entire cache operation (check-compute-store)
+        // This prevents TOCTOU race condition where another thread could invalidate
+        // the cache between our check and our write
         let mut cache = self.cache.lock().await;
         let cache_key = super::cache::key::sorted_titles_key(
             username,
@@ -579,7 +587,7 @@ impl Library {
         );
 
         if let Some(cached_ids) = cache.get_sorted_titles(&cache_key) {
-            drop(cache); // Release lock before building result
+            drop(cache); // Can drop early on cache hit
 
             // Build result from cached IDs
             let mut result = Vec::with_capacity(cached_ids.len());
@@ -591,16 +599,15 @@ impl Library {
             return result;
         }
 
-        drop(cache); // Release lock before sorting
-
-        // Cache miss - compute sort
+        // Cache miss - compute sort while holding lock
+        // Sorting is fast (<1ms for 1000 titles), so lock contention is acceptable
+        // This ensures atomicity of check-compute-store operation
         let sorted_titles = self.get_titles_sorted(method, ascending);
 
         // Extract IDs in sorted order
         let sorted_ids: Vec<String> = sorted_titles.iter().map(|t| t.id.clone()).collect();
 
-        // Cache the sorted IDs
-        let mut cache = self.cache.lock().await;
+        // Store result (still holding lock)
         cache.set_sorted_titles(cache_key, sorted_ids);
         drop(cache);
 
@@ -642,7 +649,9 @@ impl Library {
             SortMethod::Auto => "auto",
         };
 
-        // Try to get cached sorted list
+        // Acquire lock for entire cache operation (check-compute-store)
+        // This prevents TOCTOU race condition where another thread could invalidate
+        // the cache between our check and our write
         let mut cache = self.cache.lock().await;
         let cache_key = super::cache::key::sorted_entries_key(
             title_id,
@@ -653,7 +662,7 @@ impl Library {
         );
 
         if let Some(cached_ids) = cache.get_sorted_entries(&cache_key) {
-            drop(cache); // Release lock before building result
+            drop(cache); // Can drop early on cache hit
 
             // Build result from cached IDs
             let mut result = Vec::with_capacity(cached_ids.len());
@@ -665,16 +674,15 @@ impl Library {
             return Some(result);
         }
 
-        drop(cache); // Release lock before sorting
-
-        // Cache miss - compute sort
+        // Cache miss - compute sort while holding lock
+        // Sorting is fast (<1ms for typical entry counts), so lock contention is acceptable
+        // This ensures atomicity of check-compute-store operation
         let sorted_entries = title.get_entries_sorted(method, ascending);
 
         // Extract IDs in sorted order
         let sorted_ids: Vec<String> = sorted_entries.iter().map(|e| e.id.clone()).collect();
 
-        // Cache the sorted IDs
-        let mut cache = self.cache.lock().await;
+        // Store result (still holding lock)
         cache.set_sorted_entries(cache_key, sorted_ids);
         drop(cache);
 
@@ -720,82 +728,118 @@ impl Library {
     async fn mark_unavailable(&self) -> Result<()> {
         use std::collections::HashSet;
 
-        // Collect IDs of all found titles
-        let found_title_ids: HashSet<String> = self.titles.keys().cloned().collect();
+        const CHUNK_SIZE: usize = 500; // Well under SQLite's 999 limit
 
-        // Collect IDs of all found entries
+        let found_title_ids: HashSet<String> = self.titles.keys().cloned().collect();
         let found_entry_ids: HashSet<String> = self
             .titles
             .values()
-            .flat_map(|title| title.entries.iter().map(|e| e.id.clone()))
+            .flat_map(|t| t.entries.iter().map(|e| e.id.clone()))
             .collect();
 
-        // Query all title IDs from database where unavailable = 0
-        let all_title_ids: Vec<String> = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM titles WHERE unavailable = 0",
-        )
-        .fetch_all(self.storage.pool())
-        .await?;
+        let mut tx = self.storage.pool().begin().await?;
 
-        // Query all entry IDs from database where unavailable = 0
-        let all_entry_ids: Vec<String> = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE unavailable = 0",
-        )
-        .fetch_all(self.storage.pool())
-        .await?;
-
-        // Find titles that are in DB but not found during scan
-        let missing_title_ids: Vec<String> = all_title_ids
-            .into_iter()
-            .filter(|id| !found_title_ids.contains(id))
-            .collect();
-
-        // Find entries that are in DB but not found during scan
-        let missing_entry_ids: Vec<String> = all_entry_ids
-            .into_iter()
-            .filter(|id| !found_entry_ids.contains(id))
-            .collect();
-
-        if !missing_title_ids.is_empty() {
-            tracing::info!("Marking {} titles as unavailable", missing_title_ids.len());
-
-            // Mark titles as unavailable
-            for id in missing_title_ids {
-                sqlx::query("UPDATE titles SET unavailable = 1 WHERE id = ?")
-                    .bind(&id)
-                    .execute(self.storage.pool())
-                    .await?;
-            }
-        }
-
-        if !missing_entry_ids.is_empty() {
-            tracing::info!("Marking {} entries as unavailable", missing_entry_ids.len());
-
-            // Mark entries as unavailable
-            for id in missing_entry_ids {
-                sqlx::query("UPDATE ids SET unavailable = 1 WHERE id = ?")
-                    .bind(&id)
-                    .execute(self.storage.pool())
-                    .await?;
-            }
-        }
-
-        // Mark titles as available if they were previously unavailable but now found
-        for id in found_title_ids {
-            sqlx::query("UPDATE titles SET unavailable = 0 WHERE id = ? AND unavailable = 1")
-                .bind(&id)
-                .execute(self.storage.pool())
+        // 1. Find and mark missing titles as unavailable
+        let db_title_ids: Vec<String> =
+            sqlx::query_scalar::<_, String>("SELECT id FROM titles WHERE unavailable = 0")
+                .fetch_all(&mut *tx)
                 .await?;
+
+        let missing_titles: Vec<&String> = db_title_ids
+            .iter()
+            .filter(|id| !found_title_ids.contains(*id))
+            .collect();
+
+        for chunk in missing_titles.chunks(CHUNK_SIZE) {
+            Self::batch_update_unavailable(&mut tx, "titles", chunk, 1).await?;
         }
 
-        // Mark entries as available if they were previously unavailable but now found
-        for id in found_entry_ids {
-            sqlx::query("UPDATE ids SET unavailable = 0 WHERE id = ? AND unavailable = 1")
-                .bind(&id)
-                .execute(self.storage.pool())
+        // 2. Find and mark missing entries as unavailable
+        let db_entry_ids: Vec<String> =
+            sqlx::query_scalar::<_, String>("SELECT id FROM ids WHERE unavailable = 0")
+                .fetch_all(&mut *tx)
                 .await?;
+
+        let missing_entries: Vec<&String> = db_entry_ids
+            .iter()
+            .filter(|id| !found_entry_ids.contains(*id))
+            .collect();
+
+        for chunk in missing_entries.chunks(CHUNK_SIZE) {
+            Self::batch_update_unavailable(&mut tx, "ids", chunk, 1).await?;
         }
 
+        // 3. Restore previously unavailable titles that are now found
+        let unavailable_titles: Vec<String> =
+            sqlx::query_scalar::<_, String>("SELECT id FROM titles WHERE unavailable = 1")
+                .fetch_all(&mut *tx)
+                .await?;
+
+        let restored_titles: Vec<&String> = unavailable_titles
+            .iter()
+            .filter(|id| found_title_ids.contains(*id))
+            .collect();
+
+        for chunk in restored_titles.chunks(CHUNK_SIZE) {
+            Self::batch_update_unavailable(&mut tx, "titles", chunk, 0).await?;
+        }
+
+        // 4. Restore previously unavailable entries that are now found
+        let unavailable_entries: Vec<String> =
+            sqlx::query_scalar::<_, String>("SELECT id FROM ids WHERE unavailable = 1")
+                .fetch_all(&mut *tx)
+                .await?;
+
+        let restored_entries: Vec<&String> = unavailable_entries
+            .iter()
+            .filter(|id| found_entry_ids.contains(*id))
+            .collect();
+
+        for chunk in restored_entries.chunks(CHUNK_SIZE) {
+            Self::batch_update_unavailable(&mut tx, "ids", chunk, 0).await?;
+        }
+
+        // Log what we did
+        if !missing_titles.is_empty() {
+            tracing::info!("Marked {} titles as unavailable", missing_titles.len());
+        }
+        if !missing_entries.is_empty() {
+            tracing::info!("Marked {} entries as unavailable", missing_entries.len());
+        }
+        if !restored_titles.is_empty() {
+            tracing::info!("Restored {} titles as available", restored_titles.len());
+        }
+        if !restored_entries.is_empty() {
+            tracing::info!("Restored {} entries as available", restored_entries.len());
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Helper: batch UPDATE with IN clause
+    /// Chunks are handled by caller to respect SQLite's parameter limit
+    async fn batch_update_unavailable(
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        table: &str,
+        ids: &[&String],
+        unavailable: i32,
+    ) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let query_str = format!(
+            "UPDATE {} SET unavailable = {} WHERE id IN ({})",
+            table, unavailable, placeholders
+        );
+
+        let mut query = sqlx::query(&query_str);
+        for id in ids {
+            query = query.bind(*id);
+        }
+        query.execute(&mut **tx).await?;
         Ok(())
     }
 }

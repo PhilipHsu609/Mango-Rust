@@ -26,10 +26,10 @@
                 </svg>
             </a>
             <ul class="uk-navbar-nav">
-                <li{% if home_active %} class="uk-active"{% endif %}><a class="nav-item" href="/">HOME</a></li>
-                <li{% if library_active %} class="uk-active"{% endif %}><a class="nav-item" href="/library">LIBRARY</a></li>
-                <li{% if tags_active %} class="uk-active"{% endif %}><a class="nav-item" href="/tags">TAGS</a></li>
-                {% if is_admin %}<li{% if admin_active %} class="uk-active"{% endif %}><a class="nav-item" href="/admin">ADMIN</a></li>{% endif %}
+                <li{% if nav.home_active %} class="uk-active"{% endif %}><a class="nav-item" href="/">HOME</a></li>
+                <li{% if nav.library_active %} class="uk-active"{% endif %}><a class="nav-item" href="/library">LIBRARY</a></li>
+                <li{% if nav.tags_active %} class="uk-active"{% endif %}><a class="nav-item" href="/tags">TAGS</a></li>
+                {% if nav.is_admin %}<li{% if nav.admin_active %} class="uk-active"{% endif %}><a class="nav-item" href="/admin">ADMIN</a></li>{% endif %}
                 <li><a class="nav-item" href="#">DOWNLOAD</a></li>
             </ul>
         </div>
@@ -48,10 +48,10 @@
             <button class="uk-offcanvas-close" type="button" uk-close></button>
             <h3>Menu</h3>
             <ul class="uk-nav uk-nav-default">
-                <li{% if home_active %} class="uk-active"{% endif %}><a href="/">Home</a></li>
-                <li{% if library_active %} class="uk-active"{% endif %}><a href="/library">Library</a></li>
-                <li{% if tags_active %} class="uk-active"{% endif %}><a href="/tags">Tags</a></li>
-                {% if is_admin %}<li{% if admin_active %} class="uk-active"{% endif %}><a href="/admin">Admin</a></li>{% endif %}
+                <li{% if nav.home_active %} class="uk-active"{% endif %}><a href="/">Home</a></li>
+                <li{% if nav.library_active %} class="uk-active"{% endif %}><a href="/library">Library</a></li>
+                <li{% if nav.tags_active %} class="uk-active"{% endif %}><a href="/tags">Tags</a></li>
+                {% if nav.is_admin %}<li{% if nav.admin_active %} class="uk-active"{% endif %}><a href="/admin">Admin</a></li>{% endif %}
                 <li><a href="#">Download</a></li>
                 <li class="uk-nav-divider"></li>
                 <li><a onclick="toggleTheme()"><i class="fas fa-adjust"></i></a></li>

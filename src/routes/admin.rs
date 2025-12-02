@@ -14,11 +14,7 @@ use crate::{auth::AdminOnly, error::Result, util::render_error, AppState};
 #[derive(Template)]
 #[template(path = "admin.html")]
 struct AdminTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
     missing_count: usize,
 }
 
@@ -26,11 +22,7 @@ struct AdminTemplate {
 #[derive(Template)]
 #[template(path = "cache_debug.html")]
 struct CacheDebugTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
     stats: crate::library::cache::CacheStats,
     entries: Vec<crate::library::cache::CacheEntryInfo>,
     cache_file_path: String,
@@ -53,11 +45,7 @@ pub async fn admin_dashboard(
     let missing_count = state.storage.get_missing_count().await?;
 
     let template = AdminTemplate {
-        home_active: false,
-        library_active: false,
-        tags_active: false,
-        admin_active: true,
-        is_admin: true,
+        nav: crate::util::NavigationState::admin().with_admin(true), // Admin pages are always accessed by admins
         missing_count,
     };
 
@@ -112,11 +100,7 @@ pub async fn cache_debug_page(
     drop(lib);
 
     let template = CacheDebugTemplate {
-        home_active: false,
-        library_active: false,
-        tags_active: false,
-        admin_active: true,
-        is_admin: true,
+        nav: crate::util::NavigationState::admin().with_admin(true),
         stats,
         entries,
         cache_file_path,
@@ -199,22 +183,14 @@ pub async fn delete_all_missing_entries(
 #[derive(Template)]
 #[template(path = "missing-items.html")]
 struct MissingItemsTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
 }
 
 /// GET /admin/missing-items - Missing items management page
 /// Shows list of items in database whose files no longer exist
 pub async fn missing_items_page(AdminOnly(_username): AdminOnly) -> Result<Html<String>> {
     let template = MissingItemsTemplate {
-        home_active: false,
-        library_active: false,
-        tags_active: false,
-        admin_active: true,
-        is_admin: true,
+        nav: crate::util::NavigationState::admin().with_admin(true),
     };
 
     Ok(Html(template.render().map_err(render_error)?))
@@ -224,11 +200,7 @@ pub async fn missing_items_page(AdminOnly(_username): AdminOnly) -> Result<Html<
 #[derive(Template)]
 #[template(path = "users.html")]
 struct UsersTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
     username: String,
 }
 
@@ -236,11 +208,7 @@ struct UsersTemplate {
 /// Shows list of users and allows creating/deleting users
 pub async fn users_page(AdminOnly(username): AdminOnly) -> Result<Html<String>> {
     let template = UsersTemplate {
-        home_active: false,
-        library_active: false,
-        tags_active: false,
-        admin_active: true,
-        is_admin: true,
+        nav: crate::util::NavigationState::admin().with_admin(true),
         username,
     };
 
@@ -285,7 +253,7 @@ pub async fn create_user(
 ) -> Result<StatusCode> {
     // Check if username already exists
     if state.storage.username_exists(&request.username).await? {
-        return Err(crate::error::Error::Internal(format!(
+        return Err(crate::error::Error::Conflict(format!(
             "Username '{}' already exists",
             request.username
         )));
@@ -321,14 +289,14 @@ pub async fn update_user(
 ) -> Result<StatusCode> {
     // Prevent users from demoting themselves
     if username == current_username && !request.is_admin {
-        return Err(crate::error::Error::Internal(
+        return Err(crate::error::Error::Forbidden(
             "Cannot demote yourself from admin".to_string(),
         ));
     }
 
     // Check if user exists
     if !state.storage.username_exists(&username).await? {
-        return Err(crate::error::Error::Internal(format!(
+        return Err(crate::error::Error::NotFound(format!(
             "User '{}' not found",
             username
         )));
@@ -358,7 +326,7 @@ pub async fn delete_user(
 ) -> Result<StatusCode> {
     // Prevent users from deleting themselves
     if username == current_username {
-        return Err(crate::error::Error::Internal(
+        return Err(crate::error::Error::Forbidden(
             "Cannot delete yourself".to_string(),
         ));
     }

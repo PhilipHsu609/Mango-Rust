@@ -51,6 +51,7 @@ fn dir_inode(path: &Path) -> Result<String> {
 /// - Directory's own inode
 /// - All supported file inodes
 /// - All nested directory signatures (recursive)
+///
 /// Returns CRC32 checksum as String
 pub fn dir_signature(path: &Path) -> Result<String> {
     let mut signatures = Vec::new();
@@ -94,15 +95,30 @@ pub fn dir_signature(path: &Path) -> Result<String> {
     Ok((checksum as u64).to_string())
 }
 
+// ============================================================================
+// File Type Detection Constants
+// ============================================================================
+
+/// Archive formats that can be extracted by the ZIP library (what we can actually READ)
+/// When adding support for new formats (e.g., RAR), update the extraction code in
+/// entry.rs first, then move the extensions here from ALL_ARCHIVE_EXTENSIONS
+pub const EXTRACTABLE_ARCHIVE_EXTENSIONS: &[&str] = &["zip", "cbz"];
+
+/// All archive formats we recognize (may not all be extractable yet)
+/// Used for file signature calculation and future format support
+pub const ALL_ARCHIVE_EXTENSIONS: &[&str] =
+    &["zip", "cbz", "rar", "cbr", "7z", "cb7", "tar", "cbt"];
+
+/// Image formats we can display
+pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp"];
+
 /// Check if file is a supported archive or image file
+/// Used for directory signature calculation - recognizes all media types
 fn is_supported_file(path: &Path) -> bool {
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
         let ext_lower = ext.to_lowercase();
-        matches!(
-            ext_lower.as_str(),
-            "zip" | "cbz" | "rar" | "cbr" | "7z" | "cb7" | "tar" | "cbt"
-            | "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp"
-        )
+        ALL_ARCHIVE_EXTENSIONS.contains(&ext_lower.as_str())
+            || IMAGE_EXTENSIONS.contains(&ext_lower.as_str())
     } else {
         false
     }
@@ -119,11 +135,14 @@ pub struct SortParams {
 
 /// Navigation state for templates
 /// Tracks which page is currently active in the navigation menu
-#[derive(Debug, Clone)]
+/// and user permission level for conditional UI rendering
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct NavigationState {
     pub home_active: bool,
     pub library_active: bool,
+    pub tags_active: bool,
     pub admin_active: bool,
+    pub is_admin: bool,
 }
 
 impl NavigationState {
@@ -132,7 +151,9 @@ impl NavigationState {
         Self {
             home_active: true,
             library_active: false,
+            tags_active: false,
             admin_active: false,
+            is_admin: false,
         }
     }
 
@@ -141,7 +162,20 @@ impl NavigationState {
         Self {
             home_active: false,
             library_active: true,
+            tags_active: false,
             admin_active: false,
+            is_admin: false,
+        }
+    }
+
+    /// Create navigation state with tags page active
+    pub fn tags() -> Self {
+        Self {
+            home_active: false,
+            library_active: false,
+            tags_active: true,
+            admin_active: false,
+            is_admin: false,
         }
     }
 
@@ -150,8 +184,17 @@ impl NavigationState {
         Self {
             home_active: false,
             library_active: false,
+            tags_active: false,
             admin_active: true,
+            is_admin: false,
         }
+    }
+
+    /// Builder method to set admin permission status
+    /// Use this to indicate whether the current user has admin privileges
+    pub fn with_admin(mut self, is_admin: bool) -> Self {
+        self.is_admin = is_admin;
+        self
     }
 }
 
@@ -196,5 +239,70 @@ pub async fn get_and_save_sort(
     } else {
         // Default: sort by title ascending
         Ok(("title".to_string(), true))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_navigation_state_home() {
+        let nav = NavigationState::home();
+        assert!(nav.home_active);
+        assert!(!nav.library_active);
+        assert!(!nav.tags_active);
+        assert!(!nav.admin_active);
+        assert!(!nav.is_admin);
+    }
+
+    #[test]
+    fn test_navigation_state_library() {
+        let nav = NavigationState::library();
+        assert!(!nav.home_active);
+        assert!(nav.library_active);
+        assert!(!nav.tags_active);
+        assert!(!nav.admin_active);
+        assert!(!nav.is_admin);
+    }
+
+    #[test]
+    fn test_navigation_state_tags() {
+        let nav = NavigationState::tags();
+        assert!(!nav.home_active);
+        assert!(!nav.library_active);
+        assert!(nav.tags_active);
+        assert!(!nav.admin_active);
+        assert!(!nav.is_admin);
+    }
+
+    #[test]
+    fn test_navigation_state_admin() {
+        let nav = NavigationState::admin();
+        assert!(!nav.home_active);
+        assert!(!nav.library_active);
+        assert!(!nav.tags_active);
+        assert!(nav.admin_active);
+        assert!(!nav.is_admin);
+    }
+
+    #[test]
+    fn test_navigation_state_with_admin() {
+        let nav = NavigationState::library().with_admin(true);
+        assert!(!nav.home_active);
+        assert!(nav.library_active);
+        assert!(!nav.tags_active);
+        assert!(!nav.admin_active);
+        assert!(nav.is_admin);
+    }
+
+    #[test]
+    fn test_navigation_state_builder_chain() {
+        // Test that builder pattern works
+        let nav_admin = NavigationState::home().with_admin(true);
+        assert!(nav_admin.is_admin);
+
+        let nav_regular = NavigationState::home().with_admin(false);
+        assert!(!nav_regular.is_admin);
     }
 }

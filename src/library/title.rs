@@ -280,11 +280,13 @@ impl Title {
 }
 
 /// Check if a file is a supported archive format
+/// Only returns true for formats we can actually extract (currently ZIP/CBZ only)
+/// When adding new format support, update entry.rs extraction code first,
+/// then add extensions to util::EXTRACTABLE_ARCHIVE_EXTENSIONS
 fn is_archive(path: &Path) -> bool {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         let ext_lower = ext.to_lowercase();
-        ext_lower == "zip" || ext_lower == "cbz"
-        // Week 4 will add: || ext_lower == "rar" || ext_lower == "cbr"
+        crate::util::EXTRACTABLE_ARCHIVE_EXTENSIONS.contains(&ext_lower.as_str())
     } else {
         false
     }

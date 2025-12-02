@@ -56,6 +56,12 @@ pub mod error {
         #[error("{0}")]
         BadRequest(String),
 
+        #[error("Conflict: {0}")]
+        Conflict(String),
+
+        #[error("Forbidden: {0}")]
+        Forbidden(String),
+
         #[error("Internal server error: {0}")]
         Internal(String),
     }
@@ -66,6 +72,8 @@ pub mod error {
                 Error::AuthFailed => StatusCode::UNAUTHORIZED,
                 Error::NotFound(_) => StatusCode::NOT_FOUND,
                 Error::BadRequest(_) => StatusCode::BAD_REQUEST,
+                Error::Conflict(_) => StatusCode::CONFLICT,
+                Error::Forbidden(_) => StatusCode::FORBIDDEN,
                 Error::Database(_)
                 | Error::Io(_)
                 | Error::Internal(_)

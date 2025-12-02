@@ -15,7 +15,7 @@
     <p class="subtitle">{{ entry_count }} {% if entry_count == 1 %}entry{% else %}entries{% endif %} found</p>
 
     <!-- Tags Section -->
-    {% if is_admin %}
+    {% if nav.is_admin %}
     <div class="uk-margin" x-data="tagsData()" data-title-id="{{ title_id }}">
         <h4 class="uk-margin-small-bottom">Tags</h4>
         <div class="uk-margin-small-bottom">

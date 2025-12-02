@@ -213,7 +213,7 @@ pub async fn continue_reading(
                     entry_name: entry.title.clone(),
                     pages: entry.pages,
                     progress,
-                    percentage: format!("{:.1}", percentage),
+                    percentage,
                     last_read,
                 });
             }
@@ -321,7 +321,7 @@ pub async fn recently_added(
             // Group with previous entry
             if let Some(last) = result.last_mut() {
                 last.grouped_count += 1;
-                last.percentage = String::new(); // Hide percentage for grouped items
+                last.percentage = 0.0; // Hide percentage for grouped items
             }
         } else {
             result.push(RecentlyAddedEntry {
@@ -330,7 +330,7 @@ pub async fn recently_added(
                 entry_id,
                 entry_name,
                 pages,
-                percentage: format!("{:.1}", percentage),
+                percentage,
                 grouped_count: 1,
                 date_added,
             });
@@ -350,7 +350,7 @@ struct ContinueReadingEntry {
     entry_name: String,
     pages: usize,
     progress: usize,
-    percentage: String,
+    percentage: f32, // Progress percentage (0.0 - 100.0)
     last_read: i64,
 }
 
@@ -369,7 +369,7 @@ struct RecentlyAddedEntry {
     entry_id: String,
     entry_name: String,
     pages: usize,
-    percentage: String,
+    percentage: f32, // Progress percentage (0.0 - 100.0)
     grouped_count: usize,
     date_added: i64,
 }

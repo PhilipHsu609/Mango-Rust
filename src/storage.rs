@@ -408,9 +408,10 @@ impl Storage {
     /// Get count of unavailable (missing) entries
     /// Used for admin dashboard
     pub async fn get_missing_count(&self) -> Result<usize> {
-        let title_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM titles WHERE unavailable = 1")
-            .fetch_one(&self.pool)
-            .await?;
+        let title_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM titles WHERE unavailable = 1")
+                .fetch_one(&self.pool)
+                .await?;
 
         let entry_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ids WHERE unavailable = 1")
             .fetch_one(&self.pool)

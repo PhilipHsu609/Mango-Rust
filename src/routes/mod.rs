@@ -26,25 +26,23 @@ pub use opds::{opds_index, opds_title};
 pub use progress::{get_all_progress, get_progress, save_progress};
 pub use reader::reader;
 
-/// Trait for types that have a progress field (as a String)
+/// Trait for types that have a progress field (as f32 percentage)
 pub trait HasProgress {
-    fn progress(&self) -> &str;
+    fn progress(&self) -> f32;
 }
 
 /// Sort a slice of items by progress percentage
 /// Items must implement HasProgress trait (have a progress field)
 pub fn sort_by_progress<T: HasProgress>(items: &mut [T], ascending: bool) {
     items.sort_by(|a, b| {
-        let a_progress: f32 = a.progress().parse().unwrap_or(0.0);
-        let b_progress: f32 = b.progress().parse().unwrap_or(0.0);
+        let ord = a
+            .progress()
+            .partial_cmp(&b.progress())
+            .unwrap_or(std::cmp::Ordering::Equal);
         if ascending {
-            a_progress
-                .partial_cmp(&b_progress)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            ord
         } else {
-            b_progress
-                .partial_cmp(&a_progress)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            ord.reverse()
         }
     });
 }

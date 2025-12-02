@@ -28,14 +28,14 @@ struct EntryData {
     entry_id: String,
     entry_name: String,
     pages: usize,
-    progress: String, // Formatted with 1 decimal place
+    progress: f32, // Progress percentage (0.0 - 100.0)
     saved_page: usize,
     path: String,
 }
 
 impl HasProgress for EntryData {
-    fn progress(&self) -> &str {
-        &self.progress
+    fn progress(&self) -> f32 {
+        self.progress
     }
 }
 
@@ -43,11 +43,7 @@ impl HasProgress for EntryData {
 #[derive(Template)]
 #[template(path = "book.html")]
 struct BookTemplate {
-    home_active: bool,
-    library_active: bool,
-    tags_active: bool,
-    admin_active: bool,
-    is_admin: bool,
+    nav: crate::util::NavigationState,
     title_id: String,
     title_name: String,
     entry_count: usize,
@@ -127,7 +123,7 @@ pub async fn get_book(
                 entry_id: entry.id.clone(),
                 entry_name: entry.title.clone(),
                 pages: entry.pages,
-                progress: format!("{:.1}", progress_percentage),
+                progress: progress_percentage,
                 saved_page,
                 path: entry.path.to_string_lossy().to_string(),
             });
@@ -155,11 +151,7 @@ pub async fn get_book(
     let sort_progress_desc = matches!(sort_method, SortMethod::Progress) && !ascending;
 
     let template = BookTemplate {
-        home_active: false,
-        library_active: true,
-        tags_active: false,
-        admin_active: false,
-        is_admin: user.is_admin,
+        nav: crate::util::NavigationState::library().with_admin(user.is_admin),
         title_id,
         title_name,
         entry_count,
