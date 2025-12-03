@@ -134,24 +134,24 @@ test.describe.serial('Admin: User CRUD', () => {
     expect(demoteResponse.status()).toBe(204);
   });
 
-  test('cannot delete yourself (returns 500)', async ({ page }) => {
+  test('cannot delete yourself (returns 403)', async ({ page }) => {
     // Try to delete the current user (TEST_USER)
     const response = await page.request.delete(`/api/admin/users/${TEST_USER.username}`);
 
-    expect(response.status()).toBe(500);
+    expect(response.status()).toBe(403);
 
     // Verify error message
     const body = await response.text();
     expect(body).toContain('Cannot delete yourself');
   });
 
-  test('cannot demote yourself from admin (returns 500)', async ({ page }) => {
+  test('cannot demote yourself from admin (returns 403)', async ({ page }) => {
     // Try to demote the current user (TEST_USER)
     const response = await page.request.patch(`/api/admin/users/${TEST_USER.username}`, {
       data: { is_admin: false },
     });
 
-    expect(response.status()).toBe(500);
+    expect(response.status()).toBe(403);
 
     // Verify error message
     const body = await response.text();
