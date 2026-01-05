@@ -1,12 +1,13 @@
 // ============================================================================
 // Dark Theme - ALL dark mode styles
-// Single source of truth for dark mode across entire application
+// Matches original Mango: .uk-light = dark mode (light text on dark bg)
 // ============================================================================
 
 @import '_variables';
 
-// Wrap everything in body.uk-dark selector
-body.uk-dark {
+// When body has uk-light class = dark mode
+body.uk-light,
+html.uk-light body {
     color: @dark-text-primary;
     background: @dark-bg;
 
@@ -306,7 +307,39 @@ body.uk-dark {
         color: @dark-text-primary;
     }
 
-    // Cards (title-card, entry-card, card)
+    // UIkit Cards - Original Mango style
+    .uk-card {
+        background: @dark-bg-elevated;
+        color: @dark-text-primary;
+
+        &:hover {
+            background-color: lighten(@dark-bg-elevated, 3%);
+        }
+    }
+
+    .uk-card-default {
+        background: @dark-bg-elevated;
+        color: @dark-text-primary;
+        box-shadow: 0 2px 8px rgba(0,0,0,.3);
+
+        &:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,.4);
+        }
+    }
+
+    .uk-card-media-top {
+        background: @dark-bg-input;
+
+        .placeholder-icon {
+            color: @dark-text-muted;
+        }
+    }
+
+    .uk-card-body .uk-card-title {
+        color: @dark-text-primary;
+    }
+
+    // Cards (title-card, entry-card, card) - Legacy support
     .title-card,
     .entry-card,
     .card {
@@ -334,6 +367,17 @@ body.uk-dark {
     .entry-stats,
     .card-stats {
         color: @accent-gold;
+    }
+
+    // Text meta in dark mode
+    .uk-text-meta {
+        color: @dark-text-secondary !important;
+    }
+
+    // Label badges
+    .label {
+        background: @primary-color;
+        color: white;
     }
 
     // Book page

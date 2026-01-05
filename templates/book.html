@@ -5,18 +5,18 @@
 {% block content %}
 <div x-data="bookData()">
     <!-- Header Section -->
-    <div class="title-header">
-        <h2>{{ title_name }}</h2>
-        <nav class="breadcrumb">
-            <a href="/library">Library</a> / {{ title_name }}
-        </nav>
+    <div>
+        <h2 class="uk-title">{{ title_name }}</h2>
     </div>
-
-    <p class="subtitle">{{ entry_count }} {% if entry_count == 1 %}entry{% else %}entries{% endif %} found</p>
+    <ul class="uk-breadcrumb">
+        <li><a href="/library">Library</a></li>
+        <li class="uk-disabled"><a>{{ title_name }}</a></li>
+    </ul>
+    <p class="uk-text-meta">{{ entry_count }} {% if entry_count == 1 %}entry{% else %}entries{% endif %} found</p>
 
     <!-- Tags Section -->
     {% if nav.is_admin %}
-    <div class="uk-margin" x-data="tagsData()" data-title-id="{{ title_id }}">
+    <div class="uk-margin" x-data="tagsData()" x-cloak data-title-id="{{ title_id }}">
         <h4 class="uk-margin-small-bottom">Tags</h4>
         <div class="uk-margin-small-bottom">
             <template x-for="tag in tags" :key="tag">
@@ -44,14 +44,12 @@
                        @focus="showSuggestions = true"
                        @blur="setTimeout(() => showSuggestions = false, 200)">
                 <div x-show="showSuggestions && filteredSuggestions.length > 0"
-                     style="position:absolute; top:100%; left:0; right:0; background:white; border:1px solid #e5e5e5; border-radius:4px; max-height:200px; overflow-y:auto; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-                    <template x-for="suggestion in filteredSuggestions.slice(0, 10)" :key="suggestion">
-                        <div @click="selectSuggestion(suggestion)"
-                             style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f5f5f5;"
-                             @mouseenter="$el.style.background='#f5f5f5'"
-                             @mouseleave="$el.style.background='white'"
-                             x-text="suggestion"></div>
-                    </template>
+                     class="uk-dropdown" style="position:absolute; top:100%; left:0; right:0; display:block; max-height:200px; overflow-y:auto;">
+                    <ul class="uk-nav uk-dropdown-nav">
+                        <template x-for="suggestion in filteredSuggestions.slice(0, 10)" :key="suggestion">
+                            <li><a @click="selectSuggestion(suggestion)" x-text="suggestion"></a></li>
+                        </template>
+                    </ul>
                 </div>
             </div>
             <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left"
@@ -86,54 +84,64 @@
         </div>
     </div>
 
-    <!-- Entries Grid -->
-    <div class="entries-grid">
+    <!-- Entries Grid - UIkit responsive grid -->
+    <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
         {% for entry in entries %}
-        <div class="entry-card item"
-             x-show="matchesSearch('{{ entry.entry_name }}')"
-             @click="openModal('{{ title_id }}', '{{ entry.entry_id }}', '{{ entry.entry_name }}', '{{ entry.path }}', {{ entry.pages }}, {{ entry.progress }}, {{ entry.saved_page }})">
-            <div class="entry-thumbnail">
-                <img src="/api/cover/{{ title_id }}/{{ entry.entry_id }}" alt="{{ entry.entry_name }}" loading="lazy">
-                <div class="progress-badge">{{ entry.progress }}%</div>
-            </div>
-            <div class="entry-info">
-                <div class="entry-name uk-card-title">{{ entry.entry_name }}</div>
-                <div class="entry-stats">{{ entry.pages }} pages</div>
+        <div class="item" id="{{ entry.entry_id }}"
+             x-show="matchesSearch('{{ entry.entry_name }}')">
+            <div class="uk-card uk-card-default uk-card-hover is_entry"
+                 @click="openModal('{{ title_id }}', '{{ entry.entry_id }}', '{{ entry.entry_name }}', '{{ entry.path }}', {{ entry.pages }}, {{ entry.progress }}, {{ entry.saved_page }})"
+                 data-pages="{{ entry.pages }}"
+                 data-progress="{{ entry.progress }}"
+                 data-id="{{ entry.entry_id }}">
+                <div class="uk-card-media-top">
+                    <img src="/api/cover/{{ title_id }}/{{ entry.entry_id }}" alt="{{ entry.entry_name }}" loading="lazy">
+                </div>
+                <div class="uk-card-body">
+                    <div class="uk-card-badge label">{{ entry.progress_display }}%</div>
+                    <h3 class="uk-card-title break-word">{{ entry.entry_name }}</h3>
+                    <p class="uk-text-meta">{{ entry.pages }} pages</p>
+                </div>
             </div>
         </div>
         {% endfor %}
 
         {% if entries.is_empty() %}
-        <p>No entries found.</p>
+        <div class="uk-width-1-1">
+            <p class="uk-text-muted">No entries found.</p>
+        </div>
         {% endif %}
     </div>
 
     <!-- Entry Modal -->
-    <div id="entry-modal" uk-modal>
-        <div class="uk-modal-dialog uk-modal-body">
+    <div id="entry-modal" class="uk-flex-top" uk-modal>
+        <div class="uk-modal-dialog uk-margin-auto-vertical">
             <button class="uk-modal-close-default" type="button" uk-close></button>
-
-            <h3 x-text="modalData.entryName">Entry Name</h3>
-            <p class="modal-entry-path" x-text="modalData.entryPath">/path/to/entry</p>
-            <p class="modal-entry-pages" x-text="`${modalData.pages} pages`">0 pages</p>
-
-            <div class="modal-section">
-                <h4>Read</h4>
-                <div class="button-group">
-                    <a :href="`/reader/${modalData.titleId}/${modalData.entryId}/1`" class="uk-button uk-button-default">From Beginning</a>
-                    <a :href="`/reader/${modalData.titleId}/${modalData.entryId}/${modalData.resumePage}`"
-                       class="uk-button uk-button-primary"
-                       x-show="modalData.progress > 0 && modalData.progress < 100">
-                        Continue from <span x-text="`${modalData.progress.toFixed(1)}%`">0.0%</span>
-                    </a>
-                </div>
+            <div class="uk-modal-header">
+                <h3 class="uk-modal-title break-word" x-text="modalData.entryName">Entry Name</h3>
             </div>
+            <div class="uk-modal-body">
+                <p class="uk-text-meta" x-text="modalData.entryPath">/path/to/entry</p>
+                <p x-text="`${modalData.pages} pages`">0 pages</p>
 
-            <div class="modal-section">
-                <h4>Progress</h4>
-                <div class="button-group">
-                    <button class="uk-button uk-button-default" @click="markAsRead()">Mark as read (100%)</button>
-                    <button class="uk-button uk-button-default" @click="markAsUnread()">Mark as unread (0%)</button>
+                <div class="uk-margin">
+                    <label class="uk-form-label">Read</label>
+                    <p class="uk-margin-small-top">
+                        <a :href="`/reader/${modalData.titleId}/${modalData.entryId}/1`" class="uk-button uk-button-default">From Beginning</a>
+                        <a :href="`/reader/${modalData.titleId}/${modalData.entryId}/${modalData.resumePage}`"
+                           class="uk-button uk-button-primary"
+                           x-show="modalData.progress > 0 && modalData.progress < 100">
+                            Continue from <span x-text="`${modalData.progress.toFixed(1)}%`">0.0%</span>
+                        </a>
+                    </p>
+                </div>
+
+                <div class="uk-margin">
+                    <label class="uk-form-label">Progress</label>
+                    <p class="uk-margin-small-top">
+                        <button class="uk-button uk-button-default" @click="markAsRead()">Mark as read (100%)</button>
+                        <button class="uk-button uk-button-default" @click="markAsUnread()">Mark as unread (0%)</button>
+                    </p>
                 </div>
             </div>
         </div>

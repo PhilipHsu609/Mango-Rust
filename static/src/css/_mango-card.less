@@ -1,0 +1,219 @@
+// ============================================================================
+// Mango Card Styles - Ported from original mango.less
+// UIkit-based card styling with custom enhancements
+// ============================================================================
+
+@import '_variables';
+
+// ----------------------------------------------------------------------------
+// Item Card Container
+// ----------------------------------------------------------------------------
+
+.item {
+    // Wrapper for cards that enables click behavior and data attributes
+
+    .uk-card {
+        cursor: pointer;
+        transition: all 0.3s ease;
+        position: relative; // Required for uk-card-badge absolute positioning
+
+        &:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,.12);
+            transform: translateY(-2px);
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Card Media Top - Thumbnail Area
+// Original: 250px on mobile, 300px on desktop
+// ----------------------------------------------------------------------------
+
+.uk-card-media-top {
+    width: 100%;
+    height: 250px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+
+    @media (min-width: 600px) {
+        height: 300px;
+    }
+
+    img {
+        height: 100%;
+        width: 100%;
+        object-fit: cover;
+
+        &.grayscale {
+            filter: grayscale(100%);
+        }
+    }
+
+    .placeholder-icon {
+        font-size: 4rem;
+        color: @light-border;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Card Body - Content Area
+// Original: 20px padding, 1rem title, max 3em title height
+// ----------------------------------------------------------------------------
+
+.uk-card-body {
+    padding: 20px;
+
+    .uk-card-title {
+        font-size: 1rem;
+        font-weight: 400;
+        margin-bottom: 5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+
+        &:not(.free-height) {
+            max-height: 3em;
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Label Badge - Progress Indicator
+// Ported from original uikit.less label styles
+// ----------------------------------------------------------------------------
+
+.label {
+    display: inline-block;
+    padding: 4px 10px;
+    background: @primary-color;
+    line-height: 1.2;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: white;
+    vertical-align: middle;
+    white-space: nowrap;
+    border-radius: @border-radius-small;
+}
+
+.label-success {
+    background-color: #32d296;
+    color: white;
+}
+
+.label-warning {
+    background-color: #faa05a;
+    color: #333;
+}
+
+.label-danger {
+    background-color: #f0506e;
+    color: white;
+}
+
+// ----------------------------------------------------------------------------
+// UK Card Badge - Positioned in Card Body
+// Original: Uses uk-card-badge class
+// ----------------------------------------------------------------------------
+
+.uk-card-badge {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    z-index: 1;
+}
+
+// Progress badge positioned on image
+.progress-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: @primary-color;
+    color: white;
+    padding: 4px 10px;
+    border-radius: @border-radius-small;
+    font-size: 0.75rem;
+    font-weight: 500;
+    z-index: 1;
+}
+
+// ----------------------------------------------------------------------------
+// UIkit Grid Overrides
+// Ensure proper spacing and responsiveness
+// ----------------------------------------------------------------------------
+
+[uk-grid] {
+    // Smaller gap for card grids
+    &.uk-grid-small {
+        margin-left: -15px;
+
+        > * {
+            padding-left: 15px;
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Break Word Utility
+// Original: .break-word class
+// ----------------------------------------------------------------------------
+
+.break-word {
+    word-wrap: break-word;
+}
+
+// ----------------------------------------------------------------------------
+// Text Meta - Subtitle/Stats
+// Original: Uses uk-text-meta for page count, etc.
+// ----------------------------------------------------------------------------
+
+.uk-text-meta {
+    font-size: 0.85rem;
+    color: @light-text-muted;
+}
+
+// Stats with gold accent color
+.title-stats,
+.entry-stats,
+.card-stats {
+    color: @accent-gold;
+    font-size: 0.85rem;
+}
+
+// ----------------------------------------------------------------------------
+// Alpine.js Helpers
+// Original: x-cloak for hiding elements until Alpine initializes
+// ----------------------------------------------------------------------------
+
+[x-cloak] {
+    display: none;
+}
+
+// ----------------------------------------------------------------------------
+// Mobile Responsive Adjustments
+// ----------------------------------------------------------------------------
+
+@media (max-width: 768px) {
+    .uk-card-media-top {
+        height: 200px;
+    }
+
+    .uk-card-body {
+        padding: 12px;
+
+        .uk-card-title {
+            font-size: 0.9rem;
+        }
+    }
+
+    .uk-text-meta,
+    .title-stats,
+    .entry-stats,
+    .card-stats {
+        font-size: 0.8rem;
+    }
+}

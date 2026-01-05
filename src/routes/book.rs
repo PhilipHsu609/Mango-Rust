@@ -28,7 +28,8 @@ struct EntryData {
     entry_id: String,
     entry_name: String,
     pages: usize,
-    progress: f32, // Progress percentage (0.0 - 100.0)
+    progress: f32,            // Progress percentage (0.0 - 100.0) for sorting
+    progress_display: String, // Formatted progress for display (e.g., "0.0")
     saved_page: usize,
     path: String,
 }
@@ -124,6 +125,7 @@ pub async fn get_book(
                 entry_name: entry.title.clone(),
                 pages: entry.pages,
                 progress: progress_percentage,
+                progress_display: format!("{:.1}", progress_percentage),
                 saved_page,
                 path: entry.path.to_string_lossy().to_string(),
             });

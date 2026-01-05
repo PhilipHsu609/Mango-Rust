@@ -19,7 +19,8 @@ struct TitleData {
     id: String,
     name: String,
     entry_count: usize,
-    progress: f32,                  // Progress percentage (0.0 - 100.0)
+    progress: f32,                  // Progress percentage (0.0 - 100.0) for sorting
+    progress_display: String,       // Formatted progress for display (e.g., "0.0")
     first_entry_id: Option<String>, // For cover thumbnail URL
 }
 
@@ -100,6 +101,7 @@ pub async fn library(
                 name: t.title.clone(),
                 entry_count: t.entries.len(),
                 progress: progress_pct,
+                progress_display: format!("{:.1}", progress_pct),
                 first_entry_id: t.entries.first().map(|e| e.id.clone()),
             });
         }
@@ -283,6 +285,7 @@ pub async fn view_tag_page(
                     entry_count: title.entries.len(),
                     first_entry_id: title.entries.first().map(|e| e.id.clone()),
                     progress: 0.0, // Will be filled later
+                    progress_display: String::from("0.0"),
                 }
             })
         })
@@ -293,6 +296,7 @@ pub async fn view_tag_page(
         let title = lib.get_title(&title_data.id).unwrap();
         let progress_pct = title.get_title_progress(&user.username).await?;
         title_data.progress = progress_pct;
+        title_data.progress_display = format!("{:.1}", progress_pct);
     }
 
     // Determine sort method

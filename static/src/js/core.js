@@ -19,14 +19,15 @@ function detectSystemTheme() {
 }
 
 function applyTheme(theme) {
-    // Remove both theme classes first (mutual exclusion)
-    document.body.classList.remove('uk-dark', 'uk-light');
+    // Original Mango uses .uk-light for dark mode (light text on dark background)
+    // Remove the class first
+    document.body.classList.remove('uk-light');
+    document.documentElement.classList.remove('uk-light');
 
-    // Apply the correct theme class
+    // Apply uk-light class for dark mode (matching original Mango behavior)
     if (theme === 'dark') {
-        document.body.classList.add('uk-dark');
-    } else {
         document.body.classList.add('uk-light');
+        document.documentElement.classList.add('uk-light');
     }
     localStorage.setItem('theme', theme);
 }
@@ -40,14 +41,18 @@ function toggleTheme() {
 // Apply theme before DOM renders (prevent FOUC)
 (function() {
     const theme = getTheme();
-    const themeClass = theme === 'dark' ? 'uk-dark' : 'uk-light';
 
-    // Apply to html element first (before body exists)
-    document.documentElement.classList.add(themeClass);
-
-    // Apply to body if it exists
-    if (document.body) {
-        document.body.classList.add(themeClass);
+    // Original Mango: uk-light = dark mode (light text on dark bg)
+    if (theme === 'dark') {
+        document.documentElement.classList.add('uk-light');
+        if (document.body) {
+            document.body.classList.add('uk-light');
+        }
+    } else {
+        document.documentElement.classList.remove('uk-light');
+        if (document.body) {
+            document.body.classList.remove('uk-light');
+        }
     }
 })();
 

@@ -3,122 +3,142 @@
 {% block title %}Home{% endblock %}
 
 {% block content %}
-<div x-data="homePageData()" class="home-container">
+<div x-data="homePageData()">
     <!-- Continue Reading Section -->
-    <div class="section">
-        <h2>Continue Reading</h2>
-        <div class="cards-grid" x-show="continueReading.length > 0">
-            <template x-for="item in continueReading" :key="item.entry_id">
-                <div class="card entry-card"
-                     @click="showModal(item.title_id, item.title_name, item.entry_id, item.entry_name, item.pages, item.percentage, item.progress)">
-                    <div class="card-thumbnail">
-                        <img :src="`/api/cover/${item.title_id}/${item.entry_id}`" :alt="item.entry_name">
-                        <span class="progress-badge" x-show="item.percentage" x-text="`${item.percentage}%`"></span>
-                    </div>
-                    <div class="card-info">
-                        <div class="card-title" x-text="item.entry_name"></div>
-                        <div class="card-subtitle">
-                            <a :href="`/book/${item.title_id}`"
-                               class="book-link"
-                               @click.stop
-                               x-text="item.title_name"></a>
+    <template x-if="continueReading.length > 0">
+        <div class="uk-margin-large-bottom">
+            <h2 class="uk-title">Continue Reading</h2>
+            <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
+                <template x-for="item in continueReading" :key="item.entry_id">
+                    <div class="item">
+                        <div class="uk-card uk-card-default uk-card-hover is_entry"
+                             @click="showModal(item.title_id, item.title_name, item.entry_id, item.entry_name, item.pages, item.percentage, item.progress)">
+                            <div class="uk-card-media-top">
+                                <img :src="`/api/cover/${item.title_id}/${item.entry_id}`" :alt="item.entry_name">
+                            </div>
+                            <div class="uk-card-body">
+                                <div class="uk-card-badge label" x-show="item.percentage" x-text="`${parseFloat(item.percentage).toFixed(1)}%`"></div>
+                                <h3 class="uk-card-title break-word uk-margin-remove-bottom" x-text="item.entry_name"></h3>
+                                <a class="uk-card-title break-word uk-margin-remove-top uk-text-meta uk-display-inline-block"
+                                   :href="`/book/${item.title_id}`"
+                                   @click.stop
+                                   x-text="item.title_name"></a>
+                                <p class="uk-text-meta" x-text="`${item.pages} pages`"></p>
+                            </div>
                         </div>
-                        <div class="card-stats" x-text="`${item.pages} pages`"></div>
                     </div>
-                </div>
-            </template>
+                </template>
+            </div>
         </div>
-        <div class="empty-state" x-show="continueReading.length === 0">
-            <div class="empty-state-icon">📚</div>
-            <p>No manga in progress yet. Start reading from the Library!</p>
-        </div>
-    </div>
+    </template>
 
     <!-- Start Reading Section -->
-    <div class="section">
-        <h2>Start Reading</h2>
-        <div class="cards-grid" x-show="startReading.length > 0">
-            <template x-for="item in startReading" :key="item.id">
-                <a :href="`/book/${item.id}`" class="card">
-                    <div class="card-thumbnail">
-                        <img :src="item.first_entry_id ? `/api/cover/${item.id}/${item.first_entry_id}` : '/static/placeholder.png'" :alt="item.title">
+    <template x-if="startReading.length > 0">
+        <div class="uk-margin-large-bottom">
+            <h2 class="uk-title">Start Reading</h2>
+            <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
+                <template x-for="item in startReading" :key="item.id">
+                    <div class="item">
+                        <a :href="`/book/${item.id}`" class="uk-link-reset">
+                            <div class="uk-card uk-card-default uk-card-hover">
+                                <div class="uk-card-media-top">
+                                    <img :src="item.first_entry_id ? `/api/cover/${item.id}/${item.first_entry_id}` : '/static/placeholder.png'" :alt="item.title">
+                                </div>
+                                <div class="uk-card-body">
+                                    <div class="uk-card-badge label" x-text="`${parseFloat(item.progress || 0).toFixed(1)}%`"></div>
+                                    <h3 class="uk-card-title break-word" x-text="item.title"></h3>
+                                    <p class="uk-text-meta" x-text="`${item.entry_count} ${item.entry_count === 1 ? 'entry' : 'entries'}`"></p>
+                                </div>
+                            </div>
+                        </a>
                     </div>
-                    <div class="card-info">
-                        <div class="card-title" x-text="item.title"></div>
-                        <div class="card-subtitle" x-text="`${item.entry_count} ${item.entry_count === 1 ? 'entry' : 'entries'}`"></div>
-                    </div>
-                </a>
-            </template>
+                </template>
+            </div>
         </div>
-        <div class="empty-state" x-show="startReading.length === 0">
-            <div class="empty-state-icon">✨</div>
-            <p>All caught up! Check the Library for new titles.</p>
-        </div>
-    </div>
+    </template>
 
     <!-- Recently Added Section -->
-    <div class="section">
-        <h2>Recently Added</h2>
-        <div class="cards-grid" x-show="recentlyAdded.length > 0">
-            <template x-for="item in recentlyAdded" :key="item.entry_id">
-                <!-- Title card for grouped items -->
-                <a x-show="item.grouped_count > 1"
-                   :href="`/book/${item.title_id}`"
-                   class="card">
-                    <div class="card-thumbnail">
-                        <img :src="`/api/cover/${item.title_id}/${item.entry_id}`" :alt="item.title_name">
-                    </div>
-                    <div class="card-info">
-                        <div class="card-title" x-text="item.title_name"></div>
-                        <div class="card-subtitle" x-text="`${item.grouped_count} new entries`"></div>
-                    </div>
-                </a>
+    <template x-if="recentlyAdded.length > 0">
+        <div class="uk-margin-large-bottom">
+            <h2 class="uk-title">Recently Added</h2>
+            <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
+                <template x-for="item in recentlyAdded" :key="item.entry_id">
+                    <div class="item">
+                        <!-- Title card for grouped items -->
+                        <template x-if="item.grouped_count > 1">
+                            <a :href="`/book/${item.title_id}`" class="uk-link-reset">
+                                <div class="uk-card uk-card-default uk-card-hover">
+                                    <div class="uk-card-media-top">
+                                        <img :src="`/api/cover/${item.title_id}/${item.entry_id}`" :alt="item.title_name">
+                                    </div>
+                                    <div class="uk-card-body">
+                                        <h3 class="uk-card-title break-word" x-text="item.title_name"></h3>
+                                        <p class="uk-text-meta" x-text="`${item.grouped_count} new entries`"></p>
+                                    </div>
+                                </div>
+                            </a>
+                        </template>
 
-                <!-- Entry card for single items -->
-                <div x-show="item.grouped_count === 1"
-                     class="card entry-card"
-                     @click="showModal(item.title_id, item.title_name, item.entry_id, item.entry_name, item.pages, item.percentage, Math.round(item.pages * parseFloat(item.percentage) / 100))">
-                    <div class="card-thumbnail">
-                        <img :src="`/api/cover/${item.title_id}/${item.entry_id}`" :alt="item.entry_name">
-                        <span class="progress-badge" x-show="item.percentage" x-text="`${item.percentage}%`"></span>
+                        <!-- Entry card for single items -->
+                        <template x-if="item.grouped_count === 1">
+                            <div class="uk-card uk-card-default uk-card-hover is_entry"
+                                 @click="showModal(item.title_id, item.title_name, item.entry_id, item.entry_name, item.pages, item.percentage, Math.round(item.pages * parseFloat(item.percentage) / 100))">
+                                <div class="uk-card-media-top">
+                                    <img :src="`/api/cover/${item.title_id}/${item.entry_id}`" :alt="item.entry_name">
+                                </div>
+                                <div class="uk-card-body">
+                                    <div class="uk-card-badge label" x-show="item.percentage" x-text="`${parseFloat(item.percentage).toFixed(1)}%`"></div>
+                                    <h3 class="uk-card-title break-word uk-margin-remove-bottom" x-text="item.entry_name"></h3>
+                                    <a class="uk-card-title break-word uk-margin-remove-top uk-text-meta uk-display-inline-block"
+                                       :href="`/book/${item.title_id}`"
+                                       @click.stop
+                                       x-text="item.title_name"></a>
+                                    <p class="uk-text-meta" x-text="`${item.pages} pages`"></p>
+                                </div>
+                            </div>
+                        </template>
                     </div>
-                    <div class="card-info">
-                        <div class="card-title" x-text="item.entry_name"></div>
-                        <div class="card-subtitle">
-                            <a :href="`/book/${item.title_id}`"
-                               class="book-link"
-                               @click.stop
-                               x-text="item.title_name"></a>
-                        </div>
-                        <div class="card-stats" x-text="`${item.pages} pages`"></div>
-                    </div>
-                </div>
-            </template>
+                </template>
+            </div>
         </div>
-        <div class="empty-state" x-show="recentlyAdded.length === 0">
-            <div class="empty-state-icon">🆕</div>
-            <p>No recently added titles.</p>
+    </template>
+
+    <!-- Empty State - No content yet -->
+    <template x-if="continueReading.length === 0 && startReading.length === 0 && recentlyAdded.length === 0">
+        <div class="uk-container uk-text-center uk-margin-large-top">
+            <i class="fas fa-book-open" style="font-size: 80px; color: #999;"></i>
+            <h2>Read your first manga</h2>
+            <p class="uk-text-muted">Once you start reading, Mango will remember where you left off and show your entries here.</p>
+            <a href="/library" class="uk-button uk-button-default">View library</a>
         </div>
-    </div>
+    </template>
 
     <!-- Entry Modal (UIKit) -->
-    <div id="entry-modal" uk-modal>
-        <div class="uk-modal-dialog uk-modal-body">
+    <div id="entry-modal" class="uk-flex-top" uk-modal>
+        <div class="uk-modal-dialog uk-margin-auto-vertical">
             <button class="uk-modal-close-default" type="button" uk-close></button>
-            <h2 class="uk-modal-title" id="modal-title"></h2>
-            <p class="uk-text-meta" id="modal-pages"></p>
+            <div class="uk-modal-header">
+                <h3 class="uk-modal-title break-word" id="modal-title"></h3>
+            </div>
+            <div class="uk-modal-body">
+                <p class="uk-text-meta" id="modal-pages"></p>
 
-            <p class="uk-text-bold">Read</p>
-            <p class="uk-margin">
-                <a id="modal-beginning-btn" class="uk-button uk-button-default">From beginning</a>
-                <a id="modal-continue-btn" class="uk-button uk-button-primary"></a>
-            </p>
+                <div class="uk-margin">
+                    <label class="uk-form-label">Read</label>
+                    <p class="uk-margin-small-top">
+                        <a id="modal-beginning-btn" class="uk-button uk-button-default">From beginning</a>
+                        <a id="modal-continue-btn" class="uk-button uk-button-primary"></a>
+                    </p>
+                </div>
 
-            <p class="uk-text-bold">Progress</p>
-            <p class="uk-margin">
-                <button id="modal-read-btn" class="uk-button uk-button-default" @click="markAsRead()">Mark as read (100%)</button>
-                <button id="modal-unread-btn" class="uk-button uk-button-default" @click="markAsUnread()">Mark as unread (0%)</button>
-            </p>
+                <div class="uk-margin">
+                    <label class="uk-form-label">Progress</label>
+                    <p class="uk-margin-small-top">
+                        <button id="modal-read-btn" class="uk-button uk-button-default" @click="markAsRead()">Mark as read (100%)</button>
+                        <button id="modal-unread-btn" class="uk-button uk-button-default" @click="markAsUnread()">Mark as unread (0%)</button>
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 </div>

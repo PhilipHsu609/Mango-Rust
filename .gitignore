@@ -1,9 +1,7 @@
 /target
 .serena/
 .playwright-mcp/
-*.png
-*.jpg
-*.jpeg
+.claude/
 
 # Environment variables (may contain sensitive data)
 .env
