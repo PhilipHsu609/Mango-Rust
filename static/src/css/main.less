@@ -43,9 +43,10 @@
 }
 
 // UIKit hook for cards in dark mode (from original uikit.less)
+// Use lighter shade (#333) than body background (#222) for visible card boundaries
 .hook-card-default() {
     .uk-light & {
-        background: @card-secondary-background;
+        background: #333;
         color: @card-secondary-color;
     }
 }
@@ -58,7 +59,7 @@
 
 .hook-card-default-hover() {
     .uk-light & {
-        background-color: @card-secondary-hover-background;
+        background-color: #3a3a3a;
     }
 }
 
