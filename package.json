@@ -1,0 +1,29 @@
+{
+  "name": "mango-rust",
+  "version": "1.0.0",
+  "description": "A self-hosted manga/comic reader written in Rust. Drop-in replacement for [Mango](https://github.com/getmango/Mango) with better performance and 100% database compatibility.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PhilipHsu609/Mango-Rust.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/PhilipHsu609/Mango-Rust/issues"
+  },
+  "homepage": "https://github.com/PhilipHsu609/Mango-Rust#readme",
+  "devDependencies": {
+    "less": "^4.5.1",
+    "uikit": "^3.25.4"
+  }
+}

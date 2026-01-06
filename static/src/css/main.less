@@ -1,28 +1,13 @@
 // ============================================================================
 // Mango-Rust Styles
-// Minimal CSS matching original Mango - relies on UIKit CDN for base styles
+// Matches original Mango structure - compiles UIKit with hooks
 // ============================================================================
 
-// ----------------------------------------------------------------------------
-// Variables (matching UIKit defaults)
-// ----------------------------------------------------------------------------
-
-@primary-color: #1e87f0;
-@label-background: #1e87f0;
-@label-font-size: 0.875rem;  // 14px to match original Mango
-@label-line-height: 1.5;      // 21px / 14px = 1.5
-@label-padding-vertical: 0;
-@label-padding-horizontal: 10px;
-@label-color: #fff;
-
-// Dark theme colors (original uses uk-light class for dark mode)
-@card-secondary-background: #1e1e1e;
-@card-secondary-color: #fff;
-@card-secondary-title-color: #fff;
-@card-secondary-hover-background: #2a2a2a;
+// Import UIKit theme (same as original Mango's uikit.less)
+@import "node_modules/uikit/src/less/uikit.theme.less";
 
 // ----------------------------------------------------------------------------
-// Label Component (from original Mango uikit.less)
+// Label Component (from original uikit.less)
 // ----------------------------------------------------------------------------
 
 .label {
@@ -34,35 +19,61 @@
     color: @label-color;
     vertical-align: middle;
     white-space: nowrap;
-    border-radius: 2px;
+    .hook-label();
 }
 
 .label-success {
-    background-color: #32d296;
-    color: #fff;
+    background-color: @label-success-background;
+    color: @label-success-color;
 }
 
 .label-warning {
-    background-color: #faa05a;
-    color: #222;
+    background-color: @label-warning-background;
+    color: @label-warning-color;
 }
 
 .label-danger {
-    background-color: #f0506e;
-    color: #fff;
+    background-color: @label-danger-background;
+    color: @label-danger-color;
 }
 
+.label-pending {
+    background-color: @global-secondary-background;
+    color: @global-inverse-color;
+}
+
+// UIKit hook for cards in dark mode (from original uikit.less)
+.hook-card-default() {
+    .uk-light & {
+        background: @card-secondary-background;
+        color: @card-secondary-color;
+    }
+}
+
+.hook-card-default-title() {
+    .uk-light & {
+        color: @card-secondary-title-color;
+    }
+}
+
+.hook-card-default-hover() {
+    .uk-light & {
+        background-color: @card-secondary-hover-background;
+    }
+}
+
+// Empty hook for label (required by .label class)
+.hook-label() {}
+
 // ----------------------------------------------------------------------------
-// Item Cards (from original mango.less - EXACT COPY)
+// Item cards (from original mango.less - EXACT COPY)
 // ----------------------------------------------------------------------------
 
 .item .uk-card {
     cursor: pointer;
-
     .uk-card-media-top {
         width: 100%;
         height: 250px;
-
         @media (min-width: 600px) {
             height: 300px;
         }
@@ -77,14 +88,11 @@
             }
         }
     }
-
     .uk-card-body {
         padding: 20px;
-
         .uk-card-title {
             font-size: 1rem;
         }
-
         .uk-card-title:not(.free-height) {
             max-height: 3em;
         }
@@ -92,88 +100,106 @@
 }
 
 // ----------------------------------------------------------------------------
-// Dark Theme (original Mango uses uk-light class for dark mode)
+// jQuery selectable (from original mango.less)
 // ----------------------------------------------------------------------------
 
-// Body dark background - THIS IS THE KEY FIX
-html.uk-light,
-body.uk-light {
-    background: #141414;
-    color: #e5e5e5;
+#selectable {
+    .ui-selecting {
+        background: #EEE6B9;
+    }
+    .ui-selected {
+        background: #F4E487;
+    }
+    .uk-light & {
+        .ui-selecting {
+            background: #5E5731;
+        }
+        .ui-selected {
+            background: #9D9252;
+        }
+    }
 }
 
+// ----------------------------------------------------------------------------
+// Edit modal (from original mango.less)
+// ----------------------------------------------------------------------------
+
+#edit-modal {
+    .uk-grid > div {
+        height: 300px;
+    }
+    #cover {
+        height: 100%;
+        width: 100%;
+        object-fit: cover;
+    }
+    #cover-upload {
+        height: 100%;
+        box-sizing: border-box;
+    }
+    .uk-modal-body .uk-inline {
+        width: 100%;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Dark theme (from original mango.less)
+// ----------------------------------------------------------------------------
+
 .uk-light {
-    // Section backgrounds need to be dark too
-    .uk-section {
-        background: #141414;
-    }
-
-    .uk-section-small {
-        background: #141414;
-    }
-
     .uk-modal-header,
     .uk-modal-body,
     .uk-modal-footer {
         background: #222;
     }
-
     .uk-navbar-dropdown,
     .uk-dropdown {
         color: #ccc;
         background: #333;
     }
-
     .uk-nav-header,
     .uk-description-list > dt {
         color: #555;
     }
+}
 
-    // Card dark theme (UIKit hook equivalents)
-    .uk-card-default {
-        background: @card-secondary-background;
-        color: @card-secondary-color;
+// Body dark background for uk-light
+html.uk-light,
+body.uk-light {
+    background: @global-secondary-background;
+    color: @global-inverse-color;
+}
 
-        .uk-card-title {
-            color: @card-secondary-title-color;
-        }
-    }
+.uk-light .uk-section,
+.uk-light .uk-section-small {
+    background: @global-secondary-background;
+}
 
-    .uk-card-default:hover {
-        background-color: @card-secondary-hover-background;
-    }
+// Form elements in dark mode
+.uk-light .uk-input,
+.uk-light .uk-select,
+.uk-light .uk-textarea,
+.uk-light .uk-search-input {
+    background: rgba(255,255,255,.1);
+    border-color: rgba(255,255,255,.2);
+    color: @global-inverse-color;
+}
 
-    // Dark theme text colors
-    h2, .uk-title {
-        color: #e5e5e5;
-    }
+.uk-light .uk-select option {
+    background: @global-secondary-background;
+    color: @global-inverse-color;
+}
 
-    .uk-text-meta {
-        color: #999;
-    }
+.uk-light h2 {
+    color: @global-inverse-color;
+}
 
-    // Form elements in dark mode
-    .uk-input,
-    .uk-select,
-    .uk-textarea,
-    .uk-search-input {
-        background: #1a1a1a;
-        border-color: #3a3a3a;
-        color: #e5e5e5;
-
-        &::placeholder {
-            color: #666;
-        }
-    }
-
-    .uk-select option {
-        background: #1a1a1a;
-        color: #e5e5e5;
-    }
+.uk-light .uk-text-meta {
+    color: rgba(255,255,255,.5);
 }
 
 // ----------------------------------------------------------------------------
-// Alpine.js Helper
+// Alpine magic (from original mango.less)
 // ----------------------------------------------------------------------------
 
 [x-cloak] {
@@ -181,37 +207,70 @@ body.uk-light {
 }
 
 // ----------------------------------------------------------------------------
-// Utilities (from original mango.less)
+// Batch select bar on title page (from original mango.less)
 // ----------------------------------------------------------------------------
 
+#select-bar-controls {
+    a {
+        transform: scale(1.5, 1.5);
+
+        &:hover {
+            color: orange;
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Totop button (from original mango.less)
+// ----------------------------------------------------------------------------
+
+#totop-wrapper {
+    position: absolute;
+    top: 100vh;
+    right: 2em;
+    bottom: 0;
+
+    a {
+        position: fixed;
+        position: sticky;
+        top: calc(100vh - 5em);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Misc (from original mango.less)
+// ----------------------------------------------------------------------------
+
+.uk-alert-close {
+    color: black !important;
+}
 .break-word {
     word-wrap: break-word;
 }
-
 .uk-search {
     width: 100%;
 }
 
 // ----------------------------------------------------------------------------
-// Reader Page Styles
+// Reader Page (Mango-Rust specific)
 // ----------------------------------------------------------------------------
+
+.reader-bg {
+    background: black;
+}
 
 body.reader-page {
     background-color: #000;
     color: #fff;
 }
 
-body.continuous-mode {
-    overflow-y: auto;
-}
-
-body.paged-mode {
-    overflow: hidden;
-}
-
 #reader-container {
     position: relative;
     min-height: 100vh;
+}
+
+body.continuous-mode {
+    overflow-y: auto;
 }
 
 #continuous-container {
@@ -236,6 +295,10 @@ body.continuous-mode #continuous-container {
     }
 }
 
+body.paged-mode {
+    overflow: hidden;
+}
+
 #paged-container {
     display: none;
     position: fixed;
@@ -258,14 +321,12 @@ body.paged-mode #paged-container {
 
 body.fit-height #paged-image {
     max-height: 100vh;
-    max-width: none;
     height: 100vh;
     width: auto;
 }
 
 body.fit-width #paged-image {
     max-width: 100vw;
-    max-height: none;
     width: 100vw;
     height: auto;
 }
@@ -292,36 +353,6 @@ body.fit-real #paged-image {
     }
 }
 
-.slide-left {
-    animation: slideInLeft 0.3s ease-out;
-}
-
-.slide-right {
-    animation: slideInRight 0.3s ease-out;
-}
-
-@keyframes slideInLeft {
-    from {
-        transform: translateX(-100px);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
-@keyframes slideInRight {
-    from {
-        transform: translateX(100px);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
 #settings-btn {
     position: fixed;
     bottom: 20px;
@@ -335,22 +366,10 @@ body.fit-real #paged-image {
     font-size: 24px;
     cursor: pointer;
     z-index: 1000;
-    transition: transform 0.2s, background 0.2s;
 
     &:hover {
-        transform: scale(1.1);
         background: #444;
     }
-}
-
-#loading {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 1.5rem;
-    color: #667eea;
-    z-index: 100;
 }
 
 #next-entry-btn {
