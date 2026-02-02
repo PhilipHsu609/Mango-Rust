@@ -215,14 +215,36 @@ pub async fn missing_items_page(AdminOnly(_username): AdminOnly) -> Result<Html<
 struct UsersTemplate {
     nav: crate::util::NavigationState,
     username: String,
+    users: Vec<UserResponse>,
 }
 
-/// GET /admin/users - User management page
+/// User edit template
+#[derive(Template)]
+#[template(path = "user-edit.html")]
+struct UserEditTemplate {
+    nav: crate::util::NavigationState,
+    new_user: bool,
+    edit_username: String,
+    is_admin: bool,
+    error: String,
+}
+
+/// GET /admin/user - User management page
 /// Shows list of users and allows creating/deleting users
-pub async fn users_page(AdminOnly(username): AdminOnly) -> Result<Html<String>> {
+pub async fn users_page(
+    State(state): State<AppState>,
+    AdminOnly(username): AdminOnly,
+) -> Result<Html<String>> {
+    let users = state.storage.list_users().await?;
+    let users = users
+        .into_iter()
+        .map(|(username, is_admin)| UserResponse { username, is_admin })
+        .collect();
+
     let template = UsersTemplate {
         nav: crate::util::NavigationState::admin().with_admin(true),
         username,
+        users,
     };
 
     Ok(Html(template.render().map_err(render_error)?))
@@ -235,7 +257,7 @@ pub struct UserResponse {
     pub is_admin: bool,
 }
 
-/// GET /api/admin/users - Get all users
+/// GET /api/admin/user - Get all users
 /// Returns list of all users with their admin status
 pub async fn get_users(
     State(state): State<AppState>,
@@ -257,7 +279,7 @@ pub struct CreateUserRequest {
     pub is_admin: bool,
 }
 
-/// POST /api/admin/users - Create a new user
+/// POST /api/admin/user - Create a new user
 /// Creates a new user with the given credentials and admin status
 pub async fn create_user(
     State(state): State<AppState>,
@@ -290,9 +312,10 @@ pub async fn create_user(
 #[derive(Deserialize)]
 pub struct UpdateUserRequest {
     pub is_admin: bool,
+    pub password: Option<String>,
 }
 
-/// PATCH /api/admin/users/:username - Update user's admin status
+/// PATCH /api/admin/user/:username - Update user's admin status
 /// Changes whether a user is an administrator
 pub async fn update_user(
     State(state): State<AppState>,
@@ -315,22 +338,23 @@ pub async fn update_user(
         )));
     }
 
-    // Update user admin status using existing update_user method
+    // Update user using existing update_user method
     state
         .storage
-        .update_user(&username, &username, None, request.is_admin)
+        .update_user(&username, &username, request.password.as_deref(), request.is_admin)
         .await?;
 
     tracing::info!(
-        "User '{}' admin status updated to {}",
+        "User '{}' updated (admin: {}, password changed: {})",
         username,
-        request.is_admin
+        request.is_admin,
+        request.password.is_some()
     );
 
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// DELETE /api/admin/users/:username - Delete a user
+/// DELETE /api/admin/user/:username - Delete a user
 /// Removes a user from the system (cannot be undone)
 pub async fn delete_user(
     State(state): State<AppState>,
@@ -780,6 +804,127 @@ pub async fn upload_cover(
     crate::library::Entry::save_thumbnail(&entry_id, &data, &mime, db).await?;
 
     tracing::info!("Uploaded custom cover for entry {}", entry_id);
+
+    Ok(Json(serde_json::json!({
+        "success": true
+    })))
+}
+
+/// Query params for user edit page
+#[derive(Deserialize)]
+pub struct UserEditQuery {
+    pub username: Option<String>,
+    pub admin: Option<bool>,
+}
+
+/// GET /admin/user/edit - User edit page
+pub async fn user_edit_page(
+    AdminOnly(_username): AdminOnly,
+    axum::extract::Query(query): axum::extract::Query<UserEditQuery>,
+) -> Result<Html<String>> {
+    let template = UserEditTemplate {
+        nav: crate::util::NavigationState::admin().with_admin(true),
+        new_user: query.username.is_none(),
+        edit_username: query.username.unwrap_or_default(),
+        is_admin: query.admin.unwrap_or(false),
+        error: String::new(),
+    };
+
+    Ok(Html(template.render().map_err(render_error)?))
+}
+
+/// Form data for user edit
+#[derive(Deserialize)]
+pub struct UserEditForm {
+    pub username: String,
+    pub password: Option<String>,
+    #[serde(default)]
+    pub admin: Option<String>,
+}
+
+/// POST /admin/user/edit - Create new user
+pub async fn user_edit_post(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+    axum::extract::Form(form): axum::extract::Form<UserEditForm>,
+) -> Result<axum::response::Redirect> {
+    let is_admin = form.admin.is_some();
+    let password = form.password.unwrap_or_default();
+
+    if password.is_empty() {
+        return Err(crate::error::Error::BadRequest(
+            "Password is required for new users".to_string(),
+        ));
+    }
+
+    state
+        .storage
+        .create_user(&form.username, &password, is_admin)
+        .await?;
+
+    tracing::info!("Created user '{}' (admin: {})", form.username, is_admin);
+
+    Ok(axum::response::Redirect::to("/admin/user"))
+}
+
+/// POST /admin/user/edit/:username - Update existing user
+pub async fn user_edit_post_existing(
+    State(state): State<AppState>,
+    AdminOnly(current_username): AdminOnly,
+    Path(username): Path<String>,
+    axum::extract::Form(form): axum::extract::Form<UserEditForm>,
+) -> Result<axum::response::Redirect> {
+    let is_admin = form.admin.is_some();
+
+    // Prevent users from demoting themselves
+    if username == current_username && !is_admin {
+        return Err(crate::error::Error::Forbidden(
+            "Cannot demote yourself from admin".to_string(),
+        ));
+    }
+
+    let password = form.password.filter(|p| !p.is_empty());
+
+    state
+        .storage
+        .update_user(&username, &username, password.as_deref(), is_admin)
+        .await?;
+
+    tracing::info!(
+        "Updated user '{}' (admin: {}, password changed: {})",
+        username,
+        is_admin,
+        password.is_some()
+    );
+
+    Ok(axum::response::Redirect::to("/admin/user"))
+}
+
+/// DELETE /api/admin/user/delete/:username - Delete user
+pub async fn delete_user_api(
+    State(state): State<AppState>,
+    AdminOnly(current_username): AdminOnly,
+    Path(username): Path<String>,
+) -> Result<Json<serde_json::Value>> {
+    // Prevent self-deletion
+    if username == current_username {
+        return Ok(Json(serde_json::json!({
+            "success": false,
+            "error": "Cannot delete yourself"
+        })));
+    }
+
+    // Check if user exists
+    if !state.storage.username_exists(&username).await? {
+        return Ok(Json(serde_json::json!({
+            "success": false,
+            "error": format!("User '{}' not found", username)
+        })));
+    }
+
+    state.storage.delete_user(&username).await?;
+
+    tracing::info!("Deleted user '{}'", username);
 
     Ok(Json(serde_json::json!({
         "success": true

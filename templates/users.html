@@ -3,265 +3,34 @@
 {% block title %}User Management{% endblock %}
 
 {% block content %}
-<div x-data="usersData()" x-init="init()">
-    <h2>User Management</h2>
+<table class="uk-table uk-table-divider">
+  <thead>
+    <tr>
+      <th>Username</th>
+      <th>Admin Access</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for user in users %}
+      <tr>
+        <td>{{ user.username }}</td>
+        <td>{% if user.is_admin %}Yes{% else %}No{% endif %}</td>
+        <td>
+          <a href="/admin/user/edit?username={{ user.username }}&admin={{ user.is_admin }}" uk-icon="file-edit"></a>
+          {% if user.username != username %}
+            <a href="#" onclick="remove('{{ user.username }}');return false;" uk-icon="trash"></a>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
 
-    <p class="uk-text-meta">
-        Manage users who can access Mango. Admin users have full access to all administrative features.
-    </p>
-
-    <div x-show="loading">
-        <div uk-spinner></div>
-        <span>Loading users...</span>
-    </div>
-
-    <div x-show="!loading">
-        <!-- Create User Form -->
-        <div class="uk-card uk-card-default uk-card-body uk-margin">
-            <h3 class="uk-card-title">Create New User</h3>
-            <form @submit.prevent="createUser()" class="uk-form-stacked">
-                <div class="uk-margin">
-                    <label class="uk-form-label" for="new-username">Username</label>
-                    <div class="uk-form-controls">
-                        <input
-                            class="uk-input"
-                            id="new-username"
-                            type="text"
-                            x-model="newUser.username"
-                            placeholder="Enter username"
-                            required
-                        >
-                    </div>
-                </div>
-
-                <div class="uk-margin">
-                    <label class="uk-form-label" for="new-password">Password</label>
-                    <div class="uk-form-controls">
-                        <input
-                            class="uk-input"
-                            id="new-password"
-                            type="password"
-                            x-model="newUser.password"
-                            placeholder="Enter password"
-                            required
-                        >
-                    </div>
-                </div>
-
-                <div class="uk-margin">
-                    <label>
-                        <input
-                            class="uk-checkbox"
-                            type="checkbox"
-                            x-model="newUser.isAdmin"
-                        >
-                        Administrator
-                    </label>
-                </div>
-
-                <div class="uk-margin">
-                    <button
-                        class="uk-button uk-button-primary"
-                        type="submit"
-                        :disabled="creating || !newUser.username || !newUser.password"
-                    >
-                        <span x-show="!creating">Create User</span>
-                        <span x-show="creating">Creating...</span>
-                    </button>
-                    <span x-show="createError" class="uk-text-danger uk-margin-left" x-text="createError"></span>
-                    <span x-show="createSuccess" class="uk-text-success uk-margin-left">User created successfully!</span>
-                </div>
-            </form>
-        </div>
-
-        <!-- Users Table -->
-        <div class="uk-margin">
-            <a class="uk-button uk-button-default" href="/admin">Back to Admin</a>
-        </div>
-
-        <table class="uk-table uk-table-divider uk-table-hover">
-            <thead>
-                <tr>
-                    <th>Username</th>
-                    <th>Role</th>
-                    <th class="uk-width-medium">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <template x-for="user in users" :key="user.username">
-                    <tr>
-                        <td x-text="user.username"></td>
-                        <td>
-                            <span
-                                class="uk-badge"
-                                :class="user.is_admin ? 'uk-badge-danger' : ''"
-                                x-text="user.is_admin ? 'Admin' : 'User'"
-                            ></span>
-                        </td>
-                        <td>
-                            <button
-                                class="uk-button uk-button-small uk-button-default uk-margin-small-right"
-                                @click="toggleAdmin(user.username, user.is_admin)"
-                                :disabled="updating || user.username === currentUser"
-                                :title="user.username === currentUser ? 'Cannot modify your own admin status' : ''"
-                            >
-                                <span x-text="user.is_admin ? 'Demote to User' : 'Promote to Admin'"></span>
-                            </button>
-                            <button
-                                class="uk-button uk-button-small uk-button-danger"
-                                @click="deleteUser(user.username)"
-                                :disabled="deleting || user.username === currentUser"
-                                :title="user.username === currentUser ? 'Cannot delete yourself' : ''"
-                            >
-                                Delete
-                            </button>
-                        </td>
-                    </tr>
-                </template>
-            </tbody>
-        </table>
-
-        <div x-show="users.length === 0 && !loading" class="uk-alert-warning" uk-alert>
-            <p>No users found in the system.</p>
-        </div>
-    </div>
-</div>
+<a href="/admin/user/edit" class="uk-button uk-button-primary">New User</a>
 {% endblock %}
 
 {% block scripts %}
-<script>
-function usersData() {
-    return {
-        users: [],
-        loading: true,
-        creating: false,
-        updating: false,
-        deleting: false,
-        createError: '',
-        createSuccess: false,
-        currentUser: '{{ username }}',
-        newUser: {
-            username: '',
-            password: '',
-            isAdmin: false
-        },
-
-        async init() {
-            await this.load();
-        },
-
-        async load() {
-            this.loading = true;
-            try {
-                const response = await fetch('/api/admin/users');
-                if (response.ok) {
-                    this.users = await response.json();
-                } else {
-                    console.error('Failed to load users:', response.statusText);
-                }
-            } catch (error) {
-                console.error('Error loading users:', error);
-            } finally {
-                this.loading = false;
-            }
-        },
-
-        async createUser() {
-            this.creating = true;
-            this.createError = '';
-            this.createSuccess = false;
-
-            try {
-                const response = await fetch('/api/admin/users', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        username: this.newUser.username,
-                        password: this.newUser.password,
-                        is_admin: this.newUser.isAdmin
-                    })
-                });
-
-                if (response.ok) {
-                    this.createSuccess = true;
-                    this.newUser.username = '';
-                    this.newUser.password = '';
-                    this.newUser.isAdmin = false;
-                    await this.load();
-                    setTimeout(() => {
-                        this.createSuccess = false;
-                    }, 3000);
-                } else {
-                    const error = await response.text();
-                    this.createError = error || 'Failed to create user';
-                }
-            } catch (error) {
-                console.error('Error creating user:', error);
-                this.createError = 'Error creating user';
-            } finally {
-                this.creating = false;
-            }
-        },
-
-        async toggleAdmin(username, isCurrentlyAdmin) {
-            const action = isCurrentlyAdmin ? 'demote' : 'promote';
-            const newRole = isCurrentlyAdmin ? 'User' : 'Admin';
-
-            if (!confirm(`Are you sure you want to ${action} ${username} to ${newRole}?`)) {
-                return;
-            }
-
-            this.updating = true;
-            try {
-                const response = await fetch(`/api/admin/users/${username}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        is_admin: !isCurrentlyAdmin
-                    })
-                });
-
-                if (response.ok) {
-                    await this.load();
-                } else {
-                    alert('Failed to update user');
-                }
-            } catch (error) {
-                console.error('Error updating user:', error);
-                alert('Error updating user');
-            } finally {
-                this.updating = false;
-            }
-        },
-
-        async deleteUser(username) {
-            if (!confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
-                return;
-            }
-
-            this.deleting = true;
-            try {
-                const response = await fetch(`/api/admin/users/${username}`, {
-                    method: 'DELETE'
-                });
-
-                if (response.ok) {
-                    this.users = this.users.filter(user => user.username !== username);
-                } else {
-                    alert('Failed to delete user');
-                }
-            } catch (error) {
-                console.error('Error deleting user:', error);
-                alert('Error deleting user');
-            } finally {
-                this.deleting = false;
-            }
-        }
-    };
-}
-</script>
+<script src="/static/js/alert.js"></script>
+<script src="/static/js/user.js"></script>
 {% endblock %}

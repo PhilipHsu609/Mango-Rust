@@ -10,9 +10,10 @@ pub mod reader;
 pub use admin::{
     admin_dashboard, bulk_progress, cache_clear_api, cache_debug_page, cache_invalidate_api,
     cache_load_library_api, cache_save_library_api, create_user, delete_all_missing_entries,
-    delete_missing_entry, delete_user, generate_thumbnails, get_missing_entries, get_users,
-    missing_items_page, scan_library, thumbnail_progress, update_display_name, update_sort_title,
-    update_user, upload_cover, users_page,
+    delete_missing_entry, delete_user, delete_user_api, generate_thumbnails, get_missing_entries,
+    get_users, missing_items_page, scan_library, thumbnail_progress, update_display_name,
+    update_sort_title, update_user, upload_cover, user_edit_page, user_edit_post,
+    user_edit_post_existing, users_page,
 };
 pub use api::{
     add_tag, continue_reading, delete_tag, download_entry, get_cover, get_dimensions, get_library,

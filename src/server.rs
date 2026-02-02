@@ -18,14 +18,14 @@ use crate::{
         add_tag, admin_dashboard, bulk_progress, cache_clear_api, cache_debug_page,
         cache_invalidate_api, cache_load_library_api, cache_save_library_api, change_password_api,
         change_password_page, continue_reading, create_user, delete_all_missing_entries,
-        delete_missing_entry, delete_tag, delete_user, download_entry, generate_thumbnails,
-        get_all_progress, get_book, get_cover, get_dimensions, get_library, get_login,
-        get_missing_entries, get_page, get_progress, get_stats, get_title, get_title_tags,
-        get_users, home, library as library_page, list_tags, list_tags_page, logout,
-        missing_items_page, opds_index, opds_title, post_login, reader, reader_continue, recently_added,
-        save_progress, scan_library, start_reading, thumbnail_progress, update_display_name,
-        update_progress, update_sort_title, update_user, upload_cover, users_page,
-        view_tag_page,
+        delete_missing_entry, delete_tag, delete_user, delete_user_api, download_entry,
+        generate_thumbnails, get_all_progress, get_book, get_cover, get_dimensions, get_library,
+        get_login, get_missing_entries, get_page, get_progress, get_stats, get_title,
+        get_title_tags, get_users, home, library as library_page, list_tags, list_tags_page, logout,
+        missing_items_page, opds_index, opds_title, post_login, reader, reader_continue,
+        recently_added, save_progress, scan_library, start_reading, thumbnail_progress,
+        update_display_name, update_progress, update_sort_title, update_user, upload_cover,
+        user_edit_page, user_edit_post, user_edit_post_existing, users_page, view_tag_page,
     },
     Storage,
 };
@@ -152,7 +152,9 @@ pub async fn run(config: Config) -> Result<()> {
         // Admin routes (requires admin access)
         .route("/admin", get(admin_dashboard))
         .route("/admin/missing-items", get(missing_items_page))
-        .route("/admin/users", get(users_page))
+        .route("/admin/user", get(users_page))
+        .route("/admin/user/edit", get(user_edit_page).post(user_edit_post))
+        .route("/admin/user/edit/:username", post(user_edit_post_existing))
         // Cache debug route
         .route("/debug/cache", get(cache_debug_page))
         // Admin API routes
@@ -174,6 +176,10 @@ pub async fn run(config: Config) -> Result<()> {
         .route(
             "/api/admin/users/:username",
             patch(update_user).delete(delete_user),
+        )
+        .route(
+            "/api/admin/user/delete/:username",
+            delete(delete_user_api),
         )
         // Reader routes
         .route("/reader/:tid/:eid", get(reader_continue))
