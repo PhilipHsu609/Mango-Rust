@@ -159,7 +159,7 @@ impl Title {
         &self,
         username: &str,
         entry_id: &str,
-        page: usize,
+        page: i32,
     ) -> Result<()> {
         use super::progress::TitleInfo;
 
@@ -177,7 +177,7 @@ impl Title {
     }
 
     /// Load reading progress for an entry
-    pub async fn load_entry_progress(&self, username: &str, entry_id: &str) -> Result<usize> {
+    pub async fn load_entry_progress(&self, username: &str, entry_id: &str) -> Result<i32> {
         use super::progress::TitleInfo;
 
         let info = TitleInfo::load(&self.path).await?;
@@ -185,7 +185,7 @@ impl Title {
     }
 
     /// Get progress information for an entry (percentage and page number)
-    pub async fn get_entry_progress(&self, username: &str, entry_id: &str) -> Result<(f32, usize)> {
+    pub async fn get_entry_progress(&self, username: &str, entry_id: &str) -> Result<(f32, i32)> {
         // Find the entry to get its page count
         let entry = self
             .entries
@@ -213,7 +213,7 @@ impl Title {
 
         // Set progress to last page for all entries
         for entry in &self.entries {
-            info.set_progress(username, &entry.id, entry.pages);
+            info.set_progress(username, &entry.id, entry.pages as i32);
         }
 
         info.save(&self.path).await?;

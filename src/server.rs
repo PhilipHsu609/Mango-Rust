@@ -4,7 +4,7 @@ use axum::{
     Router,
 };
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use arc_swap::ArcSwap;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tower_sessions::{Expiry, SessionManagerLayer};
 use tower_sessions_sqlx_store::SqliteStore;
@@ -22,7 +22,7 @@ use crate::{
         get_all_progress, get_book, get_cover, get_dimensions, get_library, get_login,
         get_missing_entries, get_page, get_progress, get_stats, get_title, get_title_tags,
         get_users, home, library as library_page, list_tags, list_tags_page, logout,
-        missing_items_page, opds_index, opds_title, post_login, reader, recently_added,
+        missing_items_page, opds_index, opds_title, post_login, reader, reader_continue, recently_added,
         save_progress, scan_library, start_reading, thumbnail_progress, update_display_name,
         update_progress, update_sort_title, update_user, upload_cover, users_page,
         view_tag_page,
@@ -34,7 +34,7 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Storage,
-    pub library: Arc<RwLock<Library>>,
+    pub library: Arc<ArcSwap<Library>>,
     pub config: Arc<Config>,
 }
 
@@ -52,6 +52,9 @@ pub async fn run(config: Config) -> Result<()> {
     let storage = Storage::new(&database_url).await?;
     tracing::info!("Database initialized at {}", config.db_path.display());
 
+    // Wrap config in Arc early (needed for periodic scanner)
+    let config = Arc::new(config);
+
     // Initialize library scanner
     tracing::info!("Initializing library");
     let mut library = Library::new(config.library_path.clone(), storage.clone(), &config);
@@ -59,19 +62,33 @@ pub async fn run(config: Config) -> Result<()> {
     // Try to load from cache first (fast)
     let cache_loaded = library.try_load_from_cache().await?;
 
-    let library = Arc::new(RwLock::new(library));
+    // Use ArcSwap for lock-free reads
+    let library = Arc::new(ArcSwap::from_pointee(library));
 
-    // If cache didn't load, spawn background scan task (non-blocking)
+    // If cache didn't load, spawn background scan task (non-blocking, double-buffer)
     if !cache_loaded {
         tracing::info!("Cache not available, starting background library scan...");
         let library_clone = library.clone();
+        let storage_clone = storage.clone();
+        let config_clone = config.clone();
         tokio::spawn(async move {
             let start = std::time::Instant::now();
-            match library_clone.write().await.scan().await {
+            // Build new library instance in background
+            let mut new_lib = Library::new(
+                config_clone.library_path.clone(),
+                storage_clone,
+                &config_clone,
+            );
+            match new_lib.scan().await {
                 Ok(_) => {
+                    let stats = new_lib.stats();
+                    // Atomically swap the new library in
+                    library_clone.store(Arc::new(new_lib));
                     tracing::info!(
-                        "Background library scan completed in {:.2}s",
-                        start.elapsed().as_secs_f64()
+                        "Background library scan completed in {:.2}s - {} titles, {} entries",
+                        start.elapsed().as_secs_f64(),
+                        stats.titles,
+                        stats.entries
                     );
                 }
                 Err(e) => {
@@ -87,7 +104,12 @@ pub async fn run(config: Config) -> Result<()> {
             "Starting periodic library scanner (interval: {} minutes)",
             config.scan_interval_minutes
         );
-        spawn_periodic_scanner(library.clone(), config.scan_interval_minutes as u64);
+        spawn_periodic_scanner(
+            library.clone(),
+            storage.clone(),
+            config.clone(),
+            config.scan_interval_minutes as u64,
+        );
     } else {
         tracing::info!("Periodic library scanning disabled (scan_interval_minutes = 0)");
     }
@@ -95,7 +117,6 @@ pub async fn run(config: Config) -> Result<()> {
     tracing::info!("Library initialization complete (server ready)");
 
     // Create application state
-    let config = Arc::new(config);
     let app_state = AppState {
         storage: storage.clone(),
         library,
@@ -155,6 +176,7 @@ pub async fn run(config: Config) -> Result<()> {
             patch(update_user).delete(delete_user),
         )
         // Reader routes
+        .route("/reader/:tid/:eid", get(reader_continue))
         .route("/reader/:tid/:eid/:page", get(reader))
         // API routes
         .route("/api/library", get(get_library))
@@ -176,7 +198,7 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/library/recently_added", get(recently_added))
         // Progress API
         .route(
-            "/api/progress/:tid/:second",
+            "/api/progress/:tid/:page",
             get(get_progress).post(save_progress).put(update_progress),
         )
         .route("/api/progress", get(get_all_progress))

@@ -3,7 +3,7 @@
 {% block title %}Missing Items{% endblock %}
 
 {% block content %}
-<div x-data="missingItemsData()">
+<div x-data="missingItemsData()" x-init="init()">
     <h2>Missing Items</h2>
 
     <p class="uk-text-meta">

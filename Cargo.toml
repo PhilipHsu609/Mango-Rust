@@ -46,6 +46,9 @@ thiserror = "1.0"
 # Templates
 askama = "0.12"
 
+# Lock-free concurrency
+arc-swap = "1.6"
+
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5.0"  # For home directory expansion

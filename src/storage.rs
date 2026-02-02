@@ -14,6 +14,14 @@ pub struct MissingEntry {
     pub entry_type: String,
 }
 
+/// Stored page dimension data (from database cache)
+#[derive(Debug, Clone)]
+pub struct StoredDimension {
+    pub page_num: usize,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Database storage layer - handles user authentication and data persistence
 /// Matches original Mango's Storage class functionality
 #[derive(Clone)]
@@ -532,6 +540,87 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+
+    // ========== Dimensions Cache ==========
+
+    /// Get cached dimensions for an entry
+    /// Returns None if not cached (needs extraction)
+    pub async fn get_dimensions(&self, entry_id: &str) -> Result<Option<Vec<StoredDimension>>> {
+        let rows: Vec<(i64, i64, i64)> = sqlx::query_as(
+            "SELECT page_num, width, height FROM dimensions WHERE entry_id = ? ORDER BY page_num"
+        )
+        .bind(entry_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let dims = rows
+            .into_iter()
+            .map(|(page_num, width, height)| StoredDimension {
+                page_num: page_num as usize,
+                width: width as u32,
+                height: height as u32,
+            })
+            .collect();
+
+        Ok(Some(dims))
+    }
+
+    /// Save dimensions for an entry (replaces existing)
+    /// Uses transaction to ensure atomicity
+    pub async fn save_dimensions(&self, entry_id: &str, dimensions: &[(usize, u32, u32)]) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        // Delete existing dimensions for this entry
+        sqlx::query("DELETE FROM dimensions WHERE entry_id = ?")
+            .bind(entry_id)
+            .execute(&mut *tx)
+            .await?;
+
+        // Insert new dimensions
+        for (page_num, width, height) in dimensions {
+            sqlx::query(
+                "INSERT INTO dimensions (entry_id, page_num, width, height) VALUES (?, ?, ?, ?)"
+            )
+            .bind(entry_id)
+            .bind(*page_num as i64)
+            .bind(*width as i64)
+            .bind(*height as i64)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Check if dimensions are cached for an entry
+    pub async fn has_dimensions(&self, entry_id: &str) -> Result<bool> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM dimensions WHERE entry_id = ?"
+        )
+        .bind(entry_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count > 0)
+    }
+
+    /// Get dimension count for an entry (to check if cache is stale)
+    pub async fn get_dimensions_count(&self, entry_id: &str) -> Result<usize> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM dimensions WHERE entry_id = ?"
+        )
+        .bind(entry_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count as usize)
     }
 }
 

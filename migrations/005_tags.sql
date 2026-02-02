@@ -1,9 +1,13 @@
--- Create tags table
+-- Create tags table with foreign key (matches original Mango schema)
 CREATE TABLE IF NOT EXISTS tags (
     id TEXT NOT NULL,
     tag TEXT NOT NULL,
-    UNIQUE (id, tag)
+    UNIQUE (id, tag),
+    FOREIGN KEY (id) REFERENCES titles (id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_tags_id ON tags (id);
-CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags (tag);
+-- Index names match original Mango
+CREATE INDEX IF NOT EXISTS tags_id_idx ON tags (id);
+CREATE INDEX IF NOT EXISTS tags_tag_idx ON tags (tag);

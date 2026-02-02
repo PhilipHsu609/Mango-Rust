@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, RwLock};
+use arc_swap::ArcSwap;
+use tokio::sync::Mutex;
 
 use super::entry::Entry;
 use super::title::Title;
@@ -21,6 +22,9 @@ pub struct Library {
 
     /// Cache for sorted lists and library data (uses Mutex for thread-safe interior mutability)
     cache: Mutex<super::cache::Cache>,
+
+    /// In-memory cache for progress data (eliminates O(N) filesystem reads)
+    progress_cache: super::progress_cache::ProgressCache,
 }
 
 impl Library {
@@ -31,6 +35,7 @@ impl Library {
             titles: HashMap::new(),
             storage,
             cache: Mutex::new(super::cache::Cache::new(config)),
+            progress_cache: super::progress_cache::ProgressCache::new(),
         }
     }
 
@@ -75,6 +80,10 @@ impl Library {
                     self.titles.len(),
                     entry_count
                 );
+
+                // Load progress cache for all titles
+                self.load_progress_cache().await;
+
                 Ok(true)
             }
             None => {
@@ -224,6 +233,9 @@ impl Library {
 
         self.titles = new_titles;
 
+        // Load progress cache for all titles
+        self.load_progress_cache().await;
+
         // Mark items in database as unavailable if not found during scan
         self.mark_unavailable().await?;
 
@@ -254,12 +266,12 @@ impl Library {
         for (id, path, signature) in title_ids {
             sqlx::query(
                 "INSERT INTO titles (id, path, signature, unavailable) VALUES (?, ?, ?, 0)
-                 ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
+                 ON CONFLICT(path) DO UPDATE SET id = ?, signature = ?, unavailable = 0",
             )
             .bind(id)
             .bind(path)
             .bind(signature)
-            .bind(path)
+            .bind(id)
             .bind(signature)
             .execute(&mut *tx)
             .await?;
@@ -269,12 +281,12 @@ impl Library {
         for (id, path, signature) in entry_ids {
             sqlx::query(
                 "INSERT INTO ids (id, path, signature, unavailable) VALUES (?, ?, ?, 0)
-                 ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
+                 ON CONFLICT(path) DO UPDATE SET id = ?, signature = ?, unavailable = 0",
             )
             .bind(id)
             .bind(path)
             .bind(signature)
-            .bind(path)
+            .bind(id)
             .bind(signature)
             .execute(&mut *tx)
             .await?;
@@ -497,13 +509,13 @@ impl Library {
         let relative_path = self.to_relative_path(&title.path)?;
 
         sqlx::query(
-            "INSERT INTO titles (id, path, signature) VALUES (?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
+            "INSERT INTO titles (id, path, signature, unavailable) VALUES (?, ?, ?, 0)
+             ON CONFLICT(path) DO UPDATE SET id = ?, signature = ?, unavailable = 0",
         )
         .bind(&title.id)
         .bind(&relative_path)
         .bind(&title.signature)
-        .bind(&relative_path)
+        .bind(&title.id)
         .bind(&title.signature)
         .execute(self.storage.pool())
         .await?;
@@ -517,13 +529,13 @@ impl Library {
         let relative_path = self.to_relative_path(&entry.path)?;
 
         sqlx::query(
-            "INSERT INTO ids (path, id, signature) VALUES (?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET path = ?, signature = ?",
+            "INSERT INTO ids (id, path, signature, unavailable) VALUES (?, ?, ?, 0)
+             ON CONFLICT(path) DO UPDATE SET id = ?, signature = ?, unavailable = 0",
         )
-        .bind(&relative_path)
         .bind(&entry.id)
-        .bind(&entry.signature)
         .bind(&relative_path)
+        .bind(&entry.signature)
+        .bind(&entry.id)
         .bind(&entry.signature)
         .execute(self.storage.pool())
         .await?;
@@ -703,6 +715,35 @@ impl Library {
     /// Get cache reference for admin/debug access
     pub fn cache(&self) -> &Mutex<super::cache::Cache> {
         &self.cache
+    }
+
+    /// Get progress cache reference for fast progress lookups
+    pub fn progress_cache(&self) -> &super::progress_cache::ProgressCache {
+        &self.progress_cache
+    }
+
+    /// Load progress data for all titles into the cache
+    async fn load_progress_cache(&self) {
+        let start = std::time::Instant::now();
+        let mut loaded = 0;
+        let mut errors = 0;
+
+        for (title_id, title) in &self.titles {
+            match self.progress_cache.load_title(title_id, &title.path).await {
+                Ok(_) => loaded += 1,
+                Err(e) => {
+                    tracing::warn!("Failed to load progress cache for title {}: {}", title_id, e);
+                    errors += 1;
+                }
+            }
+        }
+
+        tracing::info!(
+            "Progress cache loaded: {} titles in {:.2}ms ({} errors)",
+            loaded,
+            start.elapsed().as_secs_f64() * 1000.0,
+            errors
+        );
     }
 
     /// Get all titles as a HashMap
@@ -892,11 +933,15 @@ pub struct LibraryStats {
 }
 
 /// Create a shared Library instance that can be used across async tasks
-pub type SharedLibrary = Arc<RwLock<Library>>;
+/// Uses ArcSwap for lock-free reads and atomic swaps during scan
+pub type SharedLibrary = Arc<ArcSwap<Library>>;
 
 /// Spawn a background task that periodically scans the library
+/// Uses double-buffer approach: builds new library in background, then atomically swaps
 pub fn spawn_periodic_scanner(
     library: SharedLibrary,
+    storage: Storage,
+    config: Arc<crate::Config>,
     interval_minutes: u64,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
@@ -906,19 +951,30 @@ pub fn spawn_periodic_scanner(
         loop {
             interval.tick().await;
 
-            tracing::info!("Starting periodic library scan");
+            tracing::info!("Starting periodic library scan (double-buffer)");
             let periodic_start = std::time::Instant::now();
-            let mut lib = library.write().await;
-            match lib.scan().await {
+
+            // Build new library instance in background (no lock held)
+            let mut new_lib = Library::new(config.library_path.clone(), storage.clone(), &config);
+
+            match new_lib.scan().await {
                 Ok(_) => {
                     let periodic_duration = periodic_start.elapsed();
+                    let stats = new_lib.stats();
+
+                    // Atomically swap the new library in
+                    library.store(Arc::new(new_lib));
+
                     tracing::info!(
-                        "Periodic library scan completed ({:.2}s)",
-                        periodic_duration.as_secs_f64()
+                        "Periodic library scan completed ({:.2}s) - {} titles, {} entries",
+                        periodic_duration.as_secs_f64(),
+                        stats.titles,
+                        stats.entries
                     );
                 }
                 Err(e) => {
                     tracing::error!("Periodic scan failed: {}", e);
+                    // Keep the old library on failure
                 }
             }
         }

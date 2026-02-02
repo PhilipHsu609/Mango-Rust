@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Path, State},
-    response::Html,
+    response::{Html, Redirect},
 };
 
 use crate::{
@@ -42,7 +42,7 @@ pub async fn reader(
     Username(_username): Username,
 ) -> Result<Html<String>> {
     // Get library read lock
-    let lib = state.library.read().await;
+    let lib = state.library.load();
 
     // Find the title
     let title = lib
@@ -111,4 +111,51 @@ pub async fn reader(
     };
 
     Ok(Html(template.render().map_err(render_error)?))
+}
+
+/// GET /reader/{title_id}/{entry_id} - Continue reading from saved progress
+/// Redirects to the reader page at the user's saved progress, or page 1 if finished/not started
+pub async fn reader_continue(
+    State(state): State<AppState>,
+    Path((title_id, entry_id)): Path<(String, String)>,
+    Username(username): Username,
+) -> Result<Redirect> {
+    // Get library read lock
+    let lib = state.library.load();
+
+    // Find the title
+    let title = lib
+        .get_title(&title_id)
+        .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
+
+    // Find the entry within the title
+    let entry = lib
+        .get_entry(&title_id, &entry_id)
+        .ok_or_else(|| Error::NotFound(format!("Entry not found: {}", entry_id)))?;
+
+    let total_pages = entry.pages;
+
+    // Load the user's progress
+    let progress_page = match title.load_entry_progress(&username, &entry_id).await {
+        Ok(page) => page,
+        Err(e) => {
+            tracing::error!(
+                "Failed to load progress for user '{}' entry '{}': {}. Starting from beginning.",
+                username,
+                entry_id,
+                e
+            );
+            0
+        }
+    };
+
+    // If not started (0) or finished (>= total_pages), start from page 1
+    // Otherwise, continue from saved progress (clamped to at least 1)
+    let page = if progress_page == 0 || progress_page >= total_pages as i32 {
+        1
+    } else {
+        progress_page.max(1)
+    };
+
+    Ok(Redirect::to(&format!("/reader/{}/{}/{}", title_id, entry_id, page)))
 }

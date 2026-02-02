@@ -205,7 +205,7 @@ struct HomeTemplate {
 pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<String>> {
     // Get library stats to determine empty_library
     let (title_count, has_any_progress) = {
-        let lib = state.library.read().await;
+        let lib = state.library.load();
         let stats = lib.stats();
 
         // Check if user has any reading progress
@@ -237,7 +237,7 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
     let (continue_reading, start_reading, recently_added) = {
         use crate::library::progress::TitleInfo;
 
-        let lib = state.library.read().await;
+        let lib = state.library.load();
         let mut cr_items = Vec::new();
         let mut sr_items = Vec::new();
         let mut ra_items = Vec::new();
@@ -369,7 +369,7 @@ pub async fn library(
     user: User,
 ) -> Result<Html<String>> {
     // Get library path for loading/saving sort preferences
-    let library_path = state.library.read().await.path().to_path_buf();
+    let library_path = state.library.load().path().to_path_buf();
 
     // Load/save sort preferences from info.json
     let (sort_method_str, ascending) =
@@ -380,7 +380,7 @@ pub async fn library(
 
     // Get library statistics and title data
     let mut title_data_list = {
-        let lib = state.library.read().await;
+        let lib = state.library.load();
 
         // For progress sorting, we need to calculate progress first, then sort
         // For other methods, use the library's cached sorting
@@ -579,7 +579,7 @@ pub async fn view_tag_page(
     user: User,
 ) -> Result<Html<String>> {
     let storage = &state.storage;
-    let lib = state.library.read().await;
+    let lib = state.library.load();
 
     // Get all title IDs with this tag
     let title_ids = storage.get_tag_titles(&tag).await?;

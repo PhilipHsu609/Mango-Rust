@@ -49,7 +49,7 @@ pub async fn opds_index(
     State(state): State<AppState>,
     _username: crate::auth::Username,
 ) -> Result<impl IntoResponse> {
-    let lib = state.library.read().await;
+    let lib = state.library.load();
     let titles = lib.get_titles();
 
     let opds_titles: Vec<OPDSTitleEntry> = titles
@@ -86,7 +86,7 @@ pub async fn opds_title(
     Path(title_id): Path<String>,
     _username: crate::auth::Username,
 ) -> Result<impl IntoResponse> {
-    let lib = state.library.read().await;
+    let lib = state.library.load();
 
     // Get the title
     let title = lib

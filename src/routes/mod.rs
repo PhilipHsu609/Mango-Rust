@@ -26,7 +26,7 @@ pub use main::{
 };
 pub use opds::{opds_index, opds_title};
 pub use progress::{get_all_progress, get_progress, save_progress};
-pub use reader::reader;
+pub use reader::{reader, reader_continue};
 
 /// Trait for types that have a progress field (as f32 percentage)
 pub trait HasProgress {
@@ -47,4 +47,13 @@ pub fn sort_by_progress<T: HasProgress>(items: &mut [T], ascending: bool) {
             ord.reverse()
         }
     });
+}
+
+/// Calculate progress percentage from current page and total pages
+pub fn calculate_progress_percentage(progress: i32, total_pages: usize) -> f32 {
+    if total_pages > 0 {
+        (progress as f32 / total_pages as f32) * 100.0
+    } else {
+        0.0
+    }
 }

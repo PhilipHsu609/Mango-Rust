@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod entry;
 pub mod progress;
+pub mod progress_cache;
 pub mod title;
 
 // Library manager module
@@ -9,6 +10,7 @@ mod manager;
 pub use entry::Entry;
 pub use manager::{spawn_periodic_scanner, Library, LibraryStats, SharedLibrary, SortMethod};
 pub use progress::TitleInfo;
+pub use progress_cache::ProgressCache;
 pub use title::Title;
 
 /// Trait for types that can be sorted by name and modification time

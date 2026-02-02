@@ -63,7 +63,7 @@ pub async fn cache_debug_page(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
 ) -> Result<Html<String>> {
-    let lib = state.library.read().await;
+    let lib = state.library.load();
 
     // Get cache statistics
     let cache = lib.cache().lock().await;
@@ -126,16 +126,24 @@ pub struct ScanResponse {
 
 /// POST /api/admin/scan - Trigger library rescan
 /// Returns number of titles found and time taken in milliseconds
+/// Uses double-buffer approach: builds new library in background, then atomically swaps
 pub async fn scan_library(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<ScanResponse>> {
     let start = Instant::now();
 
-    // Trigger library scan
-    let mut library = state.library.write().await;
-    library.scan().await?;
-    let stats = library.stats();
+    // Build new library instance and scan (double-buffer approach)
+    let mut new_lib = crate::library::Library::new(
+        state.config.library_path.clone(),
+        state.storage.clone(),
+        &state.config,
+    );
+    new_lib.scan().await?;
+    let stats = new_lib.stats();
+
+    // Atomically swap the new library in
+    state.library.store(std::sync::Arc::new(new_lib));
 
     let elapsed = start.elapsed().as_millis();
 
@@ -349,7 +357,7 @@ pub async fn cache_clear_api(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<serde_json::Value>> {
-    let lib = state.library.read().await;
+    let lib = state.library.load();
     let mut cache = lib.cache().lock().await;
 
     cache.clear();
@@ -370,7 +378,7 @@ pub async fn cache_save_library_api(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<serde_json::Value>> {
-    let lib = state.library.read().await;
+    let lib = state.library.load();
 
     // Create cached data
     let cached_data = crate::library::cache::CachedLibraryData {
@@ -393,17 +401,25 @@ pub async fn cache_save_library_api(
 
 /// POST /api/cache/load-library - Load library from cache file
 /// Reloads library from persistent cache file
+/// Uses double-buffer approach: creates new library, loads from cache, swaps
 pub async fn cache_load_library_api(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<serde_json::Value>> {
-    let mut lib = state.library.write().await;
+    // Build new library instance and try to load from cache
+    let mut new_lib = crate::library::Library::new(
+        state.config.library_path.clone(),
+        state.storage.clone(),
+        &state.config,
+    );
 
-    let loaded = lib.try_load_from_cache().await?;
+    let loaded = new_lib.try_load_from_cache().await?;
 
     if loaded {
-        let stats = lib.stats();
-        drop(lib);
+        let stats = new_lib.stats();
+
+        // Atomically swap the new library in
+        state.library.store(std::sync::Arc::new(new_lib));
 
         tracing::info!("Library cache loaded by admin");
 
@@ -414,7 +430,6 @@ pub async fn cache_load_library_api(
             "entries": stats.entries
         })))
     } else {
-        drop(lib);
         Ok(Json(serde_json::json!({
             "success": false,
             "message": "No valid cache file found"
@@ -436,7 +451,7 @@ pub async fn cache_invalidate_api(
     AdminOnly(_username): AdminOnly,
     Json(request): Json<CacheInvalidateRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let lib = state.library.read().await;
+    let lib = state.library.load();
     let mut cache = lib.cache().lock().await;
 
     // Get all entries and count matches
@@ -558,18 +573,19 @@ pub async fn bulk_progress(
     Path((action, title_id)): Path<(String, String)>,
     Json(request): Json<BulkProgressRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let lib = state.library.read().await;
+    let lib = state.library.load();
 
     let title = lib
         .get_title(&title_id)
         .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {}", title_id)))?;
 
+    let cache = lib.progress_cache();
     for entry_id in &request.ids {
         // Get entry to find page count
         if let Some(entry) = lib.get_entry(&title_id, entry_id) {
             let page = match action.as_str() {
-                "read" => entry.pages,
-                "unread" => 0,
+                "read" => entry.pages as i32,
+                "unread" => 0i32,
                 _ => {
                     return Err(crate::error::Error::BadRequest(format!(
                         "Invalid action: {}. Use 'read' or 'unread'",
@@ -578,7 +594,9 @@ pub async fn bulk_progress(
                 }
             };
 
-            title.save_entry_progress(&username, entry_id, page).await?;
+            cache
+                .save_progress(&title_id, &title.path, &username, entry_id, page)
+                .await?;
         }
     }
 
@@ -640,7 +658,7 @@ pub async fn generate_thumbnails(
     THUMBNAIL_CURRENT.store(0, Ordering::SeqCst);
 
     // Get all entries that need thumbnails
-    let lib = state.library.read().await;
+    let lib = state.library.load();
     let mut entries_to_process: Vec<(String, String)> = Vec::new();
 
     for title in lib.get_titles() {
@@ -655,7 +673,7 @@ pub async fn generate_thumbnails(
     // Spawn background task
     let state_clone = state.clone();
     tokio::spawn(async move {
-        let lib = state_clone.library.read().await;
+        let lib = state_clone.library.load();
         let db = state_clone.storage.pool();
 
         for (i, (title_id, entry_id)) in entries_to_process.iter().enumerate() {
@@ -736,7 +754,7 @@ pub async fn upload_cover(
         eid
     } else {
         // Get first entry of title
-        let lib = state.library.read().await;
+        let lib = state.library.load();
         let title = lib.get_title(&query.tid).ok_or_else(|| {
             crate::error::Error::NotFound(format!("Title not found: {}", query.tid))
         })?;

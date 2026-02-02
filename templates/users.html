@@ -3,7 +3,7 @@
 {% block title %}User Management{% endblock %}
 
 {% block content %}
-<div x-data="usersData()">
+<div x-data="usersData()" x-init="init()">
     <h2>User Management</h2>
 
     <p class="uk-text-meta">

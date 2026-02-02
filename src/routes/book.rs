@@ -194,7 +194,7 @@ pub async fn get_book(
 ) -> Result<Html<String>> {
     // Get title path for loading/saving sort preferences
     let title_path = {
-        let lib = state.library.read().await;
+        let lib = state.library.load();
         let title = lib
             .get_title(&title_id)
             .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
@@ -214,7 +214,7 @@ pub async fn get_book(
 
     // Build the title info and gather all data
     let (title_info, nested_title_items, mut items) = {
-        let lib = state.library.read().await;
+        let lib = state.library.load();
 
         // Get the title
         let title = lib

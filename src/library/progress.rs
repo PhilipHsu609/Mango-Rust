@@ -5,7 +5,7 @@ use std::path::Path;
 
 /// Structure for storing title metadata and progress in info.json
 /// Compatible with original Mango's info.json format
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TitleInfo {
     /// Comment field for compatibility with original Mango
     #[serde(default = "default_comment")]
@@ -13,7 +13,7 @@ pub struct TitleInfo {
 
     /// Progress tracking: username -> entry_id -> page_number
     #[serde(default)]
-    pub progress: HashMap<String, HashMap<String, usize>>,
+    pub progress: HashMap<String, HashMap<String, i32>>,
 
     /// Custom display name for the title
     #[serde(default)]
@@ -95,7 +95,7 @@ impl TitleInfo {
     }
 
     /// Get progress for a specific user and entry
-    pub fn get_progress(&self, username: &str, entry_id: &str) -> Option<usize> {
+    pub fn get_progress(&self, username: &str, entry_id: &str) -> Option<i32> {
         self.progress
             .get(username)
             .and_then(|user_progress| user_progress.get(entry_id))
@@ -103,7 +103,7 @@ impl TitleInfo {
     }
 
     /// Set progress for a specific user and entry
-    pub fn set_progress(&mut self, username: &str, entry_id: &str, page: usize) {
+    pub fn set_progress(&mut self, username: &str, entry_id: &str, page: i32) {
         self.progress
             .entry(username.to_string())
             .or_default()
