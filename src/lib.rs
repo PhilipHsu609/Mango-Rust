@@ -33,7 +33,7 @@ pub mod error {
         Io(#[from] std::io::Error),
 
         #[error("Archive error: {0}")]
-        Archive(#[from] zip::result::ZipError),
+        Archive(#[from] compress_tools::Error),
 
         #[error("JSON error: {0}")]
         Json(#[from] serde_json::Error),

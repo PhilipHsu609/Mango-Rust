@@ -102,7 +102,7 @@ pub fn dir_signature(path: &Path) -> Result<String> {
 /// Archive formats that can be extracted by the ZIP library (what we can actually READ)
 /// When adding support for new formats (e.g., RAR), update the extraction code in
 /// entry.rs first, then move the extensions here from ALL_ARCHIVE_EXTENSIONS
-pub const EXTRACTABLE_ARCHIVE_EXTENSIONS: &[&str] = &["zip", "cbz"];
+pub const EXTRACTABLE_ARCHIVE_EXTENSIONS: &[&str] = &["zip", "cbz", "rar", "cbr", "7z", "cb7"];
 
 /// All archive formats we recognize (may not all be extractable yet)
 /// Used for file signature calculation and future format support

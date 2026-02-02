@@ -37,7 +37,7 @@ library_cache_path: ${testDataDir}/mango-test-cache.bin
     const projectRoot = process.cwd().replace('/tests', '');
 
     try {
-      execSync('./build-css.sh', {
+      execSync('npm run build', {
         cwd: projectRoot,
         stdio: 'inherit',
         env: { ...process.env },

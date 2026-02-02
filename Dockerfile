@@ -2,7 +2,7 @@
 FROM rust:1.91-alpine AS builder
 
 # Install musl-dev and build tools for static linking
-RUN apk add --no-cache musl-dev sqlite-dev sqlite-static nodejs npm
+RUN apk add --no-cache musl-dev sqlite-dev sqlite-static nodejs npm libarchive-dev pkgconfig
 
 WORKDIR /build
 
@@ -31,6 +31,9 @@ RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # ===== Stage 2: Runtime image =====
 FROM alpine:latest
+
+# Install libarchive runtime library for archive support
+RUN apk add --no-cache libarchive
 
 WORKDIR /app
 

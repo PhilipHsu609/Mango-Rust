@@ -196,25 +196,20 @@ impl Entry {
     }
 }
 
-/// Extract list of image filenames from a ZIP archive
+/// Extract list of image filenames from an archive (ZIP, RAR, 7z)
 /// Uses spawn_blocking to avoid blocking the async runtime
 async fn extract_image_list(archive_path: &Path) -> Result<Vec<String>> {
     let path = archive_path.to_path_buf();
 
     tokio::task::spawn_blocking(move || {
         let file = std::fs::File::open(&path)?;
-        let mut archive = zip::ZipArchive::new(file)?;
+        let files = compress_tools::list_archive_files(file)
+            .map_err(|e| crate::error::Error::Internal(format!("Failed to list archive: {}", e)))?;
 
-        let mut images = Vec::new();
-
-        for i in 0..archive.len() {
-            let file = archive.by_index(i)?;
-            let name = file.name().to_string();
-
-            if is_image_file(&name) {
-                images.push(name);
-            }
-        }
+        let mut images: Vec<String> = files
+            .into_iter()
+            .filter(|name| is_image_file(name))
+            .collect();
 
         // Sort naturally (Chapter 2 before Chapter 10)
         images.sort_by(|a, b| natord::compare(a, b));
@@ -225,21 +220,18 @@ async fn extract_image_list(archive_path: &Path) -> Result<Vec<String>> {
     .map_err(|e| crate::error::Error::Internal(format!("Task join error: {}", e)))?
 }
 
-/// Extract a single image from ZIP archive
+/// Extract a single image from archive (ZIP, RAR, 7z)
 /// Uses spawn_blocking to avoid blocking the async runtime
 async fn extract_image_from_archive(archive_path: &Path, image_name: &str) -> Result<Vec<u8>> {
-    use std::io::Read;
-
     let path = archive_path.to_path_buf();
     let name = image_name.to_string();
 
     tokio::task::spawn_blocking(move || {
         let file = std::fs::File::open(&path)?;
-        let mut archive = zip::ZipArchive::new(file)?;
-
-        let mut image_file = archive.by_name(&name)?;
         let mut buffer = Vec::new();
-        image_file.read_to_end(&mut buffer)?;
+
+        compress_tools::uncompress_archive_file(file, &mut buffer, &name)
+            .map_err(|e| crate::error::Error::Internal(format!("Failed to extract {}: {}", name, e)))?;
 
         Ok(buffer)
     })
