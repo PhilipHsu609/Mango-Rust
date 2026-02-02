@@ -7,7 +7,7 @@
 .env
 .env.local
 
-# Frontend compiled assets (build output)
-static/dist/
+# Node modules (not needed in production)
 node_modules/
+static/dist/
 .spec-workflow

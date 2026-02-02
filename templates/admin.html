@@ -3,59 +3,49 @@
 {% block title %}Admin{% endblock %}
 
 {% block content %}
-<div x-data="adminData()">
-    <h2>Admin Dashboard</h2>
+<ul class="uk-list uk-list-large uk-list-divider" x-data="component()" x-init="init()">
+  <li><a class="uk-link-reset" href="/admin/users">User Management</a></li>
+  <li>
+    <a class="uk-link-reset" href="/admin/missing-items">Missing Items</a>
+    {% if missing_count > 0 %}
+      <div class="uk-align-right">
+        <span class="uk-badge">{{ missing_count }}</span>
+      </div>
+    {% endif %}
+  </li>
+  <li>
+    <a class="uk-link-reset" @click="scan()">
+      <span :style="`${scanning ? 'color:grey' : ''}`">Scan Library Files</span>
+      <div class="uk-align-right">
+        <div uk-spinner x-show="scanning"></div>
+        <span x-show="!scanning && scanMs > 0" x-text="`Scan ${scanTitles} titles in ${scanMs}ms`"></span>
+      </div>
+    </a>
+  </li>
+  <li>
+    <a class="uk-link-reset" @click="generateThumbnails()">
+      <span :style="`${generating ? 'color:grey' : ''}`">Generate Thumbnails</span>
+      <div class="uk-align-right">
+        <span x-show="generating && progress > 0" x-text="`${(progress * 100).toFixed(2)}%`"></span>
+      </div>
+    </a>
+  </li>
+  <li>
+    <span>Theme</span>
+    <select id="theme-select" class="uk-select uk-align-right uk-width-1-3@m uk-width-1-2" :value="themeSetting" @change="themeChanged($event)">
+      <option>Dark</option>
+      <option>Light</option>
+      <option>System</option>
+    </select>
+  </li>
+</ul>
 
-    <ul class="uk-list uk-list-large uk-list-divider">
-        <!-- User Management -->
-        <li>
-            <a class="uk-link-reset" href="/admin/users">
-                <span>User Management</span>
-            </a>
-        </li>
-
-        <!-- Missing Items -->
-        <li>
-            <a class="uk-link-reset" href="/admin/missing-items">
-                <span>Missing Items</span>
-                {% if missing_count > 0 %}
-                <div class="uk-align-right">
-                    <span class="uk-badge">{{ missing_count }}</span>
-                </div>
-                {% endif %}
-            </a>
-        </li>
-
-        <!-- Scan Library Files -->
-        <li>
-            <a class="uk-link-reset" @click="scanLibrary()" style="cursor: pointer;">
-                <span :style="scanning ? 'color:grey' : ''">Scan Library Files</span>
-                <div class="uk-align-right">
-                    <div uk-spinner x-show="scanning"></div>
-                    <span x-show="!scanning && scanMs > 0" x-text="`Scanned ${scanTitles} titles in ${scanMs}ms`"></span>
-                </div>
-            </a>
-        </li>
-
-        <!-- Generate Thumbnails (TODO: Implement API endpoint) -->
-        <li>
-            <a class="uk-link-reset" @click="generateThumbnails()" style="cursor: pointer;">
-                <span :style="generating ? 'color:grey' : ''">Generate Thumbnails</span>
-                <span class="uk-text-meta"> (Coming Soon)</span>
-                <div class="uk-align-right">
-                    <span x-show="generating && progress > 0" x-text="`${(progress * 100).toFixed(2)}%`"></span>
-                </div>
-            </a>
-        </li>
-    </ul>
-
-    <hr class="uk-divider-icon">
-
-    <p class="uk-text-meta">Mango-Rust - Alpha Version</p>
-    <a class="uk-button uk-button-danger" href="/logout">Log Out</a>
-</div>
+<hr class="uk-divider-icon">
+<p class="uk-text-meta">Version: v{{ version }}</p>
+<a class="uk-button uk-button-danger" href="/logout">Log Out</a>
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/alert.js"></script>
 <script src="/static/js/admin.js"></script>
 {% endblock %}

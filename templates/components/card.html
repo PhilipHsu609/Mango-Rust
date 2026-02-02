@@ -1,0 +1,72 @@
+{# Card component - matches original Mango card.html.ecr #}
+{# Required context: item (title or entry), progress (float 0-100), page (string), is_admin (bool) #}
+
+{% macro render_card(item, progress, page, is_admin) %}
+<div class="item"{% if item.is_entry %} id="{{ item.id }}"{% endif %}>
+  <div class="acard{% if item.is_entry && item.err_msg.is_none() %} is_entry{% endif %}"
+    {% if item.is_entry %}
+      {% match item.err_msg %}
+        {% when Some with (err) %}
+        onclick="location='/reader/{{ item.book_id }}/{{ item.id }}'"
+        {% when None %}
+        data-encoded-path="{{ item.encoded_path }}"
+        data-pages="{{ item.pages }}"
+        data-progress="{{ progress|fmt("{:.1}") }}"
+        data-encoded-book-title="{{ item.encoded_book_title }}"
+        data-encoded-title="{{ item.encoded_title }}"
+        data-book-id="{{ item.book_id }}"
+        data-id="{{ item.id }}"
+      {% endmatch %}
+    {% else %}
+      onclick="location='/book/{{ item.id }}'"
+    {% endif %}>
+
+    <div class="uk-card uk-card-default" x-data="{selected: false, hover: false, disabled: true, selecting: false}" :class="{selected: selected}" @count.window="selecting = $event.detail.count > 0"
+      {% if page == "title" && item.is_entry && item.err_msg.is_none() %}
+        x-init="disabled = false"
+      {% endif %}>
+      <div class="uk-card-media-top uk-inline" @mouseenter="hover = true" @mouseleave="hover = false">
+        <img data-src="{{ item.cover_url }}" width="100%" height="100%" alt="" uk-img
+        {% if item.is_entry && item.err_msg.is_some() %}
+          class="grayscale"
+        {% endif %}>
+        <div class="uk-overlay-primary uk-position-cover" x-show="!disabled && (selected || hover)">
+          <div class="uk-height-1-1 uk-width-1-1" x-show="selecting" @click.stop="selected = !selected; $dispatch(selected ? 'add' : 'remove')"></div>
+          <div class="uk-position-center">
+            <span class="fas fa-check-circle fa-3x" @click.stop="selected = !selected; $dispatch(selected ? 'add' : 'remove')" :style="`color:${selected && 'orange'};`"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="uk-card-body">
+        {% if progress >= 0.0 && progress <= 100.0 %}
+          <div class="uk-card-badge label">{{ progress|fmt("{:.1}") }}%</div>
+        {% endif %}
+
+        <h3 class="uk-card-title break-word{% if page == "home" && item.is_entry %} uk-margin-remove-bottom{% endif %}"
+          data-title="{{ item.display_name }}"
+          data-file-title="{{ item.title.as_deref().unwrap_or("") }}"
+          data-sort-title="{{ item.sort_title.as_deref().unwrap_or("") }}">{{ item.display_name }}</h3>
+
+        {% if page == "home" && item.is_entry %}
+          <a class="uk-card-title break-word uk-margin-remove-top uk-text-meta uk-display-inline-block no-modal"
+            data-title="{{ item.book_display_name }}"
+            href="/book/{{ item.book_id }}">{{ item.book_display_name }}</a>
+        {% endif %}
+
+        {% if item.is_entry %}
+          {% match item.err_msg %}
+            {% when Some with (err) %}
+            <p class="uk-text-meta uk-margin-remove-bottom">Error <span uk-icon="info"></span></p>
+            <div uk-dropdown>{{ err }}</div>
+            {% when None %}
+            <p class="uk-text-meta">{{ item.pages }} pages</p>
+          {% endmatch %}
+        {% else %}
+          <p class="uk-text-meta">{{ item.content_label }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}

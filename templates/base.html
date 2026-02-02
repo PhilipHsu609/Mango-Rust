@@ -1,77 +1,102 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <title>Mango - {% block title %}{% endblock %}</title>
-    <link rel="stylesheet" href="/static/dist/css/main.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
-    {% block styles %}{% endblock %}
+  <meta charset="utf-8">
+  <meta name="X-UA-Compatible" content="IE=edge">
+  <title>Mango - {% block title %}{% endblock %}</title>
+  <meta name="description" content="Mango - Manga Server and Web Reader">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/dist/css/mango.css" />
+  <link rel="icon" href="/static/favicon.ico">
+  <link rel="manifest" href="/static/manifest.json">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/gh/alpinejs/alpine@v2.8.0/dist/alpine.min.js"></script>
+  <script nomodule src="https://cdn.jsdelivr.net/gh/alpinejs/alpine@v2.8.0/dist/alpine-ie11.min.js" defer></script>
+  <script src="/static/js/common.js"></script>
+  {% block head %}{% endblock %}
 </head>
 <body>
-    <!-- Navigation -->
-    <div class="uk-position-top">
-        <div class="uk-navbar-container uk-navbar-transparent" uk-navbar>
-            <!-- Mobile hamburger (hidden on medium+ screens) -->
-            <div class="uk-navbar-left uk-hidden@m">
-                <div class="uk-navbar-toggle" uk-navbar-toggle-icon uk-toggle="target: #mobile-nav"></div>
-            </div>
-
-            <!-- Desktop navigation (visible on medium+ screens) -->
-            <div class="uk-navbar-left uk-visible@m">
-                <a class="uk-navbar-item uk-logo" href="/">
-                    <img src="/static/img/icons/icon.png" style="width:90px;height:90px;" onerror="this.style.display='none'">
-                </a>
-                <ul class="uk-navbar-nav">
-                    <li{% if nav.home_active %} class="uk-active"{% endif %}><a href="/">Home</a></li>
-                    <li{% if nav.library_active %} class="uk-active"{% endif %}><a href="/library">Library</a></li>
-                    <li{% if nav.tags_active %} class="uk-active"{% endif %}><a href="/tags">Tags</a></li>
-                    {% if nav.is_admin %}<li{% if nav.admin_active %} class="uk-active"{% endif %}><a href="/admin">Admin</a></li>{% endif %}
-                    <li><a href="#">Download</a></li>
+  <div class="uk-offcanvas-content">
+    <div class="uk-navbar-container uk-navbar-transparent" uk-navbar="uk-navbar">
+      <div id="mobile-nav" uk-offcanvas="overlay: true">
+        <div class="uk-offcanvas-bar uk-flex uk-flex-column">
+          <ul class="uk-nav-parent-icon uk-nav-primary uk-nav-center uk-margin-auto-vertical" uk-nav>
+            <li><a href="/">Home</a></li>
+            <li><a href="/library">Library</a></li>
+            <li><a href="/tags">Tags</a></li>
+            {% if nav.is_admin %}
+              <li><a href="/admin">Admin</a></li>
+              <li class="uk-parent">
+                <a href="#">Download</a>
+                <ul class="uk-nav-sub">
+                  <li><a href="/download/plugins">Plugins</a></li>
+                  <li><a href="/admin/downloads">Download Manager</a></li>
+                  <li><a href="/admin/subscriptions">Subscription Manager</a></li>
                 </ul>
-            </div>
-            <div class="uk-navbar-right uk-visible@m">
-                <ul class="uk-navbar-nav">
-                    <li><a onclick="toggleTheme()"><i class="fas fa-adjust"></i></a></li>
-                    <li><a href="/logout">Logout</a></li>
+              </li>
+            {% endif %}
+            <hr uk-divider>
+            <li><a onclick="toggleTheme()"><i class="fas fa-adjust"></i></a></li>
+            <li><a href="/logout">Logout</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="uk-position-top">
+    <div class="uk-navbar-container uk-navbar-transparent" uk-navbar="uk-navbar">
+      <div class="uk-navbar-left uk-hidden@m">
+        <div class="uk-navbar-toggle" uk-navbar-toggle-icon="uk-navbar-toggle-icon" uk-toggle="target: #mobile-nav"></div>
+      </div>
+      <div class="uk-navbar-left uk-visible@m">
+        <a class="uk-navbar-item uk-logo" href="/"><img src="/static/img/icons/icon.png" style="width:90px;height:90px;"></a>
+        <ul class="uk-navbar-nav">
+          <li{% if nav.home_active %} class="uk-active"{% endif %}><a href="/">Home</a></li>
+          <li{% if nav.library_active %} class="uk-active"{% endif %}><a href="/library">Library</a></li>
+          <li{% if nav.tags_active %} class="uk-active"{% endif %}><a href="/tags">Tags</a></li>
+          {% if nav.is_admin %}
+            <li{% if nav.admin_active %} class="uk-active"{% endif %}><a href="/admin">Admin</a></li>
+            <li>
+              <a href="#">Download</a>
+              <div class="uk-navbar-dropdown">
+                <ul class="uk-nav uk-navbar-dropdown-nav">
+                  <li class="uk-nav-header">Source</li>
+                  <li><a href="/download/plugins">Plugins</a></li>
+                  <li class="uk-nav-divider"></li>
+                  <li><a href="/admin/downloads">Download Manager</a></li>
+                  <li><a href="/admin/subscriptions">Subscription Manager</a></li>
                 </ul>
-            </div>
-        </div>
+              </div>
+            </li>
+          {% endif %}
+        </ul>
+      </div>
+      <div class="uk-navbar-right uk-visible@m">
+        <ul class="uk-navbar-nav">
+          <li><a onclick="toggleTheme()"><i class="fas fa-adjust"></i></a></li>
+          <li><a href="/logout">Logout</a></li>
+        </ul>
+      </div>
     </div>
-
-    <!-- Mobile Navigation Offcanvas -->
-    <div id="mobile-nav" uk-offcanvas="overlay: true">
-        <div class="uk-offcanvas-bar">
-            <button class="uk-offcanvas-close" type="button" uk-close></button>
-            <h3>Menu</h3>
-            <ul class="uk-nav uk-nav-default">
-                <li{% if nav.home_active %} class="uk-active"{% endif %}><a href="/">Home</a></li>
-                <li{% if nav.library_active %} class="uk-active"{% endif %}><a href="/library">Library</a></li>
-                <li{% if nav.tags_active %} class="uk-active"{% endif %}><a href="/tags">Tags</a></li>
-                {% if nav.is_admin %}<li{% if nav.admin_active %} class="uk-active"{% endif %}><a href="/admin">Admin</a></li>{% endif %}
-                <li><a href="#">Download</a></li>
-                <li class="uk-nav-divider"></li>
-                <li><a onclick="toggleTheme()"><i class="fas fa-adjust"></i></a></li>
-                <li><a href="/change-password">Change Password</a></li>
-                <li><a href="/logout">Logout</a></li>
-            </ul>
-        </div>
+  </div>
+  <div class="uk-section uk-section-small">
+  </div>
+  <div class="uk-section uk-section-small" style="position:relative;">
+    <div class="uk-container uk-container-small">
+      <div id="alert"></div>
+      {% block content %}{% endblock %}
+      <div class="uk-visible@m" id="totop-wrapper" x-data="{}" x-show="$('body').height() > 1.5 * $(window).height()">
+        <a href="#" uk-totop uk-scroll></a>
+      </div>
     </div>
-
-    <!-- Spacer for fixed navbar -->
-    <div class="uk-section uk-section-small">
-    </div>
-    <!-- Main Content -->
-    <div class="uk-section uk-section-small">
-        <div class="uk-container uk-container-small">
-            {% block content %}{% endblock %}
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
-    <script src="/static/src/js/core.js?v=2"></script>
-    {% block scripts %}{% endblock %}
+  </div>
+  <script>
+    setTheme();
+    const base_url = "/";
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit-icons.min.js"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

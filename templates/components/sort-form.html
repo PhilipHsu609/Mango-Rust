@@ -1,0 +1,12 @@
+{# Sort Form component - matches original sort-form.html.ecr #}
+{# Note: sort_opt is Option<SortOption> with .method (String) and .ascend (bool) fields #}
+{% macro render_sort_form(options, sort_opt) %}
+<div class="uk-form-horizontal">
+  <select class="uk-select" id="sort-select">
+    {% for item in options %}
+      <option id="{{ item.0 }}-up"{% match sort_opt %}{% when Some with (opt) %}{% if opt.method == item.0 && opt.ascend %} selected{% endif %}{% when None %}{% endmatch %}>▲ {{ item.1 }}</option>
+      <option id="{{ item.0 }}-down"{% match sort_opt %}{% when Some with (opt) %}{% if opt.method == item.0 && !opt.ascend %} selected{% endif %}{% when None %}{% endmatch %}>▼ {{ item.1 }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}

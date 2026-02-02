@@ -1,149 +1,86 @@
 {% extends "base.html" %}
+{% import "components/card.html" as card %}
+{% import "components/entry-modal.html" as modal %}
+{% import "components/dots.html" as dots %}
 
 {% block title %}Home{% endblock %}
 
 {% block content %}
-<div x-data="homePageData()">
-    <!-- Continue Reading Section -->
-    <template x-if="continueReading.length > 0">
-        <div class="uk-margin-large-bottom">
-            <h2 class="uk-title">Continue Reading</h2>
-            <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
-                <template x-for="item in continueReading" :key="item.entry_id">
-                    <div class="item">
-                        <div class="uk-card uk-card-default uk-card-hover is_entry"
-                             @click="showModal(item.title_id, item.title_name, item.entry_id, item.entry_name, item.pages, item.percentage, item.progress)">
-                            <div class="uk-card-media-top">
-                                <img :src="`/api/cover/${item.title_id}/${item.entry_id}`" :alt="item.entry_name">
-                            </div>
-                            <div class="uk-card-body">
-                                <div class="uk-card-badge label" x-show="item.percentage" x-text="`${parseFloat(item.percentage).toFixed(1)}%`"></div>
-                                <h3 class="uk-card-title break-word uk-margin-remove-bottom" x-text="item.entry_name"></h3>
-                                <a class="uk-card-title break-word uk-margin-remove-top uk-text-meta uk-display-inline-block"
-                                   :href="`/book/${item.title_id}`"
-                                   @click.stop
-                                   x-text="item.title_name"></a>
-                                <p class="uk-text-meta" x-text="`${item.pages} pages`"></p>
-                            </div>
-                        </div>
-                    </div>
-                </template>
-            </div>
-        </div>
-    </template>
+{% if new_user && empty_library %}
 
-    <!-- Start Reading Section -->
-    <template x-if="startReading.length > 0">
-        <div class="uk-margin-large-bottom">
-            <h2 class="uk-title">Start Reading</h2>
-            <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
-                <template x-for="item in startReading" :key="item.id">
-                    <div class="item">
-                        <a :href="`/book/${item.id}`" class="uk-link-reset">
-                            <div class="uk-card uk-card-default uk-card-hover">
-                                <div class="uk-card-media-top">
-                                    <img :src="item.first_entry_id ? `/api/cover/${item.id}/${item.first_entry_id}` : '/static/placeholder.png'" :alt="item.title">
-                                </div>
-                                <div class="uk-card-body">
-                                    <div class="uk-card-badge label" x-text="`${parseFloat(item.progress || 0).toFixed(1)}%`"></div>
-                                    <h3 class="uk-card-title break-word" x-text="item.title"></h3>
-                                    <p class="uk-text-meta" x-text="`${item.entry_count} ${item.entry_count === 1 ? 'entry' : 'entries'}`"></p>
-                                </div>
-                            </div>
-                        </a>
-                    </div>
-                </template>
-            </div>
-        </div>
-    </template>
+  <div class="uk-container uk-text-center">
+    <i class="fas fa-plus" style="font-size: 80px;"></i>
+    <h2>Add your first manga</h2>
+    <p style="margin-bottom: 40px;">We can't find any files yet. Add some to your library and they'll appear here.</p>
+    <dl class="uk-description-list">
+      <dt style="font-weight: 500;">Current library path</dt>
+      <dd><code>{{ library_path }}</code></dd>
+      <dt style="font-weight: 500;">Want to change your library path?</dt>
+      <dd>Update <code>config.yml</code> located at: <code>{{ config_path }}</code></dd>
+      <dt style="font-weight: 500;">Can't see your files yet?</dt>
+      <dd>
+      You must wait {{ scan_interval }} minutes for the library scan to complete
+      {% if nav.is_admin %}
+        , or manually re-scan from <a href="/admin">Admin</a>
+      {% endif %}.
+      </dd>
+    </dl>
+  </div>
 
-    <!-- Recently Added Section -->
-    <template x-if="recentlyAdded.length > 0">
-        <div class="uk-margin-large-bottom">
-            <h2 class="uk-title">Recently Added</h2>
-            <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
-                <template x-for="item in recentlyAdded" :key="item.entry_id">
-                    <div class="item">
-                        <!-- Title card for grouped items -->
-                        <template x-if="item.grouped_count > 1">
-                            <a :href="`/book/${item.title_id}`" class="uk-link-reset">
-                                <div class="uk-card uk-card-default uk-card-hover">
-                                    <div class="uk-card-media-top">
-                                        <img :src="`/api/cover/${item.title_id}/${item.entry_id}`" :alt="item.title_name">
-                                    </div>
-                                    <div class="uk-card-body">
-                                        <h3 class="uk-card-title break-word" x-text="item.title_name"></h3>
-                                        <p class="uk-text-meta" x-text="`${item.grouped_count} new entries`"></p>
-                                    </div>
-                                </div>
-                            </a>
-                        </template>
+{% else if new_user && !empty_library %}
 
-                        <!-- Entry card for single items -->
-                        <template x-if="item.grouped_count === 1">
-                            <div class="uk-card uk-card-default uk-card-hover is_entry"
-                                 @click="showModal(item.title_id, item.title_name, item.entry_id, item.entry_name, item.pages, item.percentage, Math.round(item.pages * parseFloat(item.percentage) / 100))">
-                                <div class="uk-card-media-top">
-                                    <img :src="`/api/cover/${item.title_id}/${item.entry_id}`" :alt="item.entry_name">
-                                </div>
-                                <div class="uk-card-body">
-                                    <div class="uk-card-badge label" x-show="item.percentage" x-text="`${parseFloat(item.percentage).toFixed(1)}%`"></div>
-                                    <h3 class="uk-card-title break-word uk-margin-remove-bottom" x-text="item.entry_name"></h3>
-                                    <a class="uk-card-title break-word uk-margin-remove-top uk-text-meta uk-display-inline-block"
-                                       :href="`/book/${item.title_id}`"
-                                       @click.stop
-                                       x-text="item.title_name"></a>
-                                    <p class="uk-text-meta" x-text="`${item.pages} pages`"></p>
-                                </div>
-                            </div>
-                        </template>
-                    </div>
-                </template>
-            </div>
-        </div>
-    </template>
+  <div class="uk-container uk-text-center">
+    <i class="fas fa-book-open" style="font-size: 80px;"></i>
+    <h2>Read your first manga</h2>
+    <p>Once you start reading, Mango will remember where you left off
+    and show your entries here.</p>
+    <a href="/library" class="uk-button uk-button-default">View library</a>
+  </div>
 
-    <!-- Empty State - No content yet -->
-    <template x-if="continueReading.length === 0 && startReading.length === 0 && recentlyAdded.length === 0">
-        <div class="uk-container uk-text-center uk-margin-large-top">
-            <i class="fas fa-book-open" style="font-size: 80px; color: #999;"></i>
-            <h2>Read your first manga</h2>
-            <p class="uk-text-muted">Once you start reading, Mango will remember where you left off and show your entries here.</p>
-            <a href="/library" class="uk-button uk-button-default">View library</a>
-        </div>
-    </template>
+{% else if !new_user && !empty_library %}
 
-    <!-- Entry Modal (UIKit) -->
-    <div id="entry-modal" class="uk-flex-top" uk-modal>
-        <div class="uk-modal-dialog uk-margin-auto-vertical">
-            <button class="uk-modal-close-default" type="button" uk-close></button>
-            <div class="uk-modal-header">
-                <h3 class="uk-modal-title break-word" id="modal-title"></h3>
-            </div>
-            <div class="uk-modal-body">
-                <p class="uk-text-meta" id="modal-pages"></p>
-
-                <div class="uk-margin">
-                    <label class="uk-form-label">Read</label>
-                    <p class="uk-margin-small-top">
-                        <a id="modal-beginning-btn" class="uk-button uk-button-default">From beginning</a>
-                        <a id="modal-continue-btn" class="uk-button uk-button-primary"></a>
-                    </p>
-                </div>
-
-                <div class="uk-margin">
-                    <label class="uk-form-label">Progress</label>
-                    <p class="uk-margin-small-top">
-                        <button id="modal-read-btn" class="uk-button uk-button-default" @click="markAsRead()">Mark as read (100%)</button>
-                        <button id="modal-unread-btn" class="uk-button uk-button-default" @click="markAsUnread()">Mark as unread (0%)</button>
-                    </p>
-                </div>
-            </div>
-        </div>
+  {% if continue_reading.len() == 0 && recently_added.len() == 0 %}
+    <div class="uk-container uk-text-center">
+      <img src="/static/img/banner.png" style="max-width: 400px; padding: 0 20px;">
+      <p>A self-hosted manga server and reader</p>
+      <a href="/library" class="uk-button uk-button-default">View library</a>
     </div>
-</div>
+  {% endif %}
+
+  {% if continue_reading.len() > 0 %}
+    <h2 class="uk-title home-headings">Continue Reading</h2>
+    <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
+      {% for cr in continue_reading %}
+        {% call card::render_card(cr.entry, cr.percentage, "home", nav.is_admin) %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if start_reading.len() > 0 %}
+    <h2 class="uk-title home-headings">Start Reading</h2>
+    <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
+      {% for t in start_reading %}
+        {% call card::render_card(t, 0.0, "home", nav.is_admin) %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if recently_added.len() > 0 %}
+    <h2 class="uk-title home-headings">Recently Added</h2>
+    <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
+      {% for ra in recently_added %}
+        {% call card::render_card(ra.item, ra.percentage, "home", nav.is_admin) %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% call modal::render_entry_modal("home", nav.is_admin) %}
+
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/home.js"></script>
+{% call dots::render_dots() %}
+<script src="/static/js/alert.js"></script>
+<script src="/static/js/title.js"></script>
 {% endblock %}

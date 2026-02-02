@@ -491,6 +491,48 @@ impl Storage {
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }
+
+    // ========== Display Name / Sort Title Methods ==========
+
+    /// Update display name for a title
+    pub async fn update_title_display_name(&self, title_id: &str, display_name: &str) -> Result<()> {
+        sqlx::query("UPDATE titles SET display_name = ? WHERE id = ?")
+            .bind(display_name)
+            .bind(title_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Update display name for an entry
+    pub async fn update_entry_display_name(&self, entry_id: &str, display_name: &str) -> Result<()> {
+        sqlx::query("UPDATE ids SET display_name = ? WHERE id = ?")
+            .bind(display_name)
+            .bind(entry_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Update sort title for a title (None clears it)
+    pub async fn update_title_sort_title(&self, title_id: &str, sort_title: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE titles SET sort_title = ? WHERE id = ?")
+            .bind(sort_title)
+            .bind(title_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Update sort title for an entry (None clears it)
+    pub async fn update_entry_sort_title(&self, entry_id: &str, sort_title: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE ids SET sort_title = ? WHERE id = ?")
+            .bind(sort_title)
+            .bind(entry_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }
 
 /// Hash a password using bcrypt (matches original Mango's hash_password function)

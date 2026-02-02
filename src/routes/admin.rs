@@ -10,12 +10,16 @@ use std::time::Instant;
 
 use crate::{auth::AdminOnly, error::Result, util::render_error, AppState};
 
+/// Application version from Cargo.toml
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Admin dashboard template
 #[derive(Template)]
 #[template(path = "admin.html")]
 struct AdminTemplate {
     nav: crate::util::NavigationState,
     missing_count: usize,
+    version: &'static str,
 }
 
 /// Cache debug template
@@ -47,6 +51,7 @@ pub async fn admin_dashboard(
     let template = AdminTemplate {
         nav: crate::util::NavigationState::admin().with_admin(true), // Admin pages are always accessed by admins
         missing_count,
+        version: VERSION,
     };
 
     Ok(Html(template.render().map_err(render_error)?))
@@ -462,5 +467,303 @@ pub async fn cache_invalidate_api(
         "success": true,
         "message": format!("Invalidated {} cache entries", count),
         "count": count
+    })))
+}
+
+// ========== Title/Entry Metadata API Endpoints ==========
+
+#[derive(Deserialize)]
+pub struct DisplayNameQuery {
+    eid: Option<String>,
+}
+
+/// PUT /api/admin/display_name/:tid/:name - Update display name for title or entry
+pub async fn update_display_name(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+    Path((title_id, name)): Path<(String, String)>,
+    axum::extract::Query(query): axum::extract::Query<DisplayNameQuery>,
+) -> Result<Json<serde_json::Value>> {
+    let decoded_name = percent_encoding::percent_decode_str(&name)
+        .decode_utf8()
+        .map_err(|e| crate::error::Error::BadRequest(format!("Invalid UTF-8 in name: {}", e)))?
+        .to_string();
+
+    // Update display name in database
+    if let Some(entry_id) = query.eid {
+        state
+            .storage
+            .update_entry_display_name(&entry_id, &decoded_name)
+            .await?;
+        tracing::info!("Updated entry {} display name to '{}'", entry_id, decoded_name);
+    } else {
+        state
+            .storage
+            .update_title_display_name(&title_id, &decoded_name)
+            .await?;
+        tracing::info!("Updated title {} display name to '{}'", title_id, decoded_name);
+    }
+
+    Ok(Json(serde_json::json!({
+        "success": true
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct SortTitleQuery {
+    eid: Option<String>,
+    name: Option<String>,
+}
+
+/// PUT /api/admin/sort_title/:tid - Update sort title for title or entry
+pub async fn update_sort_title(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+    Path(title_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<SortTitleQuery>,
+) -> Result<Json<serde_json::Value>> {
+    let sort_title = query.name.as_deref();
+
+    if let Some(entry_id) = &query.eid {
+        state
+            .storage
+            .update_entry_sort_title(entry_id, sort_title)
+            .await?;
+        tracing::info!("Updated entry {} sort title to {:?}", entry_id, sort_title);
+    } else {
+        state
+            .storage
+            .update_title_sort_title(&title_id, sort_title)
+            .await?;
+        tracing::info!("Updated title {} sort title to {:?}", title_id, sort_title);
+    }
+
+    Ok(Json(serde_json::json!({
+        "success": true
+    })))
+}
+
+// ========== Bulk Progress API ==========
+
+#[derive(Deserialize)]
+pub struct BulkProgressRequest {
+    ids: Vec<String>,
+}
+
+/// PUT /api/bulk_progress/:action/:tid - Bulk update progress for multiple entries
+/// action: "read" (100%) or "unread" (0%)
+pub async fn bulk_progress(
+    State(state): State<AppState>,
+    crate::auth::Username(username): crate::auth::Username,
+    Path((action, title_id)): Path<(String, String)>,
+    Json(request): Json<BulkProgressRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let lib = state.library.read().await;
+
+    let title = lib
+        .get_title(&title_id)
+        .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {}", title_id)))?;
+
+    for entry_id in &request.ids {
+        // Get entry to find page count
+        if let Some(entry) = lib.get_entry(&title_id, entry_id) {
+            let page = match action.as_str() {
+                "read" => entry.pages,
+                "unread" => 0,
+                _ => {
+                    return Err(crate::error::Error::BadRequest(format!(
+                        "Invalid action: {}. Use 'read' or 'unread'",
+                        action
+                    )))
+                }
+            };
+
+            title.save_entry_progress(&username, entry_id, page).await?;
+        }
+    }
+
+    // Invalidate cache
+    lib.invalidate_cache_for_progress(&title_id, &username).await;
+
+    tracing::info!(
+        "Bulk progress update: {} entries marked as {} for title {}",
+        request.ids.len(),
+        action,
+        title_id
+    );
+
+    Ok(Json(serde_json::json!({
+        "success": true
+    })))
+}
+
+// ========== Thumbnail Generation API ==========
+
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+/// Global thumbnail generation state
+static THUMBNAIL_GENERATING: AtomicBool = AtomicBool::new(false);
+static THUMBNAIL_CURRENT: AtomicUsize = AtomicUsize::new(0);
+static THUMBNAIL_TOTAL: AtomicUsize = AtomicUsize::new(0);
+
+/// GET /api/admin/thumbnail_progress - Get thumbnail generation progress
+pub async fn thumbnail_progress(
+    AdminOnly(_username): AdminOnly,
+) -> Result<Json<serde_json::Value>> {
+    let generating = THUMBNAIL_GENERATING.load(Ordering::SeqCst);
+    let current = THUMBNAIL_CURRENT.load(Ordering::SeqCst);
+    let total = THUMBNAIL_TOTAL.load(Ordering::SeqCst);
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "generating": generating,
+        "current": current,
+        "total": total
+    })))
+}
+
+/// POST /api/admin/generate_thumbnails - Start thumbnail generation
+pub async fn generate_thumbnails(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+) -> Result<Json<serde_json::Value>> {
+    // Atomically check and set to avoid race condition
+    if THUMBNAIL_GENERATING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Ok(Json(serde_json::json!({
+            "success": false,
+            "error": "Thumbnail generation already in progress"
+        })));
+    }
+    THUMBNAIL_CURRENT.store(0, Ordering::SeqCst);
+
+    // Get all entries that need thumbnails
+    let lib = state.library.read().await;
+    let mut entries_to_process: Vec<(String, String)> = Vec::new();
+
+    for title in lib.get_titles() {
+        for entry in &title.entries {
+            entries_to_process.push((title.id.clone(), entry.id.clone()));
+        }
+    }
+
+    THUMBNAIL_TOTAL.store(entries_to_process.len(), Ordering::SeqCst);
+    drop(lib);
+
+    // Spawn background task
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        let lib = state_clone.library.read().await;
+        let db = state_clone.storage.pool();
+
+        for (i, (title_id, entry_id)) in entries_to_process.iter().enumerate() {
+            THUMBNAIL_CURRENT.store(i + 1, Ordering::SeqCst);
+
+            if let Some(entry) = lib.get_entry(title_id, entry_id) {
+                // Check if thumbnail already exists
+                match crate::library::Entry::get_thumbnail(entry_id, db).await {
+                    Ok(Some(_)) => continue, // Already has thumbnail
+                    _ => {}
+                }
+
+                // Generate thumbnail
+                if let Err(e) = entry.generate_thumbnail(db).await {
+                    tracing::warn!("Failed to generate thumbnail for {}: {}", entry_id, e);
+                }
+            }
+        }
+
+        THUMBNAIL_GENERATING.store(false, Ordering::SeqCst);
+        tracing::info!("Thumbnail generation completed");
+    });
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "Thumbnail generation started"
+    })))
+}
+
+// ========== Cover Upload API ==========
+
+use axum::extract::Multipart;
+
+#[derive(Deserialize)]
+pub struct CoverUploadQuery {
+    tid: String,
+    eid: Option<String>,
+}
+
+/// POST /api/admin/upload/cover - Upload custom cover image
+pub async fn upload_cover(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+    axum::extract::Query(query): axum::extract::Query<CoverUploadQuery>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>> {
+    // Get the file from multipart
+    let mut file_data: Option<Vec<u8>> = None;
+    let mut content_type: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        crate::error::Error::BadRequest(format!("Failed to parse multipart: {}", e))
+    })? {
+        if field.name() == Some("file") {
+            content_type = field.content_type().map(|s| s.to_string());
+            file_data = Some(field.bytes().await.map_err(|e| {
+                crate::error::Error::BadRequest(format!("Failed to read file: {}", e))
+            })?.to_vec());
+            break;
+        }
+    }
+
+    let data = file_data.ok_or_else(|| {
+        crate::error::Error::BadRequest("No file provided".to_string())
+    })?;
+
+    // Validate file size (max 10MB)
+    const MAX_COVER_SIZE: usize = 10 * 1024 * 1024;
+    if data.len() > MAX_COVER_SIZE {
+        return Err(crate::error::Error::BadRequest(format!(
+            "File too large. Maximum size is {} bytes",
+            MAX_COVER_SIZE
+        )));
+    }
+
+    // Determine entry ID (either specific entry or first entry of title)
+    let entry_id = if let Some(eid) = query.eid {
+        eid
+    } else {
+        // Get first entry of title
+        let lib = state.library.read().await;
+        let title = lib.get_title(&query.tid).ok_or_else(|| {
+            crate::error::Error::NotFound(format!("Title not found: {}", query.tid))
+        })?;
+        title.entries.first().map(|e| e.id.clone()).ok_or_else(|| {
+            crate::error::Error::NotFound("Title has no entries".to_string())
+        })?
+    };
+
+    // Determine MIME type
+    let mime = content_type.unwrap_or_else(|| {
+        // Guess from data
+        if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+            "image/jpeg".to_string()
+        } else if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+            "image/png".to_string()
+        } else {
+            "image/jpeg".to_string()
+        }
+    });
+
+    // Save thumbnail to database
+    let db = state.storage.pool();
+    crate::library::Entry::save_thumbnail(&entry_id, &data, &mime, db).await?;
+
+    tracing::info!("Uploaded custom cover for entry {}", entry_id);
+
+    Ok(Json(serde_json::json!({
+        "success": true
     })))
 }

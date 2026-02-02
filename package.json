@@ -8,6 +8,10 @@
     "test": "tests"
   },
   "scripts": {
+    "copy:img": "mkdir -p static/dist/img && cp node_modules/uikit/src/images/backgrounds/*.svg static/dist/img/",
+    "copy:font": "mkdir -p static/dist/webfonts && cp node_modules/@fortawesome/fontawesome-free/webfonts/fa-solid-900.woff* static/dist/webfonts/",
+    "build:css": "lessc static/css/mango.less static/dist/css/mango.css && lessc static/css/tags.less static/dist/css/tags.css",
+    "build": "npm run copy:img && npm run copy:font && npm run build:css",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -23,7 +27,8 @@
   },
   "homepage": "https://github.com/PhilipHsu609/Mango-Rust#readme",
   "devDependencies": {
-    "less": "^4.5.1",
-    "uikit": "^3.25.4"
+    "@fortawesome/fontawesome-free": "^6.7.2",
+    "less": "3.13.1",
+    "uikit": "3.5.9"
   }
 }

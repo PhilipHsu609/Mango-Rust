@@ -1,65 +1,33 @@
 {% extends "base.html" %}
+{% import "components/card.html" as card %}
+{% import "components/sort-form.html" as sort %}
+{% import "components/dots.html" as dots %}
 
 {% block title %}Library{% endblock %}
 
 {% block content %}
-<div x-data="libraryData()">
-    <h2 class="uk-title">Library</h2>
-    <p class="uk-text-meta">{{ title_count }} titles found</p>
-
-    <!-- Search and Sort Controls -->
-    <div class="uk-grid-small" uk-grid>
-        <div class="uk-margin-bottom uk-width-3-4@s">
-            <form class="uk-search uk-search-default">
-                <span uk-search-icon></span>
-                <input class="uk-search-input" type="search" placeholder="Search" x-model="searchQuery">
-            </form>
-        </div>
-        <div class="uk-margin-bottom uk-width-1-4@s">
-            <select class="uk-select" @change="handleSortChange($event)">
-            <option value="title:1"{% if sort_name_asc %} selected{% endif %}>▲ Name</option>
-            <option value="title:0"{% if sort_name_desc %} selected{% endif %}>▼ Name</option>
-            <option value="modified:1"{% if sort_time_asc %} selected{% endif %}>▲ Date Modified</option>
-            <option value="modified:0"{% if sort_time_desc %} selected{% endif %}>▼ Date Modified</option>
-            <option value="progress:1"{% if sort_progress_asc %} selected{% endif %}>▲ Progress</option>
-            <option value="progress:0"{% if sort_progress_desc %} selected{% endif %}>▼ Progress</option>
-            </select>
-        </div>
-    </div>
-
-    <!-- Titles Grid - UIkit responsive grid -->
-    <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
-        {% for title in titles %}
-        <div class="item" x-show="matchesSearch('{{ title.name }}')">
-            <a href="/book/{{ title.id }}" class="uk-link-reset">
-                <div class="uk-card uk-card-default uk-card-hover">
-                    <div class="uk-card-media-top">
-                        {% match title.first_entry_id %}
-                        {% when Some with (entry_id) %}
-                        <img src="/api/cover/{{ title.id }}/{{ entry_id }}" alt="{{ title.name }}" loading="lazy">
-                        {% when None %}
-                        <div class="placeholder-icon">📖</div>
-                        {% endmatch %}
-                    </div>
-                    <div class="uk-card-body">
-                        <div class="uk-card-badge label">{{ title.progress_display }}%</div>
-                        <h3 class="uk-card-title break-word">{{ title.name }}</h3>
-                        <p class="uk-text-meta">{{ title.entry_count }} {% if title.entry_count == 1 %}entry{% else %}entries{% endif %}</p>
-                    </div>
-                </div>
-            </a>
-        </div>
-        {% endfor %}
-
-        {% if titles.is_empty() %}
-        <div class="uk-width-1-1">
-            <p class="uk-text-muted">No manga found. Add manga files to your library directory.</p>
-        </div>
-        {% endif %}
-    </div>
+<h2 class="uk-title">Library</h2>
+<p class="uk-text-meta">{{ titles.len() }} titles found</p>
+<div class="uk-grid-small" uk-grid>
+  <div class="uk-margin-bottom uk-width-3-4@s">
+    <form class="uk-search uk-search-default">
+      <span uk-search-icon></span>
+      <input class="uk-search-input" type="search" placeholder="Search">
+    </form>
+  </div>
+  <div class="uk-margin-bottom uk-width-1-4@s">
+    {% call sort::render_sort_form(sort_options, sort_opt) %}
+  </div>
+</div>
+<div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
+  {% for lib_item in items %}
+    {% call card::render_card(lib_item.item, lib_item.progress, "library", nav.is_admin) %}
+  {% endfor %}
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/library.js"></script>
+{% call dots::render_dots() %}
+<script src="/static/js/search.js"></script>
+<script src="/static/js/sort-items.js"></script>
 {% endblock %}

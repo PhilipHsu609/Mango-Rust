@@ -4,7 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
@@ -376,10 +376,25 @@ struct RecentlyAddedEntry {
 
 // ========== Tags API Endpoints ==========
 
+/// Standard API response wrapper for frontend compatibility
 #[derive(Serialize)]
-struct TagWithCount {
-    tag: String,
-    count: usize,
+struct ApiResponse<T: Serialize> {
+    success: bool,
+    #[serde(flatten)]
+    data: T,
+}
+
+/// Success response helper
+fn success_response<T: Serialize>(data: T) -> Json<ApiResponse<T>> {
+    Json(ApiResponse {
+        success: true,
+        data,
+    })
+}
+
+#[derive(Serialize)]
+struct TagsListResponse {
+    tags: Vec<String>,
 }
 
 /// API route: GET /api/tags
@@ -393,24 +408,22 @@ pub async fn list_tags(
 
     // Count titles for each tag
     let mut tag_counts: HashMap<String, usize> = HashMap::new();
-    for tag in tags {
+    for tag in tags.clone() {
         let title_ids = storage.get_tag_titles(&tag).await?;
         tag_counts.insert(tag, title_ids.len());
     }
 
     // Sort by count desc, then by tag name asc
-    let mut tags_with_counts: Vec<TagWithCount> = tag_counts
-        .into_iter()
-        .map(|(tag, count)| TagWithCount { tag, count })
-        .collect();
-
+    let mut tags_with_counts: Vec<(String, usize)> = tag_counts.into_iter().collect();
     tags_with_counts.sort_by(|a, b| {
-        b.count
-            .cmp(&a.count)
-            .then_with(|| a.tag.to_lowercase().cmp(&b.tag.to_lowercase()))
+        b.1.cmp(&a.1)
+            .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
     });
 
-    Ok(Json(tags_with_counts))
+    // Return just the tag names in sorted order (frontend expects this format)
+    let sorted_tags: Vec<String> = tags_with_counts.into_iter().map(|(tag, _)| tag).collect();
+
+    Ok(success_response(TagsListResponse { tags: sorted_tags }))
 }
 
 /// API route: GET /api/tags/:tid
@@ -422,7 +435,12 @@ pub async fn get_title_tags(
 ) -> Result<impl IntoResponse> {
     let storage = &state.storage;
     let tags = storage.get_title_tags(&title_id).await?;
-    Ok(Json(tags))
+    Ok(success_response(TagsListResponse { tags }))
+}
+
+#[derive(Serialize)]
+struct SuccessOnly {
+    // Empty struct - just for the success wrapper
 }
 
 /// API route: PUT /api/admin/tags/:tid/:tag
@@ -434,7 +452,7 @@ pub async fn add_tag(
 ) -> Result<impl IntoResponse> {
     let storage = &state.storage;
     storage.add_tag(&title_id, &tag).await?;
-    Ok(StatusCode::OK)
+    Ok(success_response(SuccessOnly {}))
 }
 
 /// API route: DELETE /api/admin/tags/:tid/:tag
@@ -446,7 +464,7 @@ pub async fn delete_tag(
 ) -> Result<impl IntoResponse> {
     let storage = &state.storage;
     storage.delete_tag(&title_id, &tag).await?;
-    Ok(StatusCode::OK)
+    Ok(success_response(SuccessOnly {}))
 }
 
 /// API route: GET /api/download/:tid/:eid
@@ -514,4 +532,120 @@ fn guess_mime_type(data: &[u8]) -> &'static str {
         [0x42, 0x4D, ..] => "image/bmp",
         _ => "application/octet-stream",
     }
+}
+
+// ========== Dimensions API (for reader) ==========
+
+#[derive(Serialize)]
+struct PageDimension {
+    width: u32,
+    height: u32,
+}
+
+#[derive(Serialize)]
+struct DimensionsResponse {
+    dimensions: Vec<PageDimension>,
+}
+
+/// API route: GET /api/dimensions/:tid/:eid
+/// Returns the image dimensions of all pages in an entry (used by reader for layout)
+pub async fn get_dimensions(
+    State(state): State<AppState>,
+    Path((title_id, entry_id)): Path<(String, String)>,
+    _username: crate::auth::Username,
+) -> Result<impl IntoResponse> {
+    let lib = state.library.read().await;
+
+    let entry = lib.get_entry(&title_id, &entry_id).ok_or_else(|| {
+        Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id))
+    })?;
+
+    let mut dimensions = Vec::with_capacity(entry.pages);
+
+    // Get dimensions for each page
+    for page_idx in 0..entry.pages {
+        match entry.get_page(page_idx).await {
+            Ok(data) => {
+                // Try to get image dimensions
+                let (width, height) = get_image_dimensions(&data).unwrap_or((1000, 1000));
+                dimensions.push(PageDimension { width, height });
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to read page {} of entry {}: {}",
+                    page_idx,
+                    entry_id,
+                    e
+                );
+                // Use default dimensions on error
+                dimensions.push(PageDimension {
+                    width: 1000,
+                    height: 1000,
+                });
+            }
+        }
+    }
+
+    Ok(success_response(DimensionsResponse { dimensions }))
+}
+
+/// Get image dimensions from raw image data
+fn get_image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    // Try to use image crate to get dimensions without full decode
+    use std::io::Cursor;
+
+    let reader = image::ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .ok()?;
+
+    let dims = reader.into_dimensions().ok()?;
+    Some(dims)
+}
+
+// ========== Progress API ==========
+
+#[derive(Deserialize)]
+pub struct ProgressQuery {
+    eid: Option<String>,
+}
+
+/// API route: PUT /api/progress/:tid/:page?eid=...
+/// Update reading progress for an entry
+pub async fn update_progress(
+    State(state): State<AppState>,
+    Path((title_id, page)): Path<(String, usize)>,
+    Query(query): Query<ProgressQuery>,
+    crate::auth::Username(username): crate::auth::Username,
+) -> Result<impl IntoResponse> {
+    let entry_id = query.eid.ok_or_else(|| {
+        Error::BadRequest("Missing 'eid' query parameter".to_string())
+    })?;
+
+    let lib = state.library.read().await;
+    let title = lib
+        .get_title(&title_id)
+        .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
+
+    // Verify entry exists
+    let _entry = lib
+        .get_entry(&title_id, &entry_id)
+        .ok_or_else(|| Error::NotFound(format!("Entry not found: {}", entry_id)))?;
+
+    // Save progress
+    title
+        .save_entry_progress(&username, &entry_id, page)
+        .await?;
+
+    // Invalidate cache
+    lib.invalidate_cache_for_progress(&title_id, &username).await;
+    drop(lib);
+
+    tracing::debug!(
+        "Saved progress (legacy): {} / {} = page {}",
+        title_id,
+        entry_id,
+        page
+    );
+
+    Ok(success_response(SuccessOnly {}))
 }

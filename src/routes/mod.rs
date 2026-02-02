@@ -8,14 +8,16 @@ pub mod progress;
 pub mod reader;
 
 pub use admin::{
-    admin_dashboard, cache_clear_api, cache_debug_page, cache_invalidate_api,
+    admin_dashboard, bulk_progress, cache_clear_api, cache_debug_page, cache_invalidate_api,
     cache_load_library_api, cache_save_library_api, create_user, delete_all_missing_entries,
-    delete_missing_entry, delete_user, get_missing_entries, get_users, missing_items_page,
-    scan_library, update_user, users_page,
+    delete_missing_entry, delete_user, generate_thumbnails, get_missing_entries, get_users,
+    missing_items_page, scan_library, thumbnail_progress, update_display_name, update_sort_title,
+    update_user, upload_cover, users_page,
 };
 pub use api::{
-    add_tag, continue_reading, delete_tag, download_entry, get_cover, get_library, get_page,
-    get_stats, get_title, get_title_tags, list_tags, recently_added, start_reading,
+    add_tag, continue_reading, delete_tag, download_entry, get_cover, get_dimensions, get_library,
+    get_page, get_stats, get_title, get_title_tags, list_tags, recently_added, start_reading,
+    update_progress,
 };
 pub use book::get_book;
 pub use login::{get_login, logout, post_login};

@@ -15,14 +15,17 @@ use crate::{
     error::Result,
     library::{spawn_periodic_scanner, Library},
     routes::{
-        add_tag, admin_dashboard, cache_clear_api, cache_debug_page, cache_invalidate_api,
-        cache_load_library_api, cache_save_library_api, change_password_api, change_password_page,
-        continue_reading, create_user, delete_all_missing_entries, delete_missing_entry,
-        delete_tag, delete_user, download_entry, get_all_progress, get_book, get_cover,
-        get_library, get_login, get_missing_entries, get_page, get_progress, get_stats, get_title,
-        get_title_tags, get_users, home, library as library_page, list_tags, list_tags_page,
-        logout, missing_items_page, opds_index, opds_title, post_login, reader, recently_added,
-        save_progress, scan_library, start_reading, update_user, users_page, view_tag_page,
+        add_tag, admin_dashboard, bulk_progress, cache_clear_api, cache_debug_page,
+        cache_invalidate_api, cache_load_library_api, cache_save_library_api, change_password_api,
+        change_password_page, continue_reading, create_user, delete_all_missing_entries,
+        delete_missing_entry, delete_tag, delete_user, download_entry, generate_thumbnails,
+        get_all_progress, get_book, get_cover, get_dimensions, get_library, get_login,
+        get_missing_entries, get_page, get_progress, get_stats, get_title, get_title_tags,
+        get_users, home, library as library_page, list_tags, list_tags_page, logout,
+        missing_items_page, opds_index, opds_title, post_login, reader, recently_added,
+        save_progress, scan_library, start_reading, thumbnail_progress, update_display_name,
+        update_progress, update_sort_title, update_user, upload_cover, users_page,
+        view_tag_page,
     },
     Storage,
 };
@@ -173,12 +176,23 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/library/recently_added", get(recently_added))
         // Progress API
         .route(
-            "/api/progress/:tid/:eid",
-            get(get_progress).post(save_progress),
+            "/api/progress/:tid/:second",
+            get(get_progress).post(save_progress).put(update_progress),
         )
-        .route("/api/progress", get(get_all_progress).put(save_progress))
+        .route("/api/progress", get(get_all_progress))
+        // Dimensions API (for reader)
+        .route("/api/dimensions/:tid/:eid", get(get_dimensions))
         // User API
         .route("/api/user/change-password", post(change_password_api))
+        // Admin metadata API
+        .route("/api/admin/display_name/:tid/:name", put(update_display_name))
+        .route("/api/admin/sort_title/:tid", put(update_sort_title))
+        .route("/api/admin/upload/cover", post(upload_cover))
+        // Bulk progress API
+        .route("/api/bulk_progress/:action/:tid", put(bulk_progress))
+        // Thumbnail generation API
+        .route("/api/admin/thumbnail_progress", get(thumbnail_progress))
+        .route("/api/admin/generate_thumbnails", post(generate_thumbnails))
         // Add state and middleware
         .layer(middleware::from_fn_with_state(
             app_state.clone(),

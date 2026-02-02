@@ -171,6 +171,29 @@ impl Entry {
 
         Ok(result.map(|row| (row.data, row.mime)))
     }
+
+    /// Save custom thumbnail to database (for uploaded covers)
+    pub async fn save_thumbnail(
+        entry_id: &str,
+        data: &[u8],
+        mime: &str,
+        db: &sqlx::SqlitePool,
+    ) -> Result<()> {
+        let size = data.len() as i64;
+
+        // Insert or replace thumbnail
+        sqlx::query!(
+            "INSERT OR REPLACE INTO thumbnails (id, data, mime, size) VALUES (?, ?, ?, ?)",
+            entry_id,
+            data,
+            mime,
+            size
+        )
+        .execute(db)
+        .await?;
+
+        Ok(())
+    }
 }
 
 /// Extract list of image filenames from a ZIP archive

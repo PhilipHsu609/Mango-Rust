@@ -3,22 +3,12 @@
 {% block title %}Tags{% endblock %}
 
 {% block content %}
-<div class="uk-container uk-container-expand">
-    <h2 class="uk-title">Tags</h2>
-    <p class="uk-text-meta">{{ tags.len() }} {% if tags.len() == 1 %}tag{% else %}tags{% endif %} found</p>
+<h2 class="uk-title">Tags</h2>
+<p class="uk-text-meta">{{ tags.len() }} {% if tags.len() == 1 %}tag{% else %}tags{% endif %} found</p>
 
-    <div class="tags-container">
-        {% for tag_with_count in tags %}
-        <span class="uk-label uk-label-primary" style="padding:5px 10px; margin:0 5px 10px 0; text-transform:none; display:inline-block;">
-            <a class="uk-link-reset" href="/tags/{{ tag_with_count.encoded_tag }}">
-                {{ tag_with_count.tag }} ({{ tag_with_count.count }} {% if tag_with_count.count == 1 %}title{% else %}titles{% endif %})
-            </a>
-        </span>
-        {% endfor %}
-
-        {% if tags.is_empty() %}
-        <p class="uk-text-muted">No tags found.</p>
-        {% endif %}
-    </div>
-</div>
+{% for tag in tags %}
+  <span class="uk-label uk-label-primary" style="padding:2px 5px; margin:0 5px 5px 5px; text-transform:none;">
+    <a class="uk-link-reset" href="/tags/{{ tag.encoded_tag }}">{{ tag.tag }} ({{ tag.count }} {% if tag.count == 1 %}title{% else %}titles{% endif %})</a>
+  </span>
+{% endfor %}
 {% endblock %}

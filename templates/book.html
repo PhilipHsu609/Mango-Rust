@@ -1,154 +1,107 @@
 {% extends "base.html" %}
+{% import "components/card.html" as card %}
+{% import "components/sort-form.html" as sort %}
+{% import "components/entry-modal.html" as modal %}
+{% import "components/edit-modal.html" as edit %}
+{% import "components/dots.html" as dots %}
 
-{% block title %}{{ title_name }} - Book{% endblock %}
+{% block title %}{{ title.display_name }}{% endblock %}
+
+{% block head %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-beta.1/dist/css/select2.min.css" rel="stylesheet" />
+<link href="/static/dist/css/tags.css" rel="stylesheet" />
+{% endblock %}
 
 {% block content %}
-<div x-data="bookData()">
-    <!-- Header Section -->
-    <div>
-        <h2 class="uk-title">{{ title_name }}</h2>
+<div>
+  {# Batch select bar - shows when items are selected #}
+  <div id="select-bar" class="uk-card uk-card-body uk-card-default uk-margin-bottom" uk-sticky="offset:10" x-data="{count: 0}" @add.window="count++; $dispatch('count', {count: count})" @remove.window="count--; $dispatch('count', {count: count})" x-show="count > 0" style="border:orange;border-style:solid;" x-cloak data-id="{{ title.id }}">
+    <div class="uk-child-width-1-3" uk-grid>
+      <div>
+        <p x-text="count + ' items selected'" style="color:orange"></p>
+      </div>
+      <div class="uk-text-center" id="select-bar-controls">
+        <a class="uk-icon uk-margin-right" uk-tooltip="title: Mark selected as read" href="" @click.prevent="bulkProgress('read', $el)">
+          <i class="fas fa-check-circle"></i>
+        </a>
+        <a class="uk-icon" uk-tooltip="title: Mark selected as unread" href="" @click.prevent="bulkProgress('unread', $el)">
+          <i class="fas fa-times-circle"></i>
+        </a>
+      </div>
+      <div class="uk-text-right">
+        <a @click="selectAll()" uk-tooltip="title: Select all"><i class="fas fa-check-double uk-margin-small-right"></i></a>
+        <a @click="deselectAll();" uk-tooltip="title: Deselect all"><i class="fas fa-times"></i></a>
+      </div>
     </div>
-    <ul class="uk-breadcrumb">
-        <li><a href="/library">Library</a></li>
-        <li class="uk-disabled"><a>{{ title_name }}</a></li>
-    </ul>
-    <p class="uk-text-meta">{{ entry_count }} {% if entry_count == 1 %}entry{% else %}entries{% endif %} found</p>
+  </div>
 
-    <!-- Tags Section -->
+  {# Title header with edit button #}
+  <h2 class="uk-title" data-file-title="{{ title.title }}" data-sort-title="{{ title.sort_title.as_deref().unwrap_or("") }}">
+    <span>{{ title.display_name }}</span>
+    &nbsp;
     {% if nav.is_admin %}
-    <div class="uk-margin" x-data="tagsData()" x-cloak data-title-id="{{ title_id }}">
-        <h4 class="uk-margin-small-bottom">Tags</h4>
-        <div class="uk-margin-small-bottom">
-            <template x-for="tag in tags" :key="tag">
-                <span class="uk-label uk-label-primary uk-margin-small-right uk-margin-small-bottom"
-                      style="padding:5px 10px; text-transform:none; display:inline-block;">
-                    <span x-text="tag"></span>
-                    <button @click="deleteTag(tag)"
-                            class="uk-close-small uk-margin-small-left"
-                            type="button"
-                            style="color:white; opacity:0.7;"
-                            :disabled="deletingTag === tag">×</button>
-                </span>
-            </template>
-            <span x-show="tags.length === 0" class="uk-text-muted">No tags</span>
-        </div>
-        <div class="uk-flex uk-flex-middle" x-show="showAddForm" style="position:relative;">
-            <div style="position:relative; width:300px;">
-                <input type="text"
-                       class="uk-input uk-form-small"
-                       placeholder="Enter tag name"
-                       x-model="newTag"
-                       @input="showSuggestions = true"
-                       @keydown.enter="addTag()"
-                       @keydown.escape="cancelAdd()"
-                       @focus="showSuggestions = true"
-                       @blur="setTimeout(() => showSuggestions = false, 200)">
-                <div x-show="showSuggestions && filteredSuggestions.length > 0"
-                     class="uk-dropdown" style="position:absolute; top:100%; left:0; right:0; display:block; max-height:200px; overflow-y:auto;">
-                    <ul class="uk-nav uk-dropdown-nav">
-                        <template x-for="suggestion in filteredSuggestions.slice(0, 10)" :key="suggestion">
-                            <li><a @click="selectSuggestion(suggestion)" x-text="suggestion"></a></li>
-                        </template>
-                    </ul>
-                </div>
-            </div>
-            <button class="uk-button uk-button-primary uk-button-small uk-margin-small-left"
-                    @click="addTag()"
-                    :disabled="!newTag.trim() || addingTag">Add</button>
-            <button class="uk-button uk-button-default uk-button-small uk-margin-small-left"
-                    @click="cancelAdd()">Cancel</button>
-        </div>
-        <button x-show="!showAddForm"
-                class="uk-button uk-button-default uk-button-small"
-                @click="showAddForm = true">+ Add Tag</button>
-    </div>
+      <a onclick="edit()" class="uk-icon-button" uk-icon="icon:pencil"></a>
     {% endif %}
-
-    <!-- Search and Sort Controls -->
-    <div class="uk-grid-small" uk-grid>
-        <div class="uk-margin-bottom uk-width-3-4@s">
-            <form class="uk-search uk-search-default">
-                <span uk-search-icon></span>
-                <input class="uk-search-input" type="search" placeholder="Search" x-model="searchQuery">
-            </form>
-        </div>
-        <div class="uk-margin-bottom uk-width-1-4@s">
-            <select class="uk-select" @change="handleSortChange($event)">
-            <option value="title:1"{% if sort_title_asc %} selected{% endif %}>▲ Name</option>
-            <option value="title:0"{% if sort_title_desc %} selected{% endif %}>▼ Name</option>
-            <option value="modified:1"{% if sort_modified_asc %} selected{% endif %}>▲ Date Modified</option>
-            <option value="modified:0"{% if sort_modified_desc %} selected{% endif %}>▼ Date Modified</option>
-            <option value="progress:1"{% if sort_progress_asc %} selected{% endif %}>▲ Progress</option>
-            <option value="progress:0"{% if sort_progress_desc %} selected{% endif %}>▼ Progress</option>
-            </select>
-        </div>
-    </div>
-
-    <!-- Entries Grid - UIkit responsive grid -->
-    <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
-        {% for entry in entries %}
-        <div class="item" id="{{ entry.entry_id }}"
-             x-show="matchesSearch('{{ entry.entry_name }}')">
-            <div class="uk-card uk-card-default uk-card-hover is_entry"
-                 @click="openModal('{{ title_id }}', '{{ entry.entry_id }}', '{{ entry.entry_name }}', '{{ entry.path }}', {{ entry.pages }}, {{ entry.progress }}, {{ entry.saved_page }})"
-                 data-pages="{{ entry.pages }}"
-                 data-progress="{{ entry.progress }}"
-                 data-id="{{ entry.entry_id }}">
-                <div class="uk-card-media-top">
-                    <img src="/api/cover/{{ title_id }}/{{ entry.entry_id }}" alt="{{ entry.entry_name }}" loading="lazy">
-                </div>
-                <div class="uk-card-body">
-                    <div class="uk-card-badge label">{{ entry.progress_display }}%</div>
-                    <h3 class="uk-card-title break-word">{{ entry.entry_name }}</h3>
-                    <p class="uk-text-meta">{{ entry.pages }} pages</p>
-                </div>
-            </div>
-        </div>
-        {% endfor %}
-
-        {% if entries.is_empty() %}
-        <div class="uk-width-1-1">
-            <p class="uk-text-muted">No entries found.</p>
-        </div>
-        {% endif %}
-    </div>
-
-    <!-- Entry Modal -->
-    <div id="entry-modal" class="uk-flex-top" uk-modal>
-        <div class="uk-modal-dialog uk-margin-auto-vertical">
-            <button class="uk-modal-close-default" type="button" uk-close></button>
-            <div class="uk-modal-header">
-                <h3 class="uk-modal-title break-word" x-text="modalData.entryName">Entry Name</h3>
-            </div>
-            <div class="uk-modal-body">
-                <p class="uk-text-meta" x-text="modalData.entryPath">/path/to/entry</p>
-                <p x-text="`${modalData.pages} pages`">0 pages</p>
-
-                <div class="uk-margin">
-                    <label class="uk-form-label">Read</label>
-                    <p class="uk-margin-small-top">
-                        <a :href="`/reader/${modalData.titleId}/${modalData.entryId}/1`" class="uk-button uk-button-default">From Beginning</a>
-                        <a :href="`/reader/${modalData.titleId}/${modalData.entryId}/${modalData.resumePage}`"
-                           class="uk-button uk-button-primary"
-                           x-show="modalData.progress > 0 && modalData.progress < 100">
-                            Continue from <span x-text="`${modalData.progress.toFixed(1)}%`">0.0%</span>
-                        </a>
-                    </p>
-                </div>
-
-                <div class="uk-margin">
-                    <label class="uk-form-label">Progress</label>
-                    <p class="uk-margin-small-top">
-                        <button class="uk-button uk-button-default" @click="markAsRead()">Mark as read (100%)</button>
-                        <button class="uk-button uk-button-default" @click="markAsUnread()">Mark as unread (0%)</button>
-                    </p>
-                </div>
-            </div>
-        </div>
-    </div>
+  </h2>
 </div>
+
+{# Breadcrumb navigation #}
+<ul class="uk-breadcrumb">
+  <li><a href="/library">Library</a></li>
+  {% for parent in title.parents %}
+    <li><a href="/book/{{ parent.id }}">{{ parent.display_name }}</a></li>
+  {% endfor %}
+  <li class="uk-disabled"><a>{{ title.display_name }}</a></li>
+</ul>
+<p class="uk-text-meta">{{ title.content_label }} found</p>
+
+{# Tags section with Select2 #}
+<div class="uk-margin" x-data="tagsComponent()" x-cloak x-init="load({{ nav.is_admin|lower }})" x-show="!loading">
+  <select class="tag-select" multiple="multiple" style="width:100%">
+  </select>
+</div>
+
+{# Search and sort controls #}
+<div class="uk-grid-small" uk-grid>
+  <div class="uk-margin-bottom uk-width-3-4@s">
+    <form class="uk-search uk-search-default">
+      <span uk-search-icon></span>
+      <input class="uk-search-input" type="search" placeholder="Search">
+    </form>
+  </div>
+  <div class="uk-margin-bottom uk-width-1-4@s">
+    {% call sort::render_sort_form(sort_options, sort_opt) %}
+  </div>
+</div>
+
+{# Nested titles grid #}
+{% if !nested_title_items.is_empty() %}
+<div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
+  {% for nested_item in nested_title_items %}
+    {% call card::render_card(nested_item.item, nested_item.progress, "title", nav.is_admin) %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{# Entries grid #}
+<div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
+  {% for entry_item in items %}
+    {% call card::render_card(entry_item.item, entry_item.progress, "title", nav.is_admin) %}
+  {% endfor %}
+</div>
+
+{# Entry modal - for viewing entry details #}
+{% call modal::render_entry_modal("title", nav.is_admin) %}
+
+{# Edit modal - for editing title/entry #}
+{% call edit::render_edit_modal(title, supported_img_types) %}
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/book.js"></script>
+{% call dots::render_dots() %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-beta.1/dist/js/select2.min.js"></script>
+<script src="/static/js/alert.js"></script>
+<script src="/static/js/title.js"></script>
+<script src="/static/js/search.js"></script>
+<script src="/static/js/sort-items.js"></script>
 {% endblock %}

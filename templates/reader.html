@@ -1,144 +1,196 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="reader-bg">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ entry_name }} - Page {{ current_page }}</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/css/uikit.min.css" />
-    <link rel="stylesheet" href="/static/dist/css/main.css" />
+  <meta charset="utf-8">
+  <meta name="X-UA-Compatible" content="IE=edge">
+  <title>Mango - Reader</title>
+  <meta name="description" content="Mango - Manga Server and Web Reader">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/dist/css/mango.css" />
+  <link rel="icon" href="/static/favicon.ico">
+  <link rel="manifest" href="/static/manifest.json">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/gh/alpinejs/alpine@v2.8.0/dist/alpine.min.js"></script>
+  <script nomodule src="https://cdn.jsdelivr.net/gh/alpinejs/alpine@v2.8.0/dist/alpine-ie11.min.js" defer></script>
+  <script src="/static/js/common.js"></script>
 </head>
-<body class="reader-page paged-mode fit-height">
-    <div id="reader-container">
-        <!-- Settings button -->
-        <button id="settings-btn" onclick="UIkit.modal('#settings-modal').show()">⚙️</button>
 
-        <!-- Loading indicator -->
-        <div id="loading">Loading...</div>
+<body style="position:relative;" x-data="readerComponent()" x-init="init($nextTick)" @resize.window="resized()">
+  <div class="uk-section uk-section-default uk-section-small reader-bg" :style="mode === 'continuous' ? '' : 'padding:0; position: relative;'">
 
-        <!-- Continuous mode container -->
-        <div id="continuous-container">
-            <!-- Images will be inserted here by JavaScript -->
+    <div @keydown.window.debounce="keyHandler($event)"></div>
+
+    <div class="uk-container uk-container-small">
+      <div id="alert"></div>
+      <div x-show="loading">
+        <div :class="alertClass" x-show="msg" uk-alert>
+          <p x-text="msg"></p>
         </div>
-
-        <!-- Paged mode container -->
-        <div id="paged-container">
-            <img id="paged-image" alt="Page {{ current_page }}">
-            <div class="click-zone click-zone-left" onclick="handleLeftClick()"></div>
-            <div class="click-zone click-zone-right" onclick="handleRightClick()"></div>
-        </div>
+      </div>
     </div>
 
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="uk-flex-top" uk-modal>
-        <div class="uk-modal-dialog uk-margin-auto-vertical">
-            <button class="uk-modal-close-default" type="button" uk-close></button>
-            <div class="uk-modal-header">
-                <h3 class="uk-modal-title break-word">{{ entry_name }}</h3>
-                <p class="uk-text-meta uk-margin-remove-bottom break-word">{{ entry_path }}</p>
-            </div>
-            <div class="uk-modal-body">
-                <!-- Progress -->
-                <div class="uk-margin">
-                    <p id="progress-text">Progress: {{ current_page }}/{{ total_pages }}</p>
-                </div>
+    <div
+      :class="{'uk-container': true, 'uk-container-small': mode === 'continuous', 'uk-container-expand': mode !== 'continuous'}" style="width: fit-content;">
+      <div x-show="!loading && mode === 'continuous'" x-cloak>
+        <template x-if="!loading && mode === 'continuous'" x-for="item in items">
+          <img
+            uk-img
+            :class="{'uk-align-center': true, 'spine': item.width < 50}"
+            :data-src="item.url"
+            :width="item.width"
+            :height="item.height"
+            :id="item.id"
+            :style="`margin-top:${margin}px; margin-bottom:${margin}px`"
+            @click="clickImage($event)"
+            />
+        </template>
+        {% if let Some(url) = next_entry_url %}
+          <button id="next-btn" class="uk-align-center uk-button uk-button-primary" @click="nextEntry('{{ url }}')">Next Entry</button>
+        {% else %}
+          <button id="next-btn" class="uk-align-center uk-button uk-button-primary" @click="exitReader('{{ exit_url }}')">Exit Reader</button>
+        {% endif %}
+      </div>
 
-                <!-- Jump to Page -->
-                <div class="uk-margin">
-                    <label class="uk-form-label" for="page-select">Jump to Page</label>
-                    <div class="uk-form-controls">
-                        <select id="page-select" class="uk-select" onchange="jumpToPage()">
-                            {% for p in 1..=total_pages %}
-                            <option value="{{ p }}"{% if p == current_page %} selected{% endif %}>{{ p }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
+      <div x-cloak x-show="!loading && mode !== 'continuous'" class="uk-flex uk-flex-middle" :style="`height:${fitType === 'vert' ? '100vh' : ''}; min-width: fit-content;`">
 
-                <!-- Reading Mode -->
-                <div class="uk-margin">
-                    <label class="uk-form-label" for="mode-select">Mode</label>
-                    <div class="uk-form-controls">
-                        <select id="mode-select" class="uk-select" onchange="changeMode()">
-                            <option value="continuous">Continuous</option>
-                            <option value="paged" selected>Paged</option>
-                        </select>
-                    </div>
-                </div>
+        <img uk-img :class="{
+                             'uk-align-center': true,
+                             'uk-animation-slide-left': flipAnimation === 'left',
+                             'uk-animation-slide-right': flipAnimation === 'right'
+                             }" :data-src="curItem.url" :width="curItem.width" :height="curItem.height" :id="curItem.id" @click="clickImage($event)" :style="`
+                                                                                                                                                               width:${fitType === 'horz' ? '100vw' : 'auto'};
+                                                                                                                                                               height:${fitType === 'vert' ? '100vh' : 'auto'};
+                                                                                                                                                               margin-bottom:0;
+                                                                                                                                                               max-width:${fitType === 'horz' ? '100%' : fitType === 'vert' ? '' : 'none' };
+                                                                                                                                                               max-height:${fitType === 'vert' ? '100%' : fitType === 'horz' ? '' : 'none'};
+                                                                                                                                                               object-fit: contain;
+                                                                                                                                                               `" />
 
-                <!-- Page Fit (paged mode only) -->
-                <div class="uk-margin" id="fit-section">
-                    <label class="uk-form-label" for="fit-select">Page Fit</label>
-                    <div class="uk-form-controls">
-                        <select id="fit-select" class="uk-select" onchange="changeFit()">
-                            <option value="height" selected>Fit Height</option>
-                            <option value="width">Fit Width</option>
-                            <option value="real">Real Size</option>
-                        </select>
-                    </div>
-                </div>
+        <div style="position:absolute;z-index:1; top:0;left:0; width:30%;height:100%;" @click="flipPage(false ^ enableRightToLeft)"></div>
+        <div style="position:absolute;z-index:1; top:0;right:0; width:30%;height:100%;" @click="flipPage(true ^ enableRightToLeft)"></div>
+      </div>
 
-                <!-- Page Margin (continuous mode only) -->
-                <div class="uk-margin uk-hidden" id="margin-section">
-                    <label class="uk-form-label" for="margin-range">Page Margin: <span id="margin-value">20</span>px</label>
-                    <div class="uk-form-controls">
-                        <input id="margin-range" class="uk-range" type="range" min="0" max="50" step="5" value="20" oninput="changeMargin()">
-                    </div>
-                </div>
-
-                <!-- Enable Flip Animation (paged mode only) -->
-                <div class="uk-margin" id="animation-section">
-                    <label class="uk-form-label" for="enable-flip-animation">Enable Flip Animation</label>
-                    <div class="uk-form-controls">
-                        <input id="enable-flip-animation" class="uk-checkbox" type="checkbox" checked onchange="toggleAnimation()">
-                    </div>
-                </div>
-
-                <!-- Preload Images (paged mode only) -->
-                <div class="uk-margin" id="preload-section">
-                    <label class="uk-form-label" for="preload-range">Preload: <span id="preload-value">2</span> page(s)</label>
-                    <div class="uk-form-controls">
-                        <input id="preload-range" class="uk-range" type="range" min="0" max="5" step="1" value="2" oninput="changePreload()">
-                    </div>
-                </div>
-
-                <!-- Right to Left (paged mode only) -->
-                <div class="uk-margin" id="rtl-section">
-                    <label class="uk-form-label" for="enable-rtl">Right to Left</label>
-                    <div class="uk-form-controls">
-                        <input id="enable-rtl" class="uk-checkbox" type="checkbox" onchange="toggleRTL()">
-                    </div>
-                </div>
-
-                <hr class="uk-divider-icon">
-
-                <!-- Jump to Entry -->
-                <div class="uk-margin">
-                    <label class="uk-form-label" for="entry-select">Jump to Entry</label>
-                    <div class="uk-form-controls">
-                        <select id="entry-select" class="uk-select" onchange="jumpToEntry()">
-                            {% for entry in entries %}
-                            <option value="{{ entry.id }}"{% if entry.id == entry_id %} selected{% endif %}>{{ entry.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-            </div>
-            <div class="uk-modal-footer uk-text-right">
-                {% if let Some(url) = prev_entry_url %}
-                <a class="uk-button uk-button-default uk-margin-small-bottom uk-margin-small-right" href="{{ url }}">Previous Entry</a>
-                {% endif %}
-                {% if let Some(url) = next_entry_url %}
-                <a class="uk-button uk-button-default uk-margin-small-bottom uk-margin-small-right" href="{{ url }}">Next Entry</a>
-                {% endif %}
-                <a class="uk-button uk-button-danger uk-margin-small-bottom uk-margin-small-right" href="{{ exit_url }}">Exit Reader</a>
-            </div>
-        </div>
     </div>
+  </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
-    <script src="/static/src/js/core.js"></script>
-    <script>
-    {% include "reader.js" %}
-    </script>
+  <div id="modal-sections" class="uk-flex-top" uk-modal>
+    <div class="uk-modal-dialog uk-margin-auto-vertical">
+      <button class="uk-modal-close-default" type="button" uk-close></button>
+      <div class="uk-modal-header">
+        <h3 class="uk-modal-title break-word">{{ entry_name }}</h3>
+        <p class="uk-text-meta uk-margin-remove-bottom break-word">{{ entry_path }}</p>
+      </div>
+      <div class="uk-modal-body">
+        <div class="uk-margin">
+          <p x-text="`Progress: ${selectedIndex}/${items.length} (${(selectedIndex/items.length * 100).toFixed(1)}%)`"></p>
+        </div>
+        <div class="uk-margin">
+          <label class="uk-form-label" for="page-select">Jump to Page</label>
+          <div class="uk-form-controls">
+            <select id="page-select" class="uk-select" @change="pageChanged()" x-model="selectedIndex">
+              {% for p in 1..=total_pages %}
+                <option value="{{ p }}">{{ p }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="uk-margin">
+          <label class="uk-form-label" for="mode-select">Mode</label>
+          <div class="uk-form-controls">
+            <select id="mode-select" class="uk-select" @change="modeChanged($nextTick)">
+              <option value="continuous">Continuous</option>
+              <option value="paged">Paged</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="uk-margin" x-show="mode !== 'continuous'">
+          <label class="uk-form-label" for="fit-select">Page fit</label>
+          <div class="uk-form-controls">
+            <select id="fit-select" class="uk-select" @change="fitChanged()">
+              <option value="vert">Fit height</option>
+              <option value="horz">Fit width</option>
+              <option value="real">Real size</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="uk-margin" x-show="mode === 'continuous'">
+          <label class="uk-form-label" for="margin-range" x-text="`Page Margin: ${margin}px`"></label>
+          <div class="uk-form-controls">
+            <input id="margin-range" class="uk-range" type="range" min="0" max="50" step="5" x-model="margin" @change="marginChanged()">
+          </div>
+        </div>
+
+        <div class="uk-margin uk-form-horizontal" x-show="mode !== 'continuous'">
+          <label class="uk-form-label" for="enable-flip-animation">Enable Flip Animation</label>
+          <div class="uk-form-controls">
+            <input id="enable-flip-animation" class="uk-checkbox" type="checkbox" x-model="enableFlipAnimation" @change="enableFlipAnimationChanged()">
+          </div>
+        </div>
+        <div class="uk-margin uk-form-horizontal" x-show="mode !== 'continuous'">
+          <label class="uk-form-label" for="preload-lookahead" x-text="`Preload Image: ${preloadLookahead} page(s)`"></label>
+          <div class="uk-form-controls">
+            <input id="preload-lookahead" class="uk-range" type="range" min="0" max="5" step="1" x-model.number="preloadLookahead" @change="preloadLookaheadChanged()">
+          </div>
+        </div>
+
+        <div class="uk-margin uk-form-horizontal" x-show="mode !== 'continuous'">
+          <label class="uk-form-label" for="enable-right-to-left">Right to Left</label>
+          <div class="uk-form-controls">
+            <input id="enable-right-to-left" class="uk-checkbox" type="checkbox" x-model="enableRightToLeft" @change="enableRightToLeftChanged()">
+          </div>
+        </div>
+        <hr class="uk-divider-icon">
+
+        <div class="uk-margin">
+          <label class="uk-form-label" for="entry-select">Jump to Entry</label>
+          <div class="uk-form-controls">
+            <select id="entry-select" class="uk-select" @change="entryChanged()">
+              {% for entry in entries %}
+                <option value="{{ entry.id }}"
+                {% if entry.id == entry_id %}
+                  selected
+                {% endif %}>
+                {{ entry.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="uk-modal-footer uk-text-right">
+        {% if let Some(url) = prev_entry_url %}
+          <a class="uk-button uk-button-default uk-margin-small-bottom uk-margin-small-right" href="{{ url }}">Previous Entry</a>
+        {% endif %}
+        {% if let Some(url) = next_entry_url %}
+          <a class="uk-button uk-button-default uk-margin-small-bottom uk-margin-small-right" href="{{ url }}">Next Entry</a>
+        {% endif %}
+        <a class="uk-button uk-button-danger uk-margin-small-bottom uk-margin-small-right" href="{{ exit_url }}">Exit Reader</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const base_url = "/";
+    const page = {{ current_page }};
+    const tid = "{{ title_id }}";
+    const eid = "{{ entry_id }}";
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/protonet-jquery.inview/1.1.2/jquery.inview.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/uikit@3.5.9/dist/js/uikit-icons.min.js"></script>
+  <script src="/static/js/alert.js"></script>
+  <script src="/static/js/reader.js"></script>
 </body>
+
+<style>
+img[data-src][src*='data:image'] { background: white; }
+img:not(.spine) { width: 100%; }
+.reader-bg { background: black; }
+</style>
+
 </html>
