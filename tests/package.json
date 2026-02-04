@@ -1,46 +1,24 @@
 {
   "name": "mango-rust-integration-tests",
   "version": "1.0.0",
-  "description": "Integration tests for Mango-Rust using Playwright",
+  "description": "Integration tests for Mango-Rust",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "playwright test",
-    "test:headed": "playwright test --headed",
-    "test:debug": "playwright test --debug",
-    "test:ui": "playwright test --ui",
-    "test:theme": "playwright test integration/theme.spec.ts",
-    "test:reader": "playwright test integration/reader.spec.ts",
-    "test:navigation": "playwright test integration/navigation.spec.ts",
-    "test:library": "playwright test integration/library.spec.ts",
-    "test:report": "playwright show-report",
-    "test:ci": "playwright test --reporter=html,json",
-    "lint": "eslint . --ext .ts",
-    "lint:fix": "eslint . --ext .ts --fix",
-    "format": "prettier --write \"**/*.ts\"",
-    "format:check": "prettier --check \"**/*.ts\""
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "playwright test",
+    "test:ci": "vitest run && playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.9.0",
-    "@typescript-eslint/eslint-plugin": "^8.14.0",
-    "@typescript-eslint/parser": "^8.14.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.4.6",
-    "eslint": "^9.14.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-playwright": "^2.0.0",
-    "prettier": "^3.3.3",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.0"
   },
-  "keywords": [
-    "playwright",
-    "integration-tests",
-    "e2e",
-    "testing"
-  ],
-  "author": "",
   "license": "MIT"
 }

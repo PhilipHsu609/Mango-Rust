@@ -12,7 +12,10 @@
     "copy:font": "mkdir -p static/dist/webfonts && cp node_modules/@fortawesome/fontawesome-free/webfonts/fa-solid-900.woff* static/dist/webfonts/",
     "build:css": "lessc static/css/mango.less static/dist/css/mango.css && lessc static/css/tags.less static/dist/css/tags.css",
     "build": "npm run copy:img && npm run copy:font && npm run build:css",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "playwright test",
+    "test:ci": "vitest run && playwright test"
   },
   "repository": {
     "type": "git",
@@ -29,6 +32,7 @@
   "devDependencies": {
     "@fortawesome/fontawesome-free": "^6.7.2",
     "less": "3.13.1",
-    "uikit": "3.5.9"
+    "uikit": "3.5.9",
+    "vitest": "^2.0.0"
   }
 }
