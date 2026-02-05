@@ -6,7 +6,7 @@ describe('Progress API', () => {
     await login();
   });
 
-  describe('PUT /api/progress/:tid/:eid', () => {
+  describe('POST /api/progress/:tid/:eid', () => {
     it('updates reading progress', async () => {
       // Get a title with entries first
       const libraryResponse = await api.get('/api/library');
@@ -28,8 +28,8 @@ describe('Progress API', () => {
 
       const entryId = title.entries[0].id;
 
-      // Update progress via PUT
-      const response = await api.put(`/api/progress/${titleId}/${entryId}`, { page: 5 });
+      // Update progress via POST
+      const response = await api.post(`/api/progress/${titleId}/${entryId}`, { page: 5 });
 
       expect([200, 204]).toContain(response.status);
     });

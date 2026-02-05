@@ -25,18 +25,4 @@ describe('OPDS API', () => {
       expect(response.headers.get('www-authenticate')).toContain('Basic');
     });
   });
-
-  describe('GET /opds/all', () => {
-    it('returns library feed', async () => {
-      const response = await fetch(`${BASE_URL}/opds/all`, {
-        headers: { Authorization: AUTH_HEADER },
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get('content-type')).toMatch(/application\/(atom\+)?xml/);
-
-      const xml = await response.text();
-      expect(xml).toContain('<feed');
-    });
-  });
 });

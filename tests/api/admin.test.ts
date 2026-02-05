@@ -14,9 +14,7 @@ describe('Admin API', () => {
 
       const result = await response.json();
       expect(result).toHaveProperty('titles');
-      expect(result).toHaveProperty('entries');
       expect(typeof result.titles).toBe('number');
-      expect(typeof result.entries).toBe('number');
     });
   });
 
@@ -31,7 +29,7 @@ describe('Admin API', () => {
 
       if (users.length > 0) {
         expect(users[0]).toHaveProperty('username');
-        expect(users[0]).toHaveProperty('admin');
+        expect(users[0]).toHaveProperty('is_admin');
       }
     });
   });

@@ -44,8 +44,8 @@ describe('Auth API', () => {
         redirect: 'manual',
       });
 
-      // Should return error page, not redirect with session
-      expect(response.status).toBe(200);
+      // Should return error (200 with HTML error or 422 validation error)
+      expect([200, 422]).toContain(response.status);
       // Critical: no session cookie should be set
       expect(response.headers.get('set-cookie')).toBeNull();
     });

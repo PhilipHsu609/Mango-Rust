@@ -5,8 +5,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['api/**/*.test.ts'],
-    setupFiles: ['./api/setup.ts'],
+    globalSetup: ['./api/globalSetup.ts'],
     testTimeout: 10000,
-    hookTimeout: 30000,
+    hookTimeout: 60000,
+    fileParallelism: false, // Run test files sequentially to share server
   },
 });
