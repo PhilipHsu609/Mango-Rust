@@ -11,7 +11,7 @@ test.describe('Smoke Tests', () => {
     await page.goto('/login');
     await page.fill('input[name="username"]', 'testuser');
     await page.fill('input[name="password"]', 'testpass123');
-    await page.click('button[type="submit"]');
+    await page.click('button.uk-button-primary');
 
     await expect(page).toHaveURL('/');
   });
@@ -20,7 +20,7 @@ test.describe('Smoke Tests', () => {
     await page.goto('/login');
     await page.fill('input[name="username"]', 'testuser');
     await page.fill('input[name="password"]', 'testpass123');
-    await page.click('button[type="submit"]');
+    await page.click('button.uk-button-primary');
 
     await page.goto('/library');
     await expect(page).toHaveURL('/library');
@@ -30,7 +30,7 @@ test.describe('Smoke Tests', () => {
     await page.goto('/login');
     await page.fill('input[name="username"]', 'testuser');
     await page.fill('input[name="password"]', 'testpass123');
-    await page.click('button[type="submit"]');
+    await page.click('button.uk-button-primary');
 
     await page.goto('/logout');
 

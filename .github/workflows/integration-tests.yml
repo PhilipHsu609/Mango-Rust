@@ -80,7 +80,6 @@ jobs:
           npm run test:smoke
         env:
           CI: true
-        continue-on-error: true  # Smoke tests are optional
 
       - name: Upload test results
         if: always()
