@@ -247,7 +247,11 @@ pub async fn get_book(
                 total_titles,
                 if total_titles == 1 { "title" } else { "titles" },
                 total_entries,
-                if total_entries == 1 { "entry" } else { "entries" }
+                if total_entries == 1 {
+                    "entry"
+                } else {
+                    "entries"
+                }
             )
         } else if total_titles > 0 {
             format!(
@@ -259,7 +263,11 @@ pub async fn get_book(
             format!(
                 "{} {}",
                 total_entries,
-                if total_entries == 1 { "entry" } else { "entries" }
+                if total_entries == 1 {
+                    "entry"
+                } else {
+                    "entries"
+                }
             )
         };
 

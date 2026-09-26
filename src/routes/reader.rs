@@ -157,5 +157,8 @@ pub async fn reader_continue(
         progress_page.max(1)
     };
 
-    Ok(Redirect::to(&format!("/reader/{}/{}/{}", title_id, entry_id, page)))
+    Ok(Redirect::to(&format!(
+        "/reader/{}/{}/{}",
+        title_id, entry_id, page
+    )))
 }
