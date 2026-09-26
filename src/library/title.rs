@@ -44,63 +44,78 @@ impl Title {
             .and_then(|s| s.to_str())
             .unwrap_or("Unknown")
             .to_string();
+        let id = Uuid::new_v4().to_string();
+        let mut mtime = tokio::fs::metadata(&path)
+            .await?
+            .modified()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
 
-        let nested_titles = Vec::new();
-
-        // Collect all archive paths first
         let mut archive_paths = Vec::new();
+        let mut child_paths = Vec::new();
         let mut dir_entries = tokio::fs::read_dir(&path).await?;
-
         while let Some(entry) = dir_entries.next_entry().await? {
             let entry_path = entry.path();
-
-            if entry_path.is_dir() {
-                // For Week 2: treat subdirectories as nested titles (simplified)
-                // TODO Week 5: Add proper nested title support
+            if entry_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with('.'))
+            {
                 continue;
+            }
+            if entry_path.is_dir() {
+                child_paths.push(entry_path);
             } else if is_archive(&entry_path) {
                 archive_paths.push(entry_path);
             }
         }
 
-        // Process all entries in parallel for better performance
         let entry_tasks: Vec<_> = archive_paths
             .into_iter()
             .map(|entry_path| {
                 tokio::spawn(async move {
-                    let mut manga_entry = Entry::from_archive(entry_path).await?;
-                    manga_entry.calculate_signature()?;
-                    Ok::<Entry, crate::error::Error>(manga_entry)
+                    let mut entry = Entry::from_archive(entry_path).await?;
+                    entry.calculate_signature()?;
+                    Ok::<Entry, crate::error::Error>(entry)
                 })
             })
             .collect();
 
-        // Collect all results
         let mut entries = Vec::new();
         for task in entry_tasks {
             match task.await {
                 Ok(Ok(entry)) => entries.push(entry),
-                Ok(Err(e)) => {
-                    tracing::warn!("Failed to process entry: {}", e);
-                }
-                Err(e) => {
-                    tracing::warn!("Entry processing task failed: {}", e);
-                }
+                Ok(Err(error)) => tracing::warn!("Failed to process entry: {}", error),
+                Err(error) => tracing::warn!("Entry processing task failed: {}", error),
             }
         }
 
-        // Sort entries by title (natural ordering)
+        let mut nested_titles = Vec::new();
+        for child_path in child_paths {
+            let mut child_title = Box::pin(Self::from_directory(child_path.clone())).await?;
+            if !child_title.entries.is_empty() || !child_title.nested_titles.is_empty() {
+                child_title.parent_id = Some(id.clone());
+                mtime = mtime.max(child_title.mtime);
+                nested_titles.push(child_title);
+            }
+
+            if let Some(mut entry) = Entry::from_directory(child_path).await? {
+                entry.calculate_signature()?;
+                mtime = mtime.max(entry.mtime);
+                entries.push(entry);
+            }
+        }
+
         entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
+        nested_titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
+        mtime = mtime.max(entries.iter().map(|entry| entry.mtime).max().unwrap_or(0));
 
-        // Calculate latest mtime
-        let mtime = entries.iter().map(|e| e.mtime).max().unwrap_or(0);
-
-        // Calculate signatures
         let signature = calculate_dir_signature(&path)?;
         let contents_signature = calculate_contents_signature(&path)?;
 
         Ok(Self {
-            id: Uuid::new_v4().to_string(),
+            id,
             path,
             title,
             signature,
@@ -112,28 +127,43 @@ impl Title {
         })
     }
 
-    /// Get total number of pages across all entries
+    /// Get total number of pages across this title and nested titles.
     pub fn total_pages(&self) -> usize {
-        self.entries.iter().map(|e| e.pages).sum()
+        self.deep_entries().iter().map(|entry| entry.pages).sum()
     }
 
-    /// Get entries sorted by specified method and order
-    pub fn get_entries_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Entry> {
-        let mut entries: Vec<&Entry> = self.entries.iter().collect();
-
+    /// Get nested titles sorted with Mango's title ordering.
+    pub fn get_nested_titles_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Title> {
+        let mut titles: Vec<&Title> = self.nested_titles.iter().collect();
         use super::{sort_by_mtime, sort_by_name};
-
         match method {
-            SortMethod::Name | SortMethod::Progress | SortMethod::Auto => {
-                // Progress sorting doesn't apply to entries (only at route level with username context)
-                // Auto uses name sorting (future: smart chapter detection)
-                sort_by_name(&mut entries, ascending);
-            }
-            SortMethod::TimeModified => {
-                sort_by_mtime(&mut entries, ascending);
+            SortMethod::TimeModified => sort_by_mtime(&mut titles, ascending),
+            SortMethod::Name | SortMethod::TimeAdded | SortMethod::Progress | SortMethod::Auto => {
+                sort_by_name(&mut titles, ascending)
             }
         }
-
+        titles
+    }
+    /// Get entries sorted by specified method and order.
+    pub fn get_entries_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Entry> {
+        let mut entries: Vec<&Entry> = self.entries.iter().collect();
+        use super::{sort_by_mtime, sort_by_name};
+        match method {
+            SortMethod::Name | SortMethod::Progress | SortMethod::Auto => {
+                sort_by_name(&mut entries, ascending);
+            }
+            SortMethod::TimeModified => sort_by_mtime(&mut entries, ascending),
+            SortMethod::TimeAdded => {
+                entries.sort_by(|a, b| {
+                    a.ctime
+                        .cmp(&b.ctime)
+                        .then_with(|| natord::compare(&a.title, &b.title))
+                });
+                if !ascending {
+                    entries.reverse();
+                }
+            }
+        }
         entries
     }
 
@@ -147,7 +177,18 @@ impl Title {
             .get_sort_by(username)
             .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
             .unwrap_or((SortMethod::Auto, true));
-        let entries = self.get_entries_sorted(method, ascending);
+        let mut entries = self.get_entries_sorted(method, ascending);
+        if method == SortMethod::TimeAdded {
+            entries.sort_by(|left, right| {
+                info.get_date_added(&left.title)
+                    .unwrap_or_default()
+                    .cmp(&info.get_date_added(&right.title).unwrap_or_default())
+                    .then_with(|| natord::compare(&left.title, &right.title))
+            });
+            if !ascending {
+                entries.reverse();
+            }
+        }
         let mut index = entries.iter().rposition(|entry| {
             info.get_progress(username, &entry.title)
                 .unwrap_or(0)
@@ -194,6 +235,16 @@ impl Title {
         }
 
         all_entries
+    }
+
+    /// Get nested titles and all descendants in depth-first order.
+    pub fn deep_titles(&self) -> Vec<&Title> {
+        let mut all_titles = Vec::new();
+        for nested in &self.nested_titles {
+            all_titles.push(nested);
+            all_titles.extend(nested.deep_titles());
+        }
+        all_titles
     }
 
     /// Save reading progress for an entry.
@@ -269,6 +320,9 @@ impl Title {
         }
 
         info.save(&self.path).await?;
+        for nested in &self.nested_titles {
+            Box::pin(nested.read_all(username)).await?;
+        }
         Ok(())
     }
 
@@ -284,33 +338,34 @@ impl Title {
         }
 
         info.save(&self.path).await?;
+        for nested in &self.nested_titles {
+            Box::pin(nested.unread_all(username)).await?;
+        }
         Ok(())
     }
 
-    /// Get overall title progress (average across all entries)
+    /// Get title progress as a page-weighted percentage across nested titles.
     pub async fn get_title_progress(&self, username: &str) -> Result<f32> {
-        if self.entries.is_empty() {
-            return Ok(0.0);
-        }
-
         use super::progress::TitleInfo;
-        let info = TitleInfo::load(&self.path).await?;
 
-        let mut total_progress = 0.0;
-        let mut entry_count = 0;
-
-        for entry in &self.entries {
-            let page = info.get_progress(username, &entry.title).unwrap_or(0);
-            let percentage = if entry.pages > 0 {
-                (page as f32 / entry.pages as f32) * 100.0
-            } else {
-                0.0
-            };
-            total_progress += percentage;
-            entry_count += 1;
+        let mut total_pages = 0usize;
+        let mut read_pages = 0usize;
+        for title in std::iter::once(self).chain(self.deep_titles()) {
+            let info = TitleInfo::load(&title.path).await?;
+            for entry in &title.entries {
+                total_pages += entry.pages;
+                read_pages += info
+                    .get_progress(username, &entry.title)
+                    .unwrap_or(0)
+                    .clamp(0, entry.pages as i32) as usize;
+            }
         }
 
-        Ok(total_progress / entry_count as f32)
+        if total_pages == 0 {
+            Ok(0.0)
+        } else {
+            Ok(read_pages as f32 / total_pages as f32 * 100.0)
+        }
     }
 
     /// Populate date_added timestamps for newly discovered entries
@@ -349,6 +404,9 @@ impl Title {
         info.normalize_entry_timestamps();
 
         info.save(&self.path).await?;
+        for nested in &self.nested_titles {
+            Box::pin(nested.populate_date_added()).await?;
+        }
         Ok(())
     }
 }
@@ -454,6 +512,7 @@ mod tests {
                     ctime: 1_700_000_000,
                     pages: 0,
                     image_files: Vec::new(),
+                    size_bytes: 0,
                 },
                 Entry {
                     id: "existing-entry".to_string(),
@@ -464,6 +523,7 @@ mod tests {
                     ctime: 1_700_000_001,
                     pages: 0,
                     image_files: Vec::new(),
+                    size_bytes: 0,
                 },
                 Entry {
                     id: "legacy-uuid".to_string(),
@@ -474,6 +534,7 @@ mod tests {
                     ctime: 1_700_000_002,
                     pages: 0,
                     image_files: Vec::new(),
+                    size_bytes: 0,
                 },
             ],
             parent_id: None,
@@ -488,6 +549,30 @@ mod tests {
         assert_eq!(info.get_date_added("Migrated"), Some(1_700_000_002));
         assert!(!info.date_added.contains_key("legacy-uuid"));
     }
+    #[tokio::test]
+    async fn scans_nested_titles_and_loose_image_entries() {
+        let library = tempfile::tempdir().unwrap();
+        let root = library.path().join("Series");
+        let chapter = root.join("Volume 1/Chapters/Chapter 1");
+        std::fs::create_dir_all(&chapter).unwrap();
+        std::fs::write(chapter.join("001.png"), b"page").unwrap();
+
+        let title = Title::from_directory(root).await.unwrap();
+        assert_eq!(title.nested_titles.len(), 1);
+        let volume = &title.nested_titles[0];
+        assert_eq!(volume.parent_id.as_deref(), Some(title.id.as_str()));
+        assert_eq!(volume.nested_titles.len(), 1);
+        let chapters = &volume.nested_titles[0];
+        assert_eq!(chapters.parent_id.as_deref(), Some(volume.id.as_str()));
+        assert_eq!(chapters.entries.len(), 1);
+
+        let entry = &chapters.entries[0];
+        assert_eq!(entry.title, "Chapter 1");
+        assert_eq!(entry.pages, 1);
+        assert_eq!(entry.size_bytes, 4);
+        assert_eq!(entry.get_page(0).await.unwrap(), b"page");
+    }
+
     fn continue_reading_title() -> Title {
         let dir = std::env::temp_dir();
         Title {
@@ -507,6 +592,7 @@ mod tests {
                     ctime: 0,
                     pages: 10,
                     image_files: Vec::new(),
+                    size_bytes: 0,
                 })
                 .collect(),
             parent_id: None,
@@ -528,6 +614,65 @@ mod tests {
         let (selected, previous) = title.get_continue_reading_entry("admin", &info).unwrap();
         assert_eq!(selected.id, "entry-3");
         assert_eq!(previous.unwrap().id, "entry-2");
+    }
+    #[test]
+    fn continue_reading_uses_date_added_sort_order() {
+        let title = continue_reading_title();
+        let mut info = TitleInfo::default();
+        info.set_sort_by("admin", "time_added", true);
+        info.set_date_added("Volume 2", 1_600_000_000);
+        info.set_date_added("Volume 1", 1_700_000_000);
+        info.set_progress("admin", "Volume 1", 2);
+
+        let (selected, _) = title.get_continue_reading_entry("admin", &info).unwrap();
+        assert_eq!(selected.id, "entry-1");
+    }
+    #[tokio::test]
+    async fn whole_title_progress_updates_nested_titles() {
+        let dir = tempfile::tempdir().unwrap();
+        let root_path = dir.path().join("Series");
+        let child_path = root_path.join("Volume 1");
+        std::fs::create_dir_all(&child_path).unwrap();
+        let child = Title {
+            id: "child".to_string(),
+            path: child_path.clone(),
+            title: "Volume 1".to_string(),
+            signature: String::new(),
+            contents_signature: String::new(),
+            mtime: 0,
+            entries: vec![Entry {
+                id: "entry".to_string(),
+                path: child_path.join("chapter.cbz"),
+                title: "Chapter 1".to_string(),
+                signature: String::new(),
+                mtime: 0,
+                ctime: 0,
+                pages: 3,
+                image_files: Vec::new(),
+                size_bytes: 0,
+            }],
+            parent_id: Some("root".to_string()),
+            nested_titles: Vec::new(),
+        };
+        let root = Title {
+            id: "root".to_string(),
+            path: root_path,
+            title: "Series".to_string(),
+            signature: String::new(),
+            contents_signature: String::new(),
+            mtime: 0,
+            entries: Vec::new(),
+            parent_id: None,
+            nested_titles: vec![child],
+        };
+
+        root.read_all("reader").await.unwrap();
+        let info = TitleInfo::load(&child_path).await.unwrap();
+        assert_eq!(info.get_progress("reader", "Chapter 1"), Some(3));
+
+        root.unread_all("reader").await.unwrap();
+        let info = TitleInfo::load(&child_path).await.unwrap();
+        assert_eq!(info.get_progress("reader", "Chapter 1"), None);
     }
 
     #[test]

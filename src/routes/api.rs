@@ -20,7 +20,7 @@ pub async fn get_library(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
     Query(params): Query<CatalogQuery>,
-) -> Result<impl IntoResponse> {
+) -> axum::response::Response {
     let lib = state.library.load_full();
     let cache = lib.progress_cache();
     let library_info = crate::library::progress::TitleInfo::load(&state.config.library_path)
@@ -39,27 +39,38 @@ pub async fn get_library(
 
     for title in lib.get_titles_sorted(sort_method, ascending) {
         let info = cache.get_title_info(&title.id).unwrap_or_default();
-        let percentage = title_progress_percentage(title, &info, &username);
+        let percentage = title_progress_percentage(title, cache, &username);
         title_percentages.push(percentage);
-        titles.push(
-            mango_title_response(
-                &state,
-                title,
-                &info,
-                &username,
-                depth,
-                params.percentage.is_some(),
-                params.slim.is_some(),
-            )
-            .await?,
-        );
+        match mango_title_response(
+            &state,
+            title,
+            &info,
+            cache,
+            &username,
+            Vec::new(),
+            depth,
+            params.percentage.is_some(),
+            params.slim.is_some(),
+        )
+        .await
+        {
+            Ok(response) => titles.push(response),
+            Err(error) => {
+                return Json(serde_json::json!({
+                    "success": false,
+                    "error": error.to_string()
+                }))
+                .into_response();
+            }
+        }
     }
 
-    Ok(Json(MangoLibraryResponse {
+    Json(MangoLibraryResponse {
         dir: state.config.library_path.to_string_lossy().into_owned(),
         titles,
         title_percentages: params.percentage.map(|_| title_percentages),
-    }))
+    })
+    .into_response()
 }
 
 /// API route: GET /api/book/:tid
@@ -69,27 +80,39 @@ pub async fn get_title(
     Path(title_id): Path<String>,
     crate::auth::Username(username): crate::auth::Username,
     Query(params): Query<CatalogQuery>,
-) -> Result<impl IntoResponse> {
+) -> Result<axum::response::Response> {
     let lib = state.library.load_full();
-    let title = lib
-        .get_title(&title_id)
-        .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
+    let Some(title) = lib.get_title(&title_id) else {
+        return Ok((
+            StatusCode::NOT_FOUND,
+            format!("Title ID `{title_id}` not found"),
+        )
+            .into_response());
+    };
     let info = lib
         .progress_cache()
         .get_title_info(&title.id)
         .unwrap_or_default();
-    let response = mango_title_response(
+    let response = match mango_title_response(
         &state,
         title,
         &info,
+        lib.progress_cache(),
         &username,
+        title_parent_summaries(&lib, title),
         params.depth.unwrap_or(-1),
         params.percentage.is_some(),
         params.slim.is_some(),
     )
-    .await?;
+    .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            return Ok((StatusCode::NOT_FOUND, error.to_string()).into_response());
+        }
+    };
 
-    Ok(Json(response))
+    Ok(Json(response).into_response())
 }
 
 #[derive(Deserialize)]
@@ -188,41 +211,42 @@ pub async fn get_page(
     State(state): State<AppState>,
     Path((title_id, entry_id, page)): Path<(String, String, usize)>,
     headers: axum::http::HeaderMap,
-) -> Result<impl IntoResponse> {
+) -> Result<axum::response::Response> {
     let lib = state.library.load();
-
-    let entry = lib.get_entry(&title_id, &entry_id).ok_or_else(|| {
-        crate::error::Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id))
-    })?;
+    let Some(title) = lib.get_title(&title_id) else {
+        return Ok((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Title ID `{title_id}` not found"),
+        )
+            .into_response());
+    };
+    let Some(entry) = title.entries.iter().find(|entry| entry.id == entry_id) else {
+        return Ok((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Entry ID `{entry_id}` of `{}` not found", title.title),
+        )
+            .into_response());
+    };
 
     let page_idx = page.saturating_sub(1);
-    let image_data = entry.get_page(page_idx).await?;
+
+    let image_data = match entry.get_page(page_idx).await {
+        Ok(image_data) => image_data,
+        Err(error) => {
+            return Ok((StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response())
+        }
+    };
     let mime_type = guess_mime_type(&image_data);
     let previous_etag = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok());
 
-    Ok(image_response(
-        image_data,
-        mime_type,
-        previous_etag,
-        Some("public, max-age=86400"),
-    ))
-}
-
-/// API route: GET /api/stats
-/// Returns library statistics
-pub async fn get_stats(State(state): State<AppState>) -> Result<impl IntoResponse> {
-    let lib = state.library.load();
-    let stats = lib.stats();
-
-    let response = LibraryStats {
-        titles: stats.titles,
-        entries: stats.entries,
-        pages: stats.pages,
+    let cache_control = if entry.path.is_dir() {
+        "no-cache, max-age=86400"
+    } else {
+        "public, max-age=86400"
     };
-
-    Ok(Json(response))
+    Ok(image_response(image_data, mime_type, previous_etag, Some(cache_control)).into_response())
 }
 
 /// GET /api/cover/:tid/:eid - Get manga entry cover/thumbnail
@@ -230,11 +254,22 @@ pub async fn get_cover(
     State(state): State<AppState>,
     Path((title_id, entry_id)): Path<(String, String)>,
     headers: axum::http::HeaderMap,
-) -> Result<impl IntoResponse> {
+) -> Result<axum::response::Response> {
     let lib = state.library.load();
-    let entry = lib
-        .get_entry(&title_id, &entry_id)
-        .ok_or_else(|| Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id)))?;
+    let Some(title) = lib.get_title(&title_id) else {
+        return Ok((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Title ID `{title_id}` not found"),
+        )
+            .into_response());
+    };
+    let Some(entry) = title.entries.iter().find(|entry| entry.id == entry_id) else {
+        return Ok((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Entry ID `{entry_id}` of `{}` not found", title.title),
+        )
+            .into_response());
+    };
     let db = state.storage.pool();
     let thumbnail = match Entry::get_thumbnail(&entry_id, db).await {
         Ok(Some(image)) => Some(image),
@@ -254,7 +289,14 @@ pub async fn get_cover(
     let (data, mime) = match thumbnail {
         Some(image) => image,
         None => {
-            let data = entry.get_page(0).await?;
+            let data = match entry.get_page(0).await {
+                Ok(data) => data,
+                Err(error) => {
+                    return Ok(
+                        (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response()
+                    );
+                }
+            };
             let mime = guess_mime_type(&data).to_string();
             (data, mime)
         }
@@ -262,29 +304,22 @@ pub async fn get_cover(
     let previous_etag = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok());
-    Ok(image_response(data, &mime, previous_etag, None))
+    Ok(image_response(data, &mime, previous_etag, None).into_response())
 }
 
 // Response types
-
-#[derive(Serialize)]
-struct LibraryStats {
-    titles: usize,
-    entries: usize,
-    pages: usize,
-}
 
 /// API route: GET /api/library/continue_reading
 /// Returns the last 8 entries the user has read, sorted by last_read timestamp
 pub async fn continue_reading(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
-) -> Result<impl IntoResponse> {
+) -> axum::response::Response {
     let lib = state.library.load_full();
     let cache = lib.progress_cache();
     let mut entries_with_progress = Vec::new();
 
-    for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
+    for title in lib.all_titles() {
         let info = cache.get_title_info(&title.id).unwrap_or_default();
         if let Some((entry, previous)) = title.get_continue_reading_entry(&username, &info) {
             let last_read = info
@@ -292,7 +327,17 @@ pub async fn continue_reading(
                 .or_else(|| previous.and_then(|entry| info.get_last_read(&username, &entry.title)));
             let progress = info.get_progress(&username, &entry.title).unwrap_or(0);
             let percentage = entry_progress_percentage(progress, entry.pages);
-            let entry_json = mango_entry_response(&state, title, entry, &info, false).await?;
+            let entry_json =
+                match mango_entry_response(&state, title, entry, &info, None, false).await {
+                    Ok(entry) => entry,
+                    Err(error) => {
+                        return Json(serde_json::json!({
+                            "success": false,
+                            "error": error.to_string()
+                        }))
+                        .into_response();
+                    }
+                };
             entries_with_progress.push((last_read, entry_json, percentage));
         }
     }
@@ -304,10 +349,11 @@ pub async fn continue_reading(
         .map(|(_, entry, percentage)| (entry, percentage))
         .unzip();
 
-    Ok(success_response(ContinueReadingResponse {
+    success_response(ContinueReadingResponse {
         entries,
         entry_percentages,
-    }))
+    })
+    .into_response()
 }
 
 /// API route: GET /api/library/start_reading
@@ -315,14 +361,13 @@ pub async fn continue_reading(
 pub async fn start_reading(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
-) -> Result<impl IntoResponse> {
+) -> axum::response::Response {
     let lib = state.library.load_full();
     let cache = lib.progress_cache();
     let mut unread_titles = Vec::new();
 
     for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
-        let info = cache.get_title_info(&title.id).unwrap_or_default();
-        if !title.entries.is_empty() && title_progress_percentage(title, &info, &username) == 0.0 {
+        if title.total_pages() > 0 && title_progress_percentage(title, cache, &username) == 0.0 {
             unread_titles.push(title);
         }
     }
@@ -334,9 +379,30 @@ pub async fn start_reading(
     let mut titles = Vec::with_capacity(unread_titles.len());
     for title in unread_titles {
         let info = cache.get_title_info(&title.id).unwrap_or_default();
-        titles.push(mango_title_response(&state, title, &info, &username, 1, false, false).await?);
+        match mango_title_response(
+            &state,
+            title,
+            &info,
+            cache,
+            &username,
+            title_parent_summaries(&lib, title),
+            1,
+            false,
+            false,
+        )
+        .await
+        {
+            Ok(title) => titles.push(title),
+            Err(error) => {
+                return Json(serde_json::json!({
+                    "success": false,
+                    "error": error.to_string()
+                }))
+                .into_response();
+            }
+        }
     }
-    Ok(success_response(StartReadingResponse { titles }))
+    success_response(StartReadingResponse { titles }).into_response()
 }
 
 /// Data retained while recent entries are sorted and grouped.
@@ -349,7 +415,7 @@ struct RecentEntryData {
 pub async fn recently_added(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
-) -> Result<impl IntoResponse> {
+) -> axum::response::Response {
     let lib = state.library.load_full();
     let cache = lib.progress_cache();
     let mut entries_with_dates = Vec::new();
@@ -358,7 +424,7 @@ pub async fn recently_added(
         .expect("current date can be shifted back one month")
         .timestamp();
 
-    for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
+    for title in lib.all_titles() {
         let info = cache.get_title_info(&title.id).unwrap_or_default();
         for entry in &title.entries {
             if let Some(date_added) = info.get_date_added(&entry.title) {
@@ -379,19 +445,51 @@ pub async fn recently_added(
 
     let mut items = Vec::new();
     for group in group_recent_entries(entries_with_dates, RECENT_ITEMS_LIMIT) {
-        let title = lib
-            .get_title(&group.title_id)
-            .ok_or_else(|| Error::NotFound(format!("Title not found: {}", group.title_id)))?;
+        let Some(title) = lib.get_title(&group.title_id) else {
+            return Json(serde_json::json!({
+                "success": false,
+                "error": format!("Title not found: {}", group.title_id)
+            }))
+            .into_response();
+        };
         let info = cache.get_title_info(&title.id).unwrap_or_default();
         let item = if group.grouped_count == 1 {
-            let entry = lib
-                .get_entry(&title.id, &group.item.entry_id)
-                .ok_or_else(|| {
-                    Error::NotFound(format!("Entry not found: {}", group.item.entry_id))
-                })?;
-            RecentItem::Entry(mango_entry_response(&state, title, entry, &info, false).await?)
+            let Some(entry) = lib.get_entry(&title.id, &group.item.entry_id) else {
+                return Json(serde_json::json!({
+                    "success": false,
+                    "error": format!("Entry not found: {}", group.item.entry_id)
+                }))
+                .into_response();
+            };
+            match mango_entry_response(&state, title, entry, &info, None, false).await {
+                Ok(entry) => RecentItem::Entry(entry),
+                Err(error) => {
+                    return Json(serde_json::json!({
+                        "success": false,
+                        "error": error.to_string()
+                    }))
+                    .into_response();
+                }
+            }
         } else {
-            RecentItem::Title(mango_title_summary(&state, title, &info, false).await?)
+            match mango_title_summary(
+                &state,
+                title,
+                &info,
+                title_parent_summaries(&lib, title),
+                false,
+            )
+            .await
+            {
+                Ok(title) => RecentItem::Title(title),
+                Err(error) => {
+                    return Json(serde_json::json!({
+                        "success": false,
+                        "error": error.to_string()
+                    }))
+                    .into_response();
+                }
+            }
         };
 
         items.push(RecentlyAddedItem {
@@ -401,7 +499,7 @@ pub async fn recently_added(
         });
     }
 
-    Ok(success_response(RecentlyAddedResponse { items }))
+    success_response(RecentlyAddedResponse { items }).into_response()
 }
 
 // Response types for home page sections
@@ -469,7 +567,7 @@ struct MangoLibraryResponse {
     title_percentages: Option<Vec<f32>>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct MangoTitleParent {
     title: String,
     id: String,
@@ -521,15 +619,24 @@ async fn mango_entry_response(
     title: &crate::library::Title,
     entry: &Entry,
     info: &crate::library::progress::TitleInfo,
+    sort_title_override: Option<&str>,
     slim: bool,
 ) -> Result<MangoEntry> {
     let path = entry.path.to_string_lossy().into_owned();
-    let size = tokio::fs::metadata(&entry.path).await?.len();
-    let sort_title = state
-        .storage
-        .get_entry_sort_title(&entry.id)
-        .await?
-        .unwrap_or_else(|| entry.title.clone());
+    let size = if entry.size_bytes == 0 {
+        tokio::fs::metadata(&entry.path).await?.len()
+    } else {
+        entry.size_bytes
+    };
+    let sort_title = if let Some(sort_title) = sort_title_override {
+        sort_title.to_string()
+    } else {
+        state
+            .storage
+            .get_entry_sort_title(&entry.id)
+            .await?
+            .unwrap_or_else(|| entry.title.clone())
+    };
     let display_name = info
         .entry_display_name
         .get(&entry.title)
@@ -568,6 +675,7 @@ async fn mango_title_summary(
     state: &AppState,
     title: &crate::library::Title,
     info: &crate::library::progress::TitleInfo,
+    parents: Vec<MangoTitleParent>,
     slim: bool,
 ) -> Result<MangoTitleSummary> {
     let sort_title = state
@@ -583,7 +691,7 @@ async fn mango_title_summary(
     let cover_url = if !info.cover_url.is_empty() {
         join_base_url(&state.config.base_url, &info.cover_url)
     } else if let Some(entry) = title.entries.first() {
-        mango_entry_response(state, title, entry, info, false)
+        mango_entry_response(state, title, entry, info, None, false)
             .await?
             .cover_url
             .unwrap_or_default()
@@ -600,20 +708,36 @@ async fn mango_title_summary(
         display_name: (!slim).then_some(display_name),
         cover_url: (!slim).then_some(cover_url),
         mtime: (!slim).then_some(title.mtime),
-        parents: Vec::new(),
+        parents,
     })
+}
+
+fn title_parent_summaries(
+    library: &crate::library::Library,
+    title: &crate::library::Title,
+) -> Vec<MangoTitleParent> {
+    library
+        .parent_titles(title)
+        .into_iter()
+        .map(|parent| MangoTitleParent {
+            title: parent.title.clone(),
+            id: parent.id.clone(),
+        })
+        .collect()
 }
 
 async fn mango_title_response(
     state: &AppState,
     title: &crate::library::Title,
     info: &crate::library::progress::TitleInfo,
+    cache: &crate::library::ProgressCache,
     username: &str,
+    parents: Vec<MangoTitleParent>,
     depth: i32,
     include_percentages: bool,
     slim: bool,
 ) -> Result<MangoTitleResponse> {
-    let summary = mango_title_summary(state, title, info, slim).await?;
+    let summary = mango_title_summary(state, title, info, parents.clone(), slim).await?;
     if depth == 0 {
         return Ok(MangoTitleResponse {
             title: summary,
@@ -624,53 +748,111 @@ async fn mango_title_response(
         });
     }
 
-    let (entry_sort, entry_ascending) = info
+    let (sort_method, ascending) = info
         .get_sort_by(username)
-        .unwrap_or_else(|| ("auto".to_string(), true));
-    let (entry_sort, entry_ascending) = SortMethod::from_params(
-        Some(&entry_sort),
-        Some(if entry_ascending { "1" } else { "0" }),
-    );
+        .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
+        .unwrap_or((SortMethod::Auto, true));
+    let mut nested_titles = Vec::with_capacity(title.nested_titles.len());
+    let mut title_percentages = Vec::with_capacity(title.nested_titles.len());
+    let mut child_parents = parents;
+    child_parents.push(MangoTitleParent {
+        title: title.title.clone(),
+        id: title.id.clone(),
+    });
+    for nested in title.get_nested_titles_sorted(sort_method, ascending) {
+        let nested_info = cache.get_title_info(&nested.id).unwrap_or_default();
+        title_percentages.push(title_progress_percentage(nested, cache, username));
+        nested_titles.push(
+            Box::pin(mango_title_response(
+                state,
+                nested,
+                &nested_info,
+                cache,
+                username,
+                child_parents.clone(),
+                if depth > 0 { depth - 1 } else { depth },
+                include_percentages,
+                slim,
+            ))
+            .await?,
+        );
+    }
+
+    let mut ordered_entries = Vec::with_capacity(title.entries.len());
+    if sort_method == SortMethod::TimeAdded {
+        let mut entries = Vec::with_capacity(title.entries.len());
+        for entry in &title.entries {
+            let sort_title = state
+                .storage
+                .get_entry_sort_title(&entry.id)
+                .await?
+                .unwrap_or_else(|| entry.title.clone());
+            entries.push((entry, sort_title));
+        }
+        entries.sort_by(|(left, left_title), (right, right_title)| {
+            info.get_date_added(&left.title)
+                .unwrap_or_default()
+                .cmp(&info.get_date_added(&right.title).unwrap_or_default())
+                .then_with(|| natord::compare(left_title, right_title))
+        });
+        if !ascending {
+            entries.reverse();
+        }
+        ordered_entries.extend(
+            entries
+                .into_iter()
+                .map(|(entry, sort_title)| (entry, Some(sort_title))),
+        );
+    } else {
+        ordered_entries.extend(
+            title
+                .get_entries_sorted(sort_method, ascending)
+                .into_iter()
+                .map(|entry| (entry, None)),
+        );
+    }
+
     let mut entries = Vec::with_capacity(title.entries.len());
     let mut entry_percentages = Vec::with_capacity(title.entries.len());
-    for entry in title.get_entries_sorted(entry_sort, entry_ascending) {
+    for (entry, sort_title) in ordered_entries {
         let progress = info.get_progress(username, &entry.title).unwrap_or(0);
-        entry_percentages.push(if entry.pages == 0 {
-            0.0
-        } else {
-            progress.min(entry.pages as i32).max(0) as f32 / entry.pages as f32
-        });
-        entries.push(mango_entry_response(state, title, entry, info, slim).await?);
+        entry_percentages.push(entry_progress_percentage(progress, entry.pages));
+        entries.push(
+            mango_entry_response(state, title, entry, info, sort_title.as_deref(), slim).await?,
+        );
     }
 
     Ok(MangoTitleResponse {
         title: summary,
-        titles: Some(Vec::new()),
+        titles: Some(nested_titles),
         entries: Some(entries),
-        title_percentages: include_percentages.then(Vec::new),
+        title_percentages: include_percentages.then_some(title_percentages),
         entry_percentages: include_percentages.then_some(entry_percentages),
     })
 }
 
 fn title_progress_percentage(
     title: &crate::library::Title,
-    info: &crate::library::progress::TitleInfo,
+    cache: &crate::library::ProgressCache,
     username: &str,
 ) -> f32 {
-    let total_pages: usize = title.entries.iter().map(|entry| entry.pages).sum();
-    if total_pages == 0 {
-        return 0.0;
-    }
-    let read_pages: f64 = title
-        .entries
-        .iter()
-        .map(|entry| {
-            info.get_progress(username, &entry.title)
+    let mut total_pages = 0usize;
+    let mut read_pages = 0f64;
+    for nested in std::iter::once(title).chain(title.deep_titles()) {
+        let info = cache.get_title_info(&nested.id).unwrap_or_default();
+        for entry in &nested.entries {
+            total_pages += entry.pages;
+            read_pages += info
+                .get_progress(username, &entry.title)
                 .unwrap_or(0)
-                .clamp(0, entry.pages as i32) as f64
-        })
-        .sum();
-    (read_pages / total_pages as f64) as f32
+                .clamp(0, entry.pages as i32) as f64;
+        }
+    }
+    if total_pages == 0 {
+        0.0
+    } else {
+        (read_pages / total_pages as f64) as f32
+    }
 }
 
 fn entry_progress_percentage(progress: i32, pages: usize) -> f32 {
@@ -1070,18 +1252,16 @@ pub async fn update_progress(
             }));
         }
     } else {
-        for entry in &title.entries {
-            let value = if page == 0 { 0 } else { entry.pages as i32 };
-            if let Err(error) = lib
-                .progress_cache()
-                .save_progress(&title_id, &title.path, &username, &entry.title, value)
-                .await
-            {
-                return Json(serde_json::json!({
-                    "success": false,
-                    "error": error.to_string()
-                }));
-            }
+        let result = if page == 0 {
+            title.unread_all(&username).await
+        } else {
+            title.read_all(&username).await
+        };
+        if let Err(error) = result {
+            return Json(serde_json::json!({
+                "success": false,
+                "error": error.to_string()
+            }));
         }
     }
 

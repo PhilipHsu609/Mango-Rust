@@ -14,11 +14,10 @@ export interface ApiClient {
 let sessionCookie: string | null = null;
 
 export async function login(username = 'testuser', password = 'testpass123'): Promise<void> {
-  const response = await fetch(`${BASE_URL}/login`, {
+  const response = await fetch(`${BASE_URL}/api/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ username, password }),
-    redirect: 'manual',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
   });
 
   const setCookie = response.headers.get('set-cookie');

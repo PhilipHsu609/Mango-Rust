@@ -803,7 +803,7 @@ pub async fn generate_thumbnails(
     let lib = state.library.load();
     let mut entries_to_process: Vec<(String, String)> = Vec::new();
 
-    for title in lib.get_titles() {
+    for title in lib.all_titles() {
         for entry in &title.entries {
             entries_to_process.push((title.id.clone(), entry.id.clone()));
         }

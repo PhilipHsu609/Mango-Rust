@@ -33,9 +33,9 @@ Per-entry `info.json` maps use Mango entry-title keys. Startup and scans migrate
 
 ## API compatibility
 
-Shared library APIs use Mango's catalog and homepage response shapes. Common progress, tag, thumbnail, and image routes match Mango's success-path request and payload shapes; some error-path status/body behavior still differs. This is not full API parity.
+Shared catalog, homepage, progress, tag, thumbnail, image, and login APIs follow Mango's request and response contracts, including nested titles, parent metadata, and `time_added` sorting. The Rust-only `/api/stats` and progress GET/POST routes were removed; Mango's `PUT /api/progress/:tid/:page` remains. This is not full API parity: Axum extractor failures and some internal-error details can still differ.
 
-Known gaps: Rust does not implement Mango's `POST /api/login`, plugin/subscription endpoints, or MangaDex queue endpoints. Rust also skips nested library directories, so nested-title JSON and recursive operations are not supported; the `time_added` sort method is not implemented. Rust's extra `/api/stats` and progress GET/POST routes have no Crystal counterpart.
+Known gaps: plugin and subscription endpoints and MangaDex queue endpoints are not implemented.
 
 ## Configuration
 

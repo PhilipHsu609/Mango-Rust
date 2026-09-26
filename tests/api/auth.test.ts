@@ -16,7 +16,7 @@ describe('Auth API', () => {
       });
 
       expect(response.status).toBe(303);
-      expect(response.headers.get('set-cookie')).toContain('id=');
+      expect(response.headers.get('set-cookie')).toContain('mango-sessid-');
       expect(response.headers.get('location')).toBe('/');
     });
 
@@ -47,6 +47,39 @@ describe('Auth API', () => {
       // Should return error (200 with HTML error or 422 validation error)
       expect([200, 422]).toContain(response.status);
       // Critical: no session cookie should be set
+      expect(response.headers.get('set-cookie')).toBeNull();
+    });
+  });
+
+  describe('POST /api/login', () => {
+    it('returns Mango login JSON and a Mango-named session cookie', async () => {
+      const response = await fetch(`${BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'testuser', password: 'testpass123' }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        success: true,
+        session_id: expect.any(String),
+        is_admin: true,
+      });
+      expect(response.headers.get('set-cookie')).toContain('mango-sessid-');
+    });
+
+    it('returns Mango login errors for invalid credentials', async () => {
+      const response = await fetch(`${BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'testuser', password: 'wrongpassword' }),
+      });
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        success: false,
+        error: 'Nil assertion failed',
+      });
       expect(response.headers.get('set-cookie')).toBeNull();
     });
   });

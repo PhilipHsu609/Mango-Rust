@@ -89,15 +89,4 @@ describe('Library API', () => {
     });
   });
 
-  describe('GET /api/stats', () => {
-    it('returns library statistics', async () => {
-      const response = await api.get('/api/stats');
-      expect(response.status).toBe(200);
-
-      const stats = await response.json();
-      expect(typeof stats.titles).toBe('number');
-      expect(typeof stats.entries).toBe('number');
-      expect(typeof stats.pages).toBe('number');
-    });
-  });
 });

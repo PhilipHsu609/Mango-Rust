@@ -15,16 +15,15 @@ use crate::{
     error::Result,
     library::{spawn_periodic_scanner, Library},
     routes::{
-        add_tag, admin_dashboard, bulk_progress, cache_clear_api, cache_debug_page,
+        add_tag, admin_dashboard, api_login, bulk_progress, cache_clear_api, cache_debug_page,
         cache_invalidate_api, cache_load_library_api, cache_save_library_api, change_password_api,
         change_password_page, continue_reading, create_user, delete_all_missing_entries,
         delete_all_missing_titles, delete_missing_entry, delete_missing_title, delete_tag,
-        delete_user, delete_user_api, download_entry, generate_thumbnails, get_all_progress,
-        get_book, get_cover, get_dimensions, get_library, get_login, get_missing_entries,
-        get_missing_titles, get_page, get_progress, get_sort_opt, get_stats, get_title,
-        get_title_tags, get_users, home, library as library_page, list_tags, list_tags_page,
-        logout, missing_items_page, opds_index, opds_title, post_login, reader, reader_continue,
-        recently_added, save_progress, scan_library, start_reading, thumbnail_progress,
+        delete_user, delete_user_api, download_entry, generate_thumbnails, get_book, get_cover,
+        get_dimensions, get_library, get_login, get_missing_entries, get_missing_titles, get_page,
+        get_sort_opt, get_title, get_title_tags, get_users, home, library as library_page,
+        list_tags, list_tags_page, logout, missing_items_page, opds_index, opds_title, post_login,
+        reader, reader_continue, recently_added, scan_library, start_reading, thumbnail_progress,
         update_display_name, update_progress, update_sort_opt, update_sort_title, update_user,
         upload_cover, user_edit_page, user_edit_post, user_edit_post_existing, users_page,
         view_tag_page,
@@ -133,6 +132,7 @@ pub async fn run(config: Config) -> Result<()> {
         .map_err(|e| crate::error::Error::Internal(format!("Session migration failed: {}", e)))?;
 
     let session_layer = SessionManagerLayer::new(session_store)
+        .with_name(format!("mango-sessid-{}", config.port))
         .with_secure(false) // Set to true in production with HTTPS
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
 
@@ -140,6 +140,7 @@ pub async fn run(config: Config) -> Result<()> {
     let app = Router::new()
         // Public routes (no auth required)
         .route("/login", get(get_login).post(post_login))
+        .route("/api/login", post(api_login))
         // Static files (no auth required)
         .nest_service("/static", ServeDir::new("static"))
         // Protected routes (auth required)
@@ -197,7 +198,6 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/sort_opt", get(get_sort_opt).put(update_sort_opt))
         .route("/api/page/:tid/:eid/:page", get(get_page))
         .route("/api/cover/:tid/:eid", get(get_cover))
-        .route("/api/stats", get(get_stats))
         .route("/api/download/:tid/:eid", get(download_entry))
         // OPDS catalog routes
         .route("/opds", get(opds_index))
@@ -211,11 +211,7 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/library/start_reading", get(start_reading))
         .route("/api/library/recently_added", get(recently_added))
         // Progress API
-        .route(
-            "/api/progress/:tid/:page",
-            get(get_progress).post(save_progress).put(update_progress),
-        )
-        .route("/api/progress", get(get_all_progress))
+        .route("/api/progress/:tid/:page", put(update_progress))
         // Dimensions API (for reader)
         .route("/api/dimensions/:tid/:eid", get(get_dimensions))
         // User API

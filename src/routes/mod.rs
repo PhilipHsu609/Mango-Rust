@@ -4,7 +4,6 @@ pub mod book;
 pub mod login;
 pub mod main;
 pub mod opds;
-pub mod progress;
 pub mod reader;
 
 mod recently_added;
@@ -19,16 +18,15 @@ pub use admin::{
 };
 pub use api::{
     add_tag, continue_reading, delete_tag, download_entry, get_cover, get_dimensions, get_library,
-    get_page, get_sort_opt, get_stats, get_title, get_title_tags, list_tags, recently_added,
-    start_reading, update_progress, update_sort_opt,
+    get_page, get_sort_opt, get_title, get_title_tags, list_tags, recently_added, start_reading,
+    update_progress, update_sort_opt,
 };
 pub use book::get_book;
-pub use login::{get_login, logout, post_login};
+pub use login::{api_login, get_login, logout, post_login};
 pub use main::{
     change_password_api, change_password_page, home, library, list_tags_page, view_tag_page,
 };
 pub use opds::{opds_index, opds_title};
-pub use progress::{get_all_progress, get_progress, save_progress};
 pub use reader::{reader, reader_continue};
 
 /// Trait for types that have a progress field (as f32 percentage)

@@ -33,14 +33,4 @@ describe('Progress API', () => {
     });
   });
 
-  describe('GET /api/progress', () => {
-    it('returns user progress', async () => {
-      const response = await api.get('/api/progress');
-
-      expect(response.status).toBe(200);
-
-      const progress = await response.json();
-      expect(typeof progress).toBe('object');
-    });
-  });
 });

@@ -31,8 +31,11 @@ pub struct Entry {
 
     /// List of image filenames (sorted)
     pub image_files: Vec<String>,
-}
 
+    /// Total bytes in the archive or loose-image directory.
+    #[serde(default)]
+    pub size_bytes: u64,
+}
 impl Entry {
     /// Create a new Entry from a file path (ZIP/CBZ archive)
     pub async fn from_archive(path: PathBuf) -> Result<Self> {
@@ -63,7 +66,70 @@ impl Entry {
             mtime,
             pages,
             image_files,
+            size_bytes: metadata.len(),
         })
+    }
+
+    /// Create an entry from a directory of loose image files.
+    pub async fn from_directory(path: PathBuf) -> Result<Option<Self>> {
+        let mut dir_entries = tokio::fs::read_dir(&path).await?;
+        let mut image_paths = Vec::new();
+        while let Some(entry) = dir_entries.next_entry().await? {
+            let image_path = entry.path();
+            if image_path.is_file()
+                && image_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| !name.starts_with('.') && is_image_file(name))
+            {
+                image_paths.push(image_path);
+            }
+        }
+        image_paths.sort_by(|left, right| {
+            natord::compare(&left.to_string_lossy(), &right.to_string_lossy())
+        });
+        if image_paths.is_empty() {
+            return Ok(None);
+        }
+
+        let mut size_bytes = 0;
+        let mut mtime = 0;
+        let mut image_files = Vec::with_capacity(image_paths.len());
+        for image_path in &image_paths {
+            let metadata = tokio::fs::metadata(image_path).await?;
+            size_bytes += metadata.len();
+            mtime = mtime.max(
+                metadata
+                    .modified()?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64,
+            );
+            image_files.push(
+                image_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default()
+                    .to_string(),
+            );
+        }
+        let metadata = tokio::fs::metadata(&path).await?;
+
+        Ok(Some(Self {
+            id: Uuid::new_v4().to_string(),
+            title: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+            path,
+            signature: String::new(),
+            ctime: filesystem_ctime(&metadata),
+            mtime,
+            pages: image_files.len(),
+            image_files,
+            size_bytes,
+        }))
     }
 
     /// Get the file ctime, reading metadata for older cached entries.
@@ -76,23 +142,38 @@ impl Entry {
         Ok(filesystem_ctime(&metadata))
     }
 
-    /// Get page image data from archive
+    /// Get page image data from this archive or directory entry.
     pub async fn get_page(&self, page: usize) -> Result<Vec<u8>> {
         if page >= self.pages {
             return Err(crate::error::Error::NotFound(format!(
                 "Page {} out of range (0-{})",
                 page,
-                self.pages - 1
+                self.pages.saturating_sub(1)
             )));
         }
 
         let image_name = &self.image_files[page];
-        extract_image_from_archive(&self.path, image_name).await
+        if self.path.is_dir() {
+            Ok(tokio::fs::read(self.path.join(image_name)).await?)
+        } else {
+            extract_image_from_archive(&self.path, image_name).await
+        }
     }
 
-    /// Generate file signature for change detection
+    /// Generate file or directory-entry signature for change detection.
     pub fn calculate_signature(&mut self) -> Result<()> {
-        self.signature = crate::util::file_signature(&self.path)?;
+        if self.path.is_dir() {
+            use sha1::{Digest, Sha1};
+
+            let mut hasher = Sha1::new();
+            for image in &self.image_files {
+                let signature = crate::util::file_signature(&self.path.join(image))?;
+                hasher.update(signature.as_bytes());
+            }
+            self.signature = format!("{:x}", hasher.finalize());
+        } else {
+            self.signature = crate::util::file_signature(&self.path)?;
+        }
         Ok(())
     }
 

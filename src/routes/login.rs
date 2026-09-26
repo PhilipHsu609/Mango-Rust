@@ -1,10 +1,12 @@
 use askama::Template;
 use axum::{
-    extract::State,
+    extract::{rejection::JsonRejection, State},
+    http::StatusCode,
     response::{Html, IntoResponse, Redirect},
-    Form,
+    Form, Json,
 };
 use serde::Deserialize;
+use serde_json::json;
 use tower_sessions::Session;
 
 use crate::{
@@ -69,6 +71,89 @@ pub async fn post_login(
             Ok(Html(template.render().map_err(render_error)?).into_response())
         }
     }
+}
+
+/// POST /api/login - Authenticate using Mango's JSON API contract.
+pub async fn api_login(
+    State(state): State<AppState>,
+    session: Session,
+    request: std::result::Result<Json<LoginForm>, JsonRejection>,
+) -> impl IntoResponse {
+    let Json(form) = match request {
+        Ok(request) => request,
+        Err(error) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"success": false, "error": error.body_text()})),
+            )
+                .into_response()
+        }
+    };
+
+    let token = match state
+        .storage
+        .verify_user(&form.username, &form.password)
+        .await
+    {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"success": false, "error": "Nil assertion failed"})),
+            )
+                .into_response()
+        }
+        Err(error) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"success": false, "error": error.to_string()})),
+            )
+                .into_response()
+        }
+    };
+
+    if let Err(error) = session.insert(SESSION_TOKEN_KEY, token).await {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"success": false, "error": error.to_string()})),
+        )
+            .into_response();
+    }
+
+    if let Err(error) = session.save().await {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"success": false, "error": error.to_string()})),
+        )
+            .into_response();
+    }
+    let is_admin = match state.storage.username_is_admin(&form.username).await {
+        Ok(is_admin) => is_admin,
+        Err(error) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"success": false, "error": error.to_string()})),
+            )
+                .into_response()
+        }
+    };
+    let Some(session_id) = session.id() else {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"success": false, "error": "Session ID unavailable"})),
+        )
+            .into_response();
+    };
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "success": true,
+            "session_id": session_id.to_string(),
+            "is_admin": is_admin
+        })),
+    )
+        .into_response()
 }
 
 /// GET /logout - Clear session and redirect to login

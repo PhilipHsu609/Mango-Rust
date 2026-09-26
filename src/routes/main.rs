@@ -252,26 +252,12 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
         let one_month_ago = chrono::Utc::now().timestamp() - (30 * 24 * 60 * 60);
 
         // Collect data for all titles
-        let titles = lib.get_titles();
+        let titles = lib.all_titles();
         for (title_index, title) in titles.iter().enumerate() {
             let info = match TitleInfo::load(&title.path).await {
                 Ok(info) => info,
                 Err(_) => continue,
             };
-
-            // Check title progress for start_reading
-            let title_progress = title
-                .get_title_progress(&user.username)
-                .await
-                .unwrap_or(0.0);
-            if title_progress == 0.0 && sr_items.len() < MAX_ITEMS {
-                sr_items.push(HomeCardItem::from_title(
-                    &title.id,
-                    &title.title,
-                    title.entries.len(),
-                    title.entries.first().map(|e| e.id.as_str()),
-                ));
-            }
 
             // Continue Reading: one Mango-selected entry per title.
             if let Some((entry, previous)) = title.get_continue_reading_entry(&user.username, &info)
@@ -323,6 +309,23 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                         });
                     }
                 }
+            }
+        }
+
+        for title in lib.get_titles() {
+            if title
+                .get_title_progress(&user.username)
+                .await
+                .unwrap_or(0.0)
+                == 0.0
+                && sr_items.len() < MAX_ITEMS
+            {
+                sr_items.push(HomeCardItem::from_title(
+                    &title.id,
+                    &title.title,
+                    title.entries.len(),
+                    title.entries.first().map(|entry| entry.id.as_str()),
+                ));
             }
         }
 
@@ -653,7 +656,7 @@ pub async fn view_tag_page(
 
     // Sort titles based on method
     match sort_method {
-        crate::library::SortMethod::Name => {
+        crate::library::SortMethod::Name | crate::library::SortMethod::TimeAdded => {
             titles.sort_by(|a, b| {
                 if ascending {
                     natord::compare(&a.name, &b.name)
@@ -663,28 +666,21 @@ pub async fn view_tag_page(
             });
         }
         crate::library::SortMethod::TimeModified => {
-            // For modified sort, we need to get the mtime from the actual titles
             titles.sort_by(|a, b| {
                 let a_title = lib.get_title(&a.id).unwrap();
                 let b_title = lib.get_title(&b.id).unwrap();
-                let a_mtime = a_title.mtime;
-                let b_mtime = b_title.mtime;
+                let ordering = a_title.mtime.cmp(&b_title.mtime);
                 if ascending {
-                    a_mtime.cmp(&b_mtime)
+                    ordering
                 } else {
-                    b_mtime.cmp(&a_mtime)
+                    ordering.reverse()
                 }
             });
         }
         crate::library::SortMethod::Progress => {
-            if ascending {
-                crate::routes::sort_by_progress(&mut titles, true);
-            } else {
-                crate::routes::sort_by_progress(&mut titles, false);
-            }
+            crate::routes::sort_by_progress(&mut titles, ascending);
         }
         crate::library::SortMethod::Auto => {
-            // Auto sort defaults to Name ascending
             titles.sort_by(|a, b| natord::compare(&a.name, &b.name));
         }
     }
@@ -700,6 +696,8 @@ pub async fn view_tag_page(
     ) = match (sort_method, ascending) {
         (crate::library::SortMethod::Name, true) => (true, false, false, false, false, false),
         (crate::library::SortMethod::Name, false) => (false, true, false, false, false, false),
+        (crate::library::SortMethod::TimeAdded, true) => (true, false, false, false, false, false),
+        (crate::library::SortMethod::TimeAdded, false) => (false, true, false, false, false, false),
         (crate::library::SortMethod::TimeModified, true) => {
             (false, false, true, false, false, false)
         }
