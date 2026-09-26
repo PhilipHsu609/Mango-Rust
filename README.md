@@ -18,7 +18,9 @@ Open `http://localhost:9000`. Default credentials shown in logs.
 - Multi-user authentication
 - Web reader (paged/continuous modes)
 - Progress tracking & resume
+- Homepage Recently Added groups entries of the same title added within 24 hours
 - Tags, search, sorting
+- Admin page lists missing titles and entries separately and supports removing their database records
 - Dark/light themes
 - OPDS catalog for e-readers
 - ZIP/CBZ, RAR/CBR, 7z/CB7 archives

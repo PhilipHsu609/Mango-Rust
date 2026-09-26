@@ -4,6 +4,7 @@ use axum::{
     response::Html,
 };
 
+use super::recently_added::{group_recent_entries, RecentEntry, RECENT_ITEMS_LIMIT};
 use super::{sort_by_progress, HasProgress};
 use crate::{
     auth::User,
@@ -57,8 +58,8 @@ struct LibraryItem {
 #[template(path = "library.html")]
 struct LibraryTemplate {
     nav: crate::util::NavigationState,
-    titles: Vec<HomeCardItem>,  // For titles.len() in template
-    items: Vec<LibraryItem>,    // Items with progress for iteration
+    titles: Vec<HomeCardItem>, // For titles.len() in template
+    items: Vec<LibraryItem>,   // Items with progress for iteration
     sort_options: Vec<(String, String)>,
     sort_opt: Option<SortOption>,
 }
@@ -135,7 +136,12 @@ impl HomeCardItem {
 
     /// Create a card item for a title
     #[allow(dead_code)]
-    fn from_title(title_id: &str, title_name: &str, entry_count: usize, first_entry_id: Option<&str>) -> Self {
+    fn from_title(
+        title_id: &str,
+        title_name: &str,
+        entry_count: usize,
+        first_entry_id: Option<&str>,
+    ) -> Self {
         let content_label = if entry_count == 1 {
             "1 entry".to_string()
         } else {
@@ -246,14 +252,18 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
         let one_month_ago = chrono::Utc::now().timestamp() - (30 * 24 * 60 * 60);
 
         // Collect data for all titles
-        for title in lib.get_titles() {
+        let titles = lib.get_titles();
+        for (title_index, title) in titles.iter().enumerate() {
             let info = match TitleInfo::load(&title.path).await {
                 Ok(info) => info,
                 Err(_) => continue,
             };
 
             // Check title progress for start_reading
-            let title_progress = title.get_title_progress(&user.username).await.unwrap_or(0.0);
+            let title_progress = title
+                .get_title_progress(&user.username)
+                .await
+                .unwrap_or(0.0);
             if title_progress == 0.0 && sr_items.len() < MAX_ITEMS {
                 sr_items.push(HomeCardItem::from_title(
                     &title.id,
@@ -264,7 +274,7 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
             }
 
             // Process entries for continue_reading and recently_added
-            for entry in &title.entries {
+            for (entry_index, entry) in title.entries.iter().enumerate() {
                 // Continue reading: entries with last_read timestamp
                 if let Some(last_read) = info.get_last_read(&user.username, &entry.id) {
                     let progress = info.get_progress(&user.username, &entry.id).unwrap_or(0);
@@ -303,21 +313,12 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                             0.0
                         };
 
-                        ra_items.push((
+                        ra_items.push(RecentEntry {
+                            title_id: title.id.clone(),
                             date_added,
-                            RecentlyAddedItem {
-                                item: HomeCardItem::from_entry(
-                                    &entry.id,
-                                    &entry.title,
-                                    &title.id,
-                                    &title.title,
-                                    entry.pages,
-                                    &entry.path.to_string_lossy(),
-                                ),
-                                percentage,
-                                grouped_count: None,
-                            },
-                        ));
+                            percentage,
+                            item: (title_index, entry_index),
+                        });
                     }
                 }
             }
@@ -337,13 +338,41 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
         sr_items.shuffle(&mut rng);
         sr_items.truncate(MAX_ITEMS);
 
-        // Sort recently_added by date_added (most recent first)
-        ra_items.sort_by(|a, b| b.0.cmp(&a.0));
-        let recently_added: Vec<RecentlyAddedItem> = ra_items
-            .into_iter()
-            .take(MAX_ITEMS)
-            .map(|(_, item)| item)
-            .collect();
+        // Group recent entries by title, then limit the number of cards
+        let recently_added: Vec<RecentlyAddedItem> =
+            group_recent_entries(ra_items, RECENT_ITEMS_LIMIT)
+                .into_iter()
+                .map(|group| {
+                    let title = titles[group.item.0];
+                    let entry = &title.entries[group.item.1];
+                    let item = if group.grouped_count > 1 {
+                        let mut item = HomeCardItem::from_title(
+                            &title.id,
+                            &title.title,
+                            title.entries.len(),
+                            title.entries.first().map(|entry| entry.id.as_str()),
+                        );
+                        item.content_label = format!("{} new entries", group.grouped_count);
+                        item.grouped_count = Some(group.grouped_count);
+                        item
+                    } else {
+                        HomeCardItem::from_entry(
+                            &entry.id,
+                            &entry.title,
+                            &title.id,
+                            &title.title,
+                            entry.pages,
+                            &entry.path.to_string_lossy(),
+                        )
+                    };
+
+                    RecentlyAddedItem {
+                        item,
+                        percentage: group.percentage,
+                        grouped_count: Some(group.grouped_count),
+                    }
+                })
+                .collect();
 
         (continue_reading, sr_items, recently_added)
     };

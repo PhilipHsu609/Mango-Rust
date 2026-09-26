@@ -7,6 +7,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::recently_added::{group_recent_entries, RecentEntry, RECENT_ITEMS_LIMIT};
+
 use crate::{
     error::{Error, Result},
     library::{Entry, SortMethod},
@@ -212,7 +214,9 @@ pub async fn continue_reading(
     for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
         for entry in &title.entries {
             if let Some(last_read) = cache.get_last_read(&title.id, &username, &entry.id) {
-                let progress = cache.get_progress(&title.id, &username, &entry.id).unwrap_or(0);
+                let progress = cache
+                    .get_progress(&title.id, &username, &entry.id)
+                    .unwrap_or(0);
                 let percentage = calculate_progress_percentage(progress, entry.pages);
 
                 entries_with_progress.push(ContinueReadingEntry {
@@ -287,13 +291,10 @@ pub async fn start_reading(
 
 /// Intermediate struct for recently_added sorting (replaces hard-to-read tuple)
 struct RecentEntryData {
-    title_id: String,
     title_name: String,
     entry_id: String,
     entry_name: String,
     pages: usize,
-    percentage: f32,
-    date_added: i64,
 }
 
 /// API route: GET /api/library/recently_added
@@ -312,59 +313,45 @@ pub async fn recently_added(
         for entry in &title.entries {
             if let Some(date_added) = cache.get_date_added(&title.id, &entry.id) {
                 if date_added > one_month_ago {
-                    let progress = cache.get_progress(&title.id, &username, &entry.id).unwrap_or(0);
+                    let progress = cache
+                        .get_progress(&title.id, &username, &entry.id)
+                        .unwrap_or(0);
                     let percentage = calculate_progress_percentage(progress, entry.pages);
 
-                    entries_with_dates.push(RecentEntryData {
+                    entries_with_dates.push(RecentEntry {
                         title_id: title.id.clone(),
-                        title_name: title.title.clone(),
-                        entry_id: entry.id.clone(),
-                        entry_name: entry.title.clone(),
-                        pages: entry.pages,
-                        percentage,
                         date_added,
+                        percentage,
+                        item: RecentEntryData {
+                            title_name: title.title.clone(),
+                            entry_id: entry.id.clone(),
+                            entry_name: entry.title.clone(),
+                            pages: entry.pages,
+                        },
                     });
                 }
             }
         }
     }
 
-    // Sort by date_added (most recent first)
-    entries_with_dates.sort_by(|a, b| b.date_added.cmp(&a.date_added));
-
-    // Group consecutive entries from same title added on same day
-    let mut result: Vec<RecentlyAddedEntry> = Vec::new();
-    for entry in entries_with_dates {
-        if result.len() >= 8 {
-            break;
-        }
-
-        // Check if we can group with last entry
-        let should_group = if let Some(last) = result.last() {
-            last.title_id == entry.title_id && (entry.date_added - last.date_added).abs() < (24 * 60 * 60)
-        } else {
-            false
-        };
-
-        if should_group {
-            // Group with previous entry
-            if let Some(last) = result.last_mut() {
-                last.grouped_count += 1;
-                last.percentage = 0.0; // Hide percentage for grouped items
-            }
-        } else {
-            result.push(RecentlyAddedEntry {
-                title_id: entry.title_id,
-                title_name: entry.title_name,
-                entry_id: entry.entry_id,
-                entry_name: entry.entry_name,
-                pages: entry.pages,
-                percentage: entry.percentage,
-                grouped_count: 1,
-                date_added: entry.date_added,
-            });
-        }
-    }
+    let result: Vec<RecentlyAddedEntry> =
+        group_recent_entries(entries_with_dates, RECENT_ITEMS_LIMIT)
+            .into_iter()
+            .map(|group| RecentlyAddedEntry {
+                title_id: group.title_id,
+                title_name: group.item.title_name,
+                entry_id: group.item.entry_id,
+                entry_name: group.item.entry_name,
+                pages: group.item.pages,
+                percentage: if group.grouped_count > 1 {
+                    0.0
+                } else {
+                    group.percentage
+                },
+                grouped_count: group.grouped_count,
+                date_added: group.date_added,
+            })
+            .collect();
 
     Ok(Json(result))
 }
@@ -587,9 +574,9 @@ pub async fn get_dimensions(
 ) -> Result<impl IntoResponse> {
     let lib = state.library.load();
 
-    let entry = lib.get_entry(&title_id, &entry_id).ok_or_else(|| {
-        Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id))
-    })?;
+    let entry = lib
+        .get_entry(&title_id, &entry_id)
+        .ok_or_else(|| Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id)))?;
     let entry_pages = entry.pages;
     let entry_clone = entry.clone();
     drop(lib); // Release library lock early
@@ -649,7 +636,11 @@ pub async fn get_dimensions(
                         (1000, 1000, true)
                     }
                 };
-                dimensions.push(PageDimension { width, height, estimated });
+                dimensions.push(PageDimension {
+                    width,
+                    height,
+                    estimated,
+                });
                 // Only cache actual dimensions, not estimated ones
                 if !estimated {
                     dims_to_cache.push((page_idx, width, height));
@@ -673,7 +664,11 @@ pub async fn get_dimensions(
 
     // Save to cache if we got all dimensions successfully
     if dims_to_cache.len() == entry_pages {
-        if let Err(e) = state.storage.save_dimensions(&entry_id, &dims_to_cache).await {
+        if let Err(e) = state
+            .storage
+            .save_dimensions(&entry_id, &dims_to_cache)
+            .await
+        {
             tracing::warn!("Failed to cache dimensions for entry {}: {}", entry_id, e);
         }
     }
@@ -710,9 +705,9 @@ pub async fn update_progress(
     Query(query): Query<ProgressQuery>,
     crate::auth::Username(username): crate::auth::Username,
 ) -> Result<impl IntoResponse> {
-    let entry_id = query.eid.ok_or_else(|| {
-        Error::BadRequest("Missing 'eid' query parameter".to_string())
-    })?;
+    let entry_id = query
+        .eid
+        .ok_or_else(|| Error::BadRequest("Missing 'eid' query parameter".to_string()))?;
 
     let lib = state.library.load();
     let title = lib
@@ -730,7 +725,8 @@ pub async fn update_progress(
         .await?;
 
     // Invalidate response cache
-    lib.invalidate_cache_for_progress(&title_id, &username).await;
+    lib.invalidate_cache_for_progress(&title_id, &username)
+        .await;
     drop(lib);
 
     tracing::debug!(

@@ -159,37 +159,134 @@ pub async fn scan_library(
     }))
 }
 
-/// GET /api/admin/entries/missing - Get all missing entries
-/// Returns list of entries marked as unavailable in the database
+#[derive(Serialize)]
+pub struct MissingTitlesResponse {
+    success: bool,
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    titles: Option<Vec<crate::storage::MissingItem>>,
+}
+
+#[derive(Serialize)]
+pub struct MissingEntriesResponse {
+    success: bool,
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entries: Option<Vec<crate::storage::MissingItem>>,
+}
+
+#[derive(Serialize)]
+pub struct MissingItemsMutationResponse {
+    success: bool,
+    error: Option<String>,
+}
+
+/// GET /api/admin/titles/missing - Get unavailable titles.
+pub async fn get_missing_titles(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+) -> Json<MissingTitlesResponse> {
+    match state.storage.get_missing_titles().await {
+        Ok(titles) => Json(MissingTitlesResponse {
+            success: true,
+            error: None,
+            titles: Some(titles),
+        }),
+        Err(error) => Json(MissingTitlesResponse {
+            success: false,
+            error: Some(error.to_string()),
+            titles: None,
+        }),
+    }
+}
+
+/// GET /api/admin/entries/missing - Get unavailable entries.
 pub async fn get_missing_entries(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
-) -> Result<Json<Vec<crate::storage::MissingEntry>>> {
-    let entries = state.storage.get_missing_entries().await?;
-    Ok(Json(entries))
+) -> Json<MissingEntriesResponse> {
+    match state.storage.get_missing_entries().await {
+        Ok(entries) => Json(MissingEntriesResponse {
+            success: true,
+            error: None,
+            entries: Some(entries),
+        }),
+        Err(error) => Json(MissingEntriesResponse {
+            success: false,
+            error: Some(error.to_string()),
+            entries: None,
+        }),
+    }
 }
 
-/// DELETE /api/admin/entries/missing/:id - Delete a specific missing entry
-/// Removes the entry from the database (cannot be undone)
+/// DELETE /api/admin/titles/missing/:id - Delete an unavailable title.
+pub async fn delete_missing_title(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+    Path(id): Path<String>,
+) -> Json<MissingItemsMutationResponse> {
+    match state.storage.delete_missing_title(&id).await {
+        Ok(()) => Json(MissingItemsMutationResponse {
+            success: true,
+            error: None,
+        }),
+        Err(error) => Json(MissingItemsMutationResponse {
+            success: false,
+            error: Some(error.to_string()),
+        }),
+    }
+}
+
+/// DELETE /api/admin/entries/missing/:id - Delete an unavailable entry.
 pub async fn delete_missing_entry(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
     Path(id): Path<String>,
-) -> Result<StatusCode> {
-    state.storage.delete_missing_entry(&id).await?;
-    Ok(StatusCode::NO_CONTENT)
+) -> Json<MissingItemsMutationResponse> {
+    match state.storage.delete_missing_entry(&id).await {
+        Ok(()) => Json(MissingItemsMutationResponse {
+            success: true,
+            error: None,
+        }),
+        Err(error) => Json(MissingItemsMutationResponse {
+            success: false,
+            error: Some(error.to_string()),
+        }),
+    }
 }
 
-/// DELETE /api/admin/entries/missing - Delete all missing entries
-/// Removes all unavailable entries from the database (cannot be undone)
+/// DELETE /api/admin/titles/missing - Delete all unavailable titles.
+pub async fn delete_all_missing_titles(
+    State(state): State<AppState>,
+    AdminOnly(_username): AdminOnly,
+) -> Json<MissingItemsMutationResponse> {
+    match state.storage.delete_all_missing_titles().await {
+        Ok(_) => Json(MissingItemsMutationResponse {
+            success: true,
+            error: None,
+        }),
+        Err(error) => Json(MissingItemsMutationResponse {
+            success: false,
+            error: Some(error.to_string()),
+        }),
+    }
+}
+
+/// DELETE /api/admin/entries/missing - Delete all unavailable entries.
 pub async fn delete_all_missing_entries(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
-) -> Result<Json<serde_json::Value>> {
-    let count = state.storage.delete_all_missing_entries().await?;
-    Ok(Json(serde_json::json!({
-        "deleted": count
-    })))
+) -> Json<MissingItemsMutationResponse> {
+    match state.storage.delete_all_missing_entries().await {
+        Ok(_) => Json(MissingItemsMutationResponse {
+            success: true,
+            error: None,
+        }),
+        Err(error) => Json(MissingItemsMutationResponse {
+            success: false,
+            error: Some(error.to_string()),
+        }),
+    }
 }
 
 /// Missing Items template
@@ -199,8 +296,7 @@ struct MissingItemsTemplate {
     nav: crate::util::NavigationState,
 }
 
-/// GET /admin/missing-items - Missing items management page
-/// Shows list of items in database whose files no longer exist
+/// GET /admin/missing - Missing items management page.
 pub async fn missing_items_page(AdminOnly(_username): AdminOnly) -> Result<Html<String>> {
     let template = MissingItemsTemplate {
         nav: crate::util::NavigationState::admin().with_admin(true),
@@ -341,7 +437,12 @@ pub async fn update_user(
     // Update user using existing update_user method
     state
         .storage
-        .update_user(&username, &username, request.password.as_deref(), request.is_admin)
+        .update_user(
+            &username,
+            &username,
+            request.password.as_deref(),
+            request.is_admin,
+        )
         .await?;
 
     tracing::info!(
@@ -534,13 +635,21 @@ pub async fn update_display_name(
             .storage
             .update_entry_display_name(&entry_id, &decoded_name)
             .await?;
-        tracing::info!("Updated entry {} display name to '{}'", entry_id, decoded_name);
+        tracing::info!(
+            "Updated entry {} display name to '{}'",
+            entry_id,
+            decoded_name
+        );
     } else {
         state
             .storage
             .update_title_display_name(&title_id, &decoded_name)
             .await?;
-        tracing::info!("Updated title {} display name to '{}'", title_id, decoded_name);
+        tracing::info!(
+            "Updated title {} display name to '{}'",
+            title_id,
+            decoded_name
+        );
     }
 
     Ok(Json(serde_json::json!({
@@ -625,7 +734,8 @@ pub async fn bulk_progress(
     }
 
     // Invalidate cache
-    lib.invalidate_cache_for_progress(&title_id, &username).await;
+    lib.invalidate_cache_for_progress(&title_id, &username)
+        .await;
 
     tracing::info!(
         "Bulk progress update: {} entries marked as {} for title {}",
@@ -748,21 +858,28 @@ pub async fn upload_cover(
     let mut file_data: Option<Vec<u8>> = None;
     let mut content_type: Option<String> = None;
 
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        crate::error::Error::BadRequest(format!("Failed to parse multipart: {}", e))
-    })? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| crate::error::Error::BadRequest(format!("Failed to parse multipart: {}", e)))?
+    {
         if field.name() == Some("file") {
             content_type = field.content_type().map(|s| s.to_string());
-            file_data = Some(field.bytes().await.map_err(|e| {
-                crate::error::Error::BadRequest(format!("Failed to read file: {}", e))
-            })?.to_vec());
+            file_data = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|e| {
+                        crate::error::Error::BadRequest(format!("Failed to read file: {}", e))
+                    })?
+                    .to_vec(),
+            );
             break;
         }
     }
 
-    let data = file_data.ok_or_else(|| {
-        crate::error::Error::BadRequest("No file provided".to_string())
-    })?;
+    let data =
+        file_data.ok_or_else(|| crate::error::Error::BadRequest("No file provided".to_string()))?;
 
     // Validate file size (max 10MB)
     const MAX_COVER_SIZE: usize = 10 * 1024 * 1024;
@@ -782,9 +899,11 @@ pub async fn upload_cover(
         let title = lib.get_title(&query.tid).ok_or_else(|| {
             crate::error::Error::NotFound(format!("Title not found: {}", query.tid))
         })?;
-        title.entries.first().map(|e| e.id.clone()).ok_or_else(|| {
-            crate::error::Error::NotFound("Title has no entries".to_string())
-        })?
+        title
+            .entries
+            .first()
+            .map(|e| e.id.clone())
+            .ok_or_else(|| crate::error::Error::NotFound("Title has no entries".to_string()))?
     };
 
     // Determine MIME type
@@ -929,4 +1048,71 @@ pub async fn delete_user_api(
     Ok(Json(serde_json::json!({
         "success": true
     })))
+}
+
+#[cfg(test)]
+mod missing_items_api_tests {
+    use super::{MissingEntriesResponse, MissingItemsMutationResponse, MissingTitlesResponse};
+    use crate::storage::MissingItem;
+
+    #[test]
+    fn missing_item_api_responses_match_mango_contract() {
+        let item = MissingItem {
+            id: "item-id".to_string(),
+            path: "Series/Volume.cbz".to_string(),
+            signature: Some("signature".to_string()),
+        };
+
+        assert_eq!(
+            serde_json::to_value(MissingTitlesResponse {
+                success: true,
+                error: None,
+                titles: Some(vec![item.clone()]),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "success": true,
+                "error": null,
+                "titles": [{
+                    "id": "item-id",
+                    "path": "Series/Volume.cbz",
+                    "signature": "signature"
+                }]
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(MissingEntriesResponse {
+                success: true,
+                error: None,
+                entries: Some(vec![item]),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "success": true,
+                "error": null,
+                "entries": [{
+                    "id": "item-id",
+                    "path": "Series/Volume.cbz",
+                    "signature": "signature"
+                }]
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(MissingItemsMutationResponse {
+                success: true,
+                error: None,
+            })
+            .unwrap(),
+            serde_json::json!({"success": true, "error": null})
+        );
+        assert_eq!(
+            serde_json::to_value(MissingTitlesResponse {
+                success: false,
+                error: Some("failed".to_string()),
+                titles: None,
+            })
+            .unwrap(),
+            serde_json::json!({"success": false, "error": "failed"})
+        );
+    }
 }

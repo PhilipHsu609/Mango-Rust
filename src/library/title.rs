@@ -267,11 +267,20 @@ impl Title {
         use super::progress::TitleInfo;
 
         let mut info = TitleInfo::load(&self.path).await?;
-        let now = chrono::Utc::now().timestamp();
 
         for entry in &self.entries {
-            // Only set if not already set (preserve original date for existing entries)
-            info.set_date_added_if_new(&entry.id, now);
+            if info.date_added.contains_key(&entry.id) {
+                continue;
+            }
+
+            match entry.date_added_timestamp().await {
+                Ok(timestamp) => info.set_date_added_if_new(&entry.id, timestamp),
+                Err(error) => tracing::warn!(
+                    "Failed to read ctime for recently scanned entry {}: {}",
+                    entry.path.display(),
+                    error
+                ),
+            }
         }
 
         info.save(&self.path).await?;
@@ -347,5 +356,58 @@ impl super::Sortable for &Title {
 
     fn sort_mtime(&self) -> i64 {
         self.mtime
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Title;
+    use crate::library::{entry::Entry, progress::TitleInfo};
+
+    #[tokio::test]
+    async fn populate_date_added_uses_entry_ctime_and_preserves_existing_dates() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut info = TitleInfo::load(dir.path()).await.unwrap();
+        info.set_date_added("existing-entry", 1_600_000_000);
+        info.save(dir.path()).await.unwrap();
+
+        let title = Title {
+            id: "title".to_string(),
+            path: dir.path().to_path_buf(),
+            title: "Title".to_string(),
+            signature: String::new(),
+            contents_signature: String::new(),
+            mtime: 0,
+            entries: vec![
+                Entry {
+                    id: "new-entry".to_string(),
+                    path: dir.path().join("new.cbz"),
+                    title: "New".to_string(),
+                    signature: String::new(),
+                    mtime: 0,
+                    ctime: 1_700_000_000,
+                    pages: 0,
+                    image_files: Vec::new(),
+                },
+                Entry {
+                    id: "existing-entry".to_string(),
+                    path: dir.path().join("existing.cbz"),
+                    title: "Existing".to_string(),
+                    signature: String::new(),
+                    mtime: 0,
+                    ctime: 1_700_000_001,
+                    pages: 0,
+                    image_files: Vec::new(),
+                },
+            ],
+            parent_id: None,
+            nested_titles: Vec::new(),
+        };
+
+        title.populate_date_added().await.unwrap();
+
+        let info = TitleInfo::load(dir.path()).await.unwrap();
+        assert_eq!(info.get_date_added("new-entry"), Some(1_700_000_000));
+        assert_eq!(info.get_date_added("existing-entry"), Some(1_600_000_000));
     }
 }

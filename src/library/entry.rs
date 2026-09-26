@@ -19,6 +19,10 @@ pub struct Entry {
     /// File signature (inode on Unix, CRC32 on Windows) - stored as TEXT for Mango compatibility
     pub signature: String,
 
+    /// File metadata change time, matching Mango's `ctime` date_added behavior
+    #[serde(default)]
+    pub ctime: i64,
+
     /// Modification time (for sorting)
     pub mtime: i64,
 
@@ -39,6 +43,7 @@ impl Entry {
             .to_string();
 
         let metadata = tokio::fs::metadata(&path).await?;
+        let ctime = filesystem_ctime(&metadata);
         let mtime = metadata
             .modified()?
             .duration_since(std::time::UNIX_EPOCH)
@@ -54,10 +59,21 @@ impl Entry {
             path,
             title,
             signature: String::new(), // Will be set later
+            ctime,
             mtime,
             pages,
             image_files,
         })
+    }
+
+    /// Get the file ctime, reading metadata for older cached entries.
+    pub(crate) async fn date_added_timestamp(&self) -> Result<i64> {
+        if self.ctime != 0 {
+            return Ok(self.ctime);
+        }
+
+        let metadata = tokio::fs::metadata(&self.path).await?;
+        Ok(filesystem_ctime(&metadata))
     }
 
     /// Get page image data from archive
@@ -196,6 +212,25 @@ impl Entry {
     }
 }
 
+fn filesystem_ctime(metadata: &std::fs::Metadata) -> i64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        metadata.ctime()
+    }
+
+    #[cfg(not(unix))]
+    {
+        metadata
+            .created()
+            .or_else(|_| metadata.modified())
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs() as i64)
+            .unwrap_or_default()
+    }
+}
+
 /// Extract list of image filenames from an archive (ZIP, RAR, 7z)
 /// Uses spawn_blocking to avoid blocking the async runtime
 async fn extract_image_list(archive_path: &Path) -> Result<Vec<String>> {
@@ -230,8 +265,9 @@ async fn extract_image_from_archive(archive_path: &Path, image_name: &str) -> Re
         let file = std::fs::File::open(&path)?;
         let mut buffer = Vec::new();
 
-        compress_tools::uncompress_archive_file(file, &mut buffer, &name)
-            .map_err(|e| crate::error::Error::Internal(format!("Failed to extract {}: {}", name, e)))?;
+        compress_tools::uncompress_archive_file(file, &mut buffer, &name).map_err(|e| {
+            crate::error::Error::Internal(format!("Failed to extract {}: {}", name, e))
+        })?;
 
         Ok(buffer)
     })
@@ -267,5 +303,25 @@ impl super::Sortable for &Entry {
 
     fn sort_mtime(&self) -> i64 {
         self.mtime
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::Entry;
+    use std::{os::unix::fs::MetadataExt, path::PathBuf};
+
+    #[tokio::test]
+    async fn archive_entries_record_filesystem_ctime() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.cbz");
+        let mut empty_zip = vec![0; 22];
+        empty_zip[..4].copy_from_slice(b"PK\x05\x06");
+        std::fs::write(&path, empty_zip).unwrap();
+
+        let expected_ctime = std::fs::metadata(&path).unwrap().ctime();
+        let entry = Entry::from_archive(PathBuf::from(path)).await.unwrap();
+
+        assert_eq!(entry.ctime, expected_ctime);
     }
 }

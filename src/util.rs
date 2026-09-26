@@ -237,8 +237,7 @@ pub async fn get_and_save_sort(
     if let Some((method, ascending)) = info.get_sort_by(username) {
         Ok((method, ascending))
     } else {
-        // Default: sort by title ascending
-        Ok(("title".to_string(), true))
+        Ok(("auto".to_string(), true))
     }
 }
 
@@ -304,5 +303,24 @@ mod tests {
 
         let nav_regular = NavigationState::home().with_admin(false);
         assert!(!nav_regular.is_admin);
+    }
+    #[tokio::test]
+    async fn absent_sort_prefers_auto_ascending() {
+        let dir = tempfile::tempdir().unwrap();
+        let params = SortParams {
+            sort: None,
+            ascend: None,
+        };
+
+        assert_eq!(
+            get_and_save_sort(dir.path(), "admin", &params)
+                .await
+                .unwrap(),
+            ("auto".to_string(), true)
+        );
+        assert_eq!(
+            crate::library::SortMethod::from_params(None, None),
+            (crate::library::SortMethod::Auto, true)
+        );
     }
 }

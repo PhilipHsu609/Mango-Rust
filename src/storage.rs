@@ -4,14 +4,12 @@ use uuid::Uuid;
 
 use crate::error::{Error, Result};
 
-/// Represents a missing (unavailable) database entry
-/// Used for displaying and managing items whose files are no longer on disk
+/// A missing title or entry record returned by the admin API.
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct MissingEntry {
+pub struct MissingItem {
     pub id: String,
     pub path: String,
-    #[serde(rename = "type")]
-    pub entry_type: String,
+    pub signature: Option<String>,
 }
 
 /// Stored page dimension data (from database cache)
@@ -336,79 +334,84 @@ impl Storage {
         Ok(())
     }
 
-    /// Get all unavailable (missing) entries
-    /// Matches original Storage#get_missing
-    pub async fn get_missing_entries(&self) -> Result<Vec<MissingEntry>> {
-        // Query both titles and ids tables
-        let title_rows = sqlx::query("SELECT id, path FROM titles WHERE unavailable = 1")
+    /// Get titles marked unavailable because their paths no longer exist.
+    pub async fn get_missing_titles(&self) -> Result<Vec<MissingItem>> {
+        let rows = sqlx::query("SELECT id, path, signature FROM titles WHERE unavailable = 1")
             .fetch_all(&self.pool)
             .await?;
 
-        let entry_rows = sqlx::query("SELECT id, path FROM ids WHERE unavailable = 1")
-            .fetch_all(&self.pool)
-            .await?;
-
-        let mut entries = Vec::new();
-
-        // Add titles first
-        for row in title_rows {
-            entries.push(MissingEntry {
+        Ok(rows
+            .into_iter()
+            .map(|row| MissingItem {
                 id: row.get("id"),
                 path: row.get("path"),
-                entry_type: "title".to_string(),
-            });
-        }
-
-        // Then add entries
-        for row in entry_rows {
-            entries.push(MissingEntry {
-                id: row.get("id"),
-                path: row.get("path"),
-                entry_type: "entry".to_string(),
-            });
-        }
-
-        // Sort by path
-        entries.sort_by(|a, b| a.path.cmp(&b.path));
-
-        Ok(entries)
+                signature: row.get("signature"),
+            })
+            .collect())
     }
 
-    /// Delete a specific missing entry from database
-    /// Matches original Storage#delete_missing
+    /// Get entries marked unavailable because their paths no longer exist.
+    pub async fn get_missing_entries(&self) -> Result<Vec<MissingItem>> {
+        let rows = sqlx::query("SELECT id, path, signature FROM ids WHERE unavailable = 1")
+            .fetch_all(&self.pool)
+            .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| MissingItem {
+                id: row.get("id"),
+                path: row.get("path"),
+                signature: row.get("signature"),
+            })
+            .collect())
+    }
+
+    /// Delete a specific unavailable entry record.
     pub async fn delete_missing_entry(&self, id: &str) -> Result<()> {
-        // Try deleting from titles first
-        let result1 = sqlx::query("DELETE FROM titles WHERE id = ? AND unavailable = 1")
+        let result = sqlx::query("DELETE FROM ids WHERE id = ? AND unavailable = 1")
             .bind(id)
             .execute(&self.pool)
             .await?;
 
-        // Then try ids table
-        let result2 = sqlx::query("DELETE FROM ids WHERE id = ? AND unavailable = 1")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-
-        let total = result1.rows_affected() + result2.rows_affected();
-        if total > 0 {
+        if result.rows_affected() > 0 {
             tracing::info!("Deleted missing entry: {}", id);
         }
 
         Ok(())
     }
 
-    /// Delete all missing entries from database
-    /// Matches original Storage#delete_all_missing (custom implementation)
+    /// Delete a specific unavailable title record.
+    pub async fn delete_missing_title(&self, id: &str) -> Result<()> {
+        let result = sqlx::query("DELETE FROM titles WHERE id = ? AND unavailable = 1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        if result.rows_affected() > 0 {
+            tracing::info!("Deleted missing title: {}", id);
+        }
+
+        Ok(())
+    }
+
+    /// Delete all titles marked unavailable.
+    pub async fn delete_all_missing_titles(&self) -> Result<u64> {
+        let result = sqlx::query("DELETE FROM titles WHERE unavailable = 1")
+            .execute(&self.pool)
+            .await?;
+
+        let rows_affected = result.rows_affected();
+        tracing::info!("Deleted {} missing titles", rows_affected);
+        Ok(rows_affected)
+    }
+
+    /// Delete all entries marked unavailable.
     pub async fn delete_all_missing_entries(&self) -> Result<u64> {
-        let result1 = sqlx::query("DELETE FROM titles WHERE unavailable = 1")
+        let result = sqlx::query("DELETE FROM ids WHERE unavailable = 1")
             .execute(&self.pool)
             .await?;
 
-        let result2 = sqlx::query("DELETE FROM ids WHERE unavailable = 1")
-            .execute(&self.pool)
-            .await?;
-
-        let rows_affected = result1.rows_affected() + result2.rows_affected();
+        let rows_affected = result.rows_affected();
         tracing::info!("Deleted {} missing entries", rows_affected);
         Ok(rows_affected)
     }
@@ -503,7 +506,11 @@ impl Storage {
     // ========== Display Name / Sort Title Methods ==========
 
     /// Update display name for a title
-    pub async fn update_title_display_name(&self, title_id: &str, display_name: &str) -> Result<()> {
+    pub async fn update_title_display_name(
+        &self,
+        title_id: &str,
+        display_name: &str,
+    ) -> Result<()> {
         sqlx::query("UPDATE titles SET display_name = ? WHERE id = ?")
             .bind(display_name)
             .bind(title_id)
@@ -513,7 +520,11 @@ impl Storage {
     }
 
     /// Update display name for an entry
-    pub async fn update_entry_display_name(&self, entry_id: &str, display_name: &str) -> Result<()> {
+    pub async fn update_entry_display_name(
+        &self,
+        entry_id: &str,
+        display_name: &str,
+    ) -> Result<()> {
         sqlx::query("UPDATE ids SET display_name = ? WHERE id = ?")
             .bind(display_name)
             .bind(entry_id)
@@ -523,7 +534,11 @@ impl Storage {
     }
 
     /// Update sort title for a title (None clears it)
-    pub async fn update_title_sort_title(&self, title_id: &str, sort_title: Option<&str>) -> Result<()> {
+    pub async fn update_title_sort_title(
+        &self,
+        title_id: &str,
+        sort_title: Option<&str>,
+    ) -> Result<()> {
         sqlx::query("UPDATE titles SET sort_title = ? WHERE id = ?")
             .bind(sort_title)
             .bind(title_id)
@@ -533,7 +548,11 @@ impl Storage {
     }
 
     /// Update sort title for an entry (None clears it)
-    pub async fn update_entry_sort_title(&self, entry_id: &str, sort_title: Option<&str>) -> Result<()> {
+    pub async fn update_entry_sort_title(
+        &self,
+        entry_id: &str,
+        sort_title: Option<&str>,
+    ) -> Result<()> {
         sqlx::query("UPDATE ids SET sort_title = ? WHERE id = ?")
             .bind(sort_title)
             .bind(entry_id)
@@ -542,14 +561,13 @@ impl Storage {
         Ok(())
     }
 
-
     // ========== Dimensions Cache ==========
 
     /// Get cached dimensions for an entry
     /// Returns None if not cached (needs extraction)
     pub async fn get_dimensions(&self, entry_id: &str) -> Result<Option<Vec<StoredDimension>>> {
         let rows: Vec<(i64, i64, i64)> = sqlx::query_as(
-            "SELECT page_num, width, height FROM dimensions WHERE entry_id = ? ORDER BY page_num"
+            "SELECT page_num, width, height FROM dimensions WHERE entry_id = ? ORDER BY page_num",
         )
         .bind(entry_id)
         .fetch_all(&self.pool)
@@ -573,7 +591,11 @@ impl Storage {
 
     /// Save dimensions for an entry (replaces existing)
     /// Uses transaction to ensure atomicity
-    pub async fn save_dimensions(&self, entry_id: &str, dimensions: &[(usize, u32, u32)]) -> Result<()> {
+    pub async fn save_dimensions(
+        &self,
+        entry_id: &str,
+        dimensions: &[(usize, u32, u32)],
+    ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
 
         // Delete existing dimensions for this entry
@@ -585,7 +607,7 @@ impl Storage {
         // Insert new dimensions
         for (page_num, width, height) in dimensions {
             sqlx::query(
-                "INSERT INTO dimensions (entry_id, page_num, width, height) VALUES (?, ?, ?, ?)"
+                "INSERT INTO dimensions (entry_id, page_num, width, height) VALUES (?, ?, ?, ?)",
             )
             .bind(entry_id)
             .bind(*page_num as i64)
@@ -601,24 +623,20 @@ impl Storage {
 
     /// Check if dimensions are cached for an entry
     pub async fn has_dimensions(&self, entry_id: &str) -> Result<bool> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM dimensions WHERE entry_id = ?"
-        )
-        .bind(entry_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM dimensions WHERE entry_id = ?")
+            .bind(entry_id)
+            .fetch_one(&self.pool)
+            .await?;
 
         Ok(count > 0)
     }
 
     /// Get dimension count for an entry (to check if cache is stale)
     pub async fn get_dimensions_count(&self, entry_id: &str) -> Result<usize> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM dimensions WHERE entry_id = ?"
-        )
-        .bind(entry_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM dimensions WHERE entry_id = ?")
+            .bind(entry_id)
+            .fetch_one(&self.pool)
+            .await?;
 
         Ok(count as usize)
     }
@@ -651,4 +669,49 @@ fn generate_random_password() -> String {
             CHARSET[idx] as char
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Storage;
+
+    #[tokio::test]
+    async fn missing_titles_and_entries_are_split_and_deleted_independently() {
+        let dir = tempfile::tempdir().unwrap();
+        let database_path = dir.path().join("test.db");
+        std::fs::File::create(&database_path).unwrap();
+        let database_url = format!("sqlite://{}", database_path.display());
+        let storage = Storage::new(&database_url).await.unwrap();
+
+        sqlx::query("INSERT INTO titles (id, path, signature, unavailable) VALUES (?, ?, ?, 1)")
+            .bind("title-id")
+            .bind("Series")
+            .bind("title-signature")
+            .execute(&storage.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO ids (id, path, signature, unavailable) VALUES (?, ?, ?, 1)")
+            .bind("entry-id")
+            .bind("Series/Volume.cbz")
+            .bind("entry-signature")
+            .execute(&storage.pool)
+            .await
+            .unwrap();
+
+        let titles = storage.get_missing_titles().await.unwrap();
+        let entries = storage.get_missing_entries().await.unwrap();
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0].id, "title-id");
+        assert_eq!(titles[0].signature.as_deref(), Some("title-signature"));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "entry-id");
+        assert_eq!(entries[0].signature.as_deref(), Some("entry-signature"));
+
+        storage.delete_missing_title("title-id").await.unwrap();
+        assert!(storage.get_missing_titles().await.unwrap().is_empty());
+        assert_eq!(storage.get_missing_entries().await.unwrap().len(), 1);
+
+        assert_eq!(storage.delete_all_missing_entries().await.unwrap(), 1);
+        assert!(storage.get_missing_entries().await.unwrap().is_empty());
+    }
 }

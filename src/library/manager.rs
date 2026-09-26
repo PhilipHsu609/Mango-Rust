@@ -732,7 +732,11 @@ impl Library {
             match self.progress_cache.load_title(title_id, &title.path).await {
                 Ok(_) => loaded += 1,
                 Err(e) => {
-                    tracing::warn!("Failed to load progress cache for title {}: {}", title_id, e);
+                    tracing::warn!(
+                        "Failed to load progress cache for title {}: {}",
+                        title_id,
+                        e
+                    );
                     errors += 1;
                 }
             }
@@ -889,13 +893,13 @@ impl Library {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SortMethod {
     /// Sort alphabetically by name/title
-    #[default]
     Name,
     /// Sort by modification time
     TimeModified,
     /// Sort by reading progress
     Progress,
     /// Smart chapter detection (future enhancement)
+    #[default]
     Auto,
 }
 
