@@ -18,7 +18,8 @@ const component = () => {
 		},
 		rm(event) {
 			const rawID = event.currentTarget.closest('tr').id;
-			const [type, id] = rawID.split('-');
+			const [type, ...idParts] = rawID.split('-');
+			const id = idParts.join('-');
 			const url = `${base_url}api/admin/${type === 'title' ? 'titles' : 'entries'}/missing/${id}`;
 			this.request('DELETE', url, () => {
 				this.load();
