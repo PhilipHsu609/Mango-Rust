@@ -7,44 +7,38 @@ describe('Library API', () => {
   });
 
   describe('GET /api/library', () => {
-    it('returns array of titles', async () => {
+    it('returns Mango library object', async () => {
       const response = await api.get('/api/library');
       expect(response.status).toBe(200);
 
       const data = await response.json();
-      expect(Array.isArray(data)).toBe(true);
+      expect(data).toHaveProperty('dir');
+      expect(data).toHaveProperty('titles');
+      expect(Array.isArray(data.titles)).toBe(true);
     });
 
-    it('title objects have required fields', async () => {
+    it('title objects have Mango fields', async () => {
       const response = await api.get('/api/library');
       const data = await response.json();
 
-      if (data.length > 0) {
-        const title = data[0];
+      if (data.titles.length > 0) {
+        const title = data.titles[0];
         expect(title).toHaveProperty('id');
         expect(title).toHaveProperty('title');
-        expect(typeof title.id).toBe('string');
-        expect(typeof title.title).toBe('string');
+        expect(title).toHaveProperty('entries');
+        expect(Array.isArray(title.entries)).toBe(true);
       }
-    });
-
-    it('respects sort parameter', async () => {
-      const defaultResponse = await api.get('/api/library');
-      const sortedResponse = await api.get('/api/library?sort=title');
-
-      expect(defaultResponse.status).toBe(200);
-      expect(sortedResponse.status).toBe(200);
     });
   });
 
-  describe('GET /api/title/:id', () => {
-    it('returns title details with entries array', async () => {
+  describe('GET /api/book/:tid', () => {
+    it('returns title details with Mango fields', async () => {
       const libraryResponse = await api.get('/api/library');
       const library = await libraryResponse.json();
 
-      if (library.length > 0) {
-        const titleId = library[0].id;
-        const response = await api.get(`/api/title/${titleId}`);
+      if (library.titles.length > 0) {
+        const titleId = library.titles[0].id;
+        const response = await api.get(`/api/book/${titleId}`);
 
         expect(response.status).toBe(200);
 
@@ -57,8 +51,41 @@ describe('Library API', () => {
     });
 
     it('returns 404 for invalid title ID', async () => {
-      const response = await api.get('/api/title/nonexistent-id');
+      const response = await api.get('/api/book/nonexistent-id');
       expect(response.status).toBe(404);
+    });
+  });
+
+
+  describe('Mango homepage API', () => {
+    it('returns wrapped Continue Reading entries and percentages', async () => {
+      const response = await api.get('/api/library/continue_reading');
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.entries)).toBe(true);
+      expect(Array.isArray(data.entry_percentages)).toBe(true);
+    });
+
+    it('returns wrapped Recently Added items', async () => {
+      const response = await api.get('/api/library/recently_added');
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.items)).toBe(true);
+      if (data.items.length > 0) {
+        expect(data.items[0]).toHaveProperty('item');
+        expect(data.items[0]).toHaveProperty('percentage');
+        expect(data.items[0]).toHaveProperty('count');
+      }
+    });
+
+    it('returns wrapped Start Reading titles', async () => {
+      const response = await api.get('/api/library/start_reading');
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.titles)).toBe(true);
     });
   });
 

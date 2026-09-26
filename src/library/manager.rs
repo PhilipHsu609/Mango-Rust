@@ -931,7 +931,7 @@ impl SortMethod {
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "title" | "name" => SortMethod::Name,
-            "modified" | "time" => SortMethod::TimeModified,
+            "modified" | "time" | "time_modified" => SortMethod::TimeModified,
             "progress" => SortMethod::Progress,
             "auto" => SortMethod::Auto,
             _ => SortMethod::default(),

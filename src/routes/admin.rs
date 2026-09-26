@@ -2,7 +2,7 @@ use askama::Template;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::Html,
+    response::{Html, IntoResponse},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -653,7 +653,8 @@ pub async fn update_display_name(
     }
 
     Ok(Json(serde_json::json!({
-        "success": true
+        "success": true,
+        "error": null
     })))
 }
 
@@ -687,7 +688,8 @@ pub async fn update_sort_title(
     }
 
     Ok(Json(serde_json::json!({
-        "success": true
+        "success": true,
+        "error": null
     })))
 }
 
@@ -708,32 +710,41 @@ pub async fn bulk_progress(
 ) -> Result<Json<serde_json::Value>> {
     let lib = state.library.load();
 
-    let title = lib
-        .get_title(&title_id)
-        .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {}", title_id)))?;
+    let Some(title) = lib.get_title(&title_id) else {
+        return Ok(Json(serde_json::json!({
+            "success": false,
+            "error": format!("Title not found: {}", title_id)
+        })));
+    };
+
+    if action != "read" && action != "unread" {
+        return Ok(Json(serde_json::json!({
+            "success": false,
+            "error": format!("Unknown action {}", action)
+        })));
+    }
 
     let cache = lib.progress_cache();
     for entry_id in &request.ids {
-        // Get entry to find page count
         if let Some(entry) = lib.get_entry(&title_id, entry_id) {
             let page = match action.as_str() {
                 "read" => entry.pages as i32,
                 "unread" => 0i32,
-                _ => {
-                    return Err(crate::error::Error::BadRequest(format!(
-                        "Invalid action: {}. Use 'read' or 'unread'",
-                        action
-                    )))
-                }
+                _ => unreachable!(),
             };
 
-            cache
+            if let Err(error) = cache
                 .save_progress(&title_id, &title.path, &username, &entry.title, page)
-                .await?;
+                .await
+            {
+                return Ok(Json(serde_json::json!({
+                    "success": false,
+                    "error": error.to_string()
+                })));
+            }
         }
     }
 
-    // Invalidate cache
     lib.invalidate_cache_for_progress(&title_id, &username)
         .await;
 
@@ -745,7 +756,8 @@ pub async fn bulk_progress(
     );
 
     Ok(Json(serde_json::json!({
-        "success": true
+        "success": true,
+        "error": null
     })))
 }
 
@@ -762,15 +774,16 @@ static THUMBNAIL_TOTAL: AtomicUsize = AtomicUsize::new(0);
 pub async fn thumbnail_progress(
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<serde_json::Value>> {
-    let generating = THUMBNAIL_GENERATING.load(Ordering::SeqCst);
-    let current = THUMBNAIL_CURRENT.load(Ordering::SeqCst);
     let total = THUMBNAIL_TOTAL.load(Ordering::SeqCst);
+    let current = THUMBNAIL_CURRENT.load(Ordering::SeqCst);
+    let progress = if total == 0 {
+        0.0
+    } else {
+        (current as f64 / total as f64).min(1.0)
+    };
 
     Ok(Json(serde_json::json!({
-        "success": true,
-        "generating": generating,
-        "current": current,
-        "total": total
+        "progress": progress
     })))
 }
 
@@ -778,20 +791,15 @@ pub async fn thumbnail_progress(
 pub async fn generate_thumbnails(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
-) -> Result<Json<serde_json::Value>> {
-    // Atomically check and set to avoid race condition
+) -> axum::response::Response {
     if THUMBNAIL_GENERATING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return Ok(Json(serde_json::json!({
-            "success": false,
-            "error": "Thumbnail generation already in progress"
-        })));
+        return StatusCode::OK.into_response();
     }
     THUMBNAIL_CURRENT.store(0, Ordering::SeqCst);
 
-    // Get all entries that need thumbnails
     let lib = state.library.load();
     let mut entries_to_process: Vec<(String, String)> = Vec::new();
 
@@ -804,7 +812,6 @@ pub async fn generate_thumbnails(
     THUMBNAIL_TOTAL.store(entries_to_process.len(), Ordering::SeqCst);
     drop(lib);
 
-    // Spawn background task
     let state_clone = state.clone();
     tokio::spawn(async move {
         let lib = state_clone.library.load();
@@ -814,13 +821,11 @@ pub async fn generate_thumbnails(
             THUMBNAIL_CURRENT.store(i + 1, Ordering::SeqCst);
 
             if let Some(entry) = lib.get_entry(title_id, entry_id) {
-                // Check if thumbnail already exists
                 match crate::library::Entry::get_thumbnail(entry_id, db).await {
-                    Ok(Some(_)) => continue, // Already has thumbnail
+                    Ok(Some(_)) => continue,
                     _ => {}
                 }
 
-                // Generate thumbnail
                 if let Err(e) = entry.generate_thumbnail(db).await {
                     tracing::warn!("Failed to generate thumbnail for {}: {}", entry_id, e);
                 }
@@ -831,10 +836,7 @@ pub async fn generate_thumbnails(
         tracing::info!("Thumbnail generation completed");
     });
 
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "message": "Thumbnail generation started"
-    })))
+    StatusCode::OK.into_response()
 }
 
 // ========== Cover Upload API ==========
@@ -1046,7 +1048,8 @@ pub async fn delete_user_api(
     tracing::info!("Deleted user '{}'", username);
 
     Ok(Json(serde_json::json!({
-        "success": true
+        "success": true,
+        "error": null
     })))
 }
 

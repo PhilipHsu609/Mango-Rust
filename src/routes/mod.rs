@@ -19,8 +19,8 @@ pub use admin::{
 };
 pub use api::{
     add_tag, continue_reading, delete_tag, download_entry, get_cover, get_dimensions, get_library,
-    get_page, get_stats, get_title, get_title_tags, list_tags, recently_added, start_reading,
-    update_progress,
+    get_page, get_sort_opt, get_stats, get_title, get_title_tags, list_tags, recently_added,
+    start_reading, update_progress, update_sort_opt,
 };
 pub use book::get_book;
 pub use login::{get_login, logout, post_login};

@@ -21,12 +21,13 @@ use crate::{
         delete_all_missing_titles, delete_missing_entry, delete_missing_title, delete_tag,
         delete_user, delete_user_api, download_entry, generate_thumbnails, get_all_progress,
         get_book, get_cover, get_dimensions, get_library, get_login, get_missing_entries,
-        get_missing_titles, get_page, get_progress, get_stats, get_title, get_title_tags,
-        get_users, home, library as library_page, list_tags, list_tags_page, logout,
-        missing_items_page, opds_index, opds_title, post_login, reader, reader_continue,
+        get_missing_titles, get_page, get_progress, get_sort_opt, get_stats, get_title,
+        get_title_tags, get_users, home, library as library_page, list_tags, list_tags_page,
+        logout, missing_items_page, opds_index, opds_title, post_login, reader, reader_continue,
         recently_added, save_progress, scan_library, start_reading, thumbnail_progress,
-        update_display_name, update_progress, update_sort_title, update_user, upload_cover,
-        user_edit_page, user_edit_post, user_edit_post_existing, users_page, view_tag_page,
+        update_display_name, update_progress, update_sort_opt, update_sort_title, update_user,
+        upload_cover, user_edit_page, user_edit_post, user_edit_post_existing, users_page,
+        view_tag_page,
     },
     Storage,
 };
@@ -192,7 +193,8 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/reader/:tid/:eid/:page", get(reader))
         // API routes
         .route("/api/library", get(get_library))
-        .route("/api/title/:id", get(get_title))
+        .route("/api/book/:tid", get(get_title))
+        .route("/api/sort_opt", get(get_sort_opt).put(update_sort_opt))
         .route("/api/page/:tid/:eid/:page", get(get_page))
         .route("/api/cover/:tid/:eid", get(get_cover))
         .route("/api/stats", get(get_stats))

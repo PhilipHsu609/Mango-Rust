@@ -6,19 +6,18 @@ describe('Progress API', () => {
     await login();
   });
 
-  describe('POST /api/progress/:tid/:eid', () => {
-    it('updates reading progress', async () => {
-      // Get a title with entries first
+  describe('PUT /api/progress/:tid/:page?eid=:entryId', () => {
+    it('updates reading progress using Mango request shape', async () => {
       const libraryResponse = await api.get('/api/library');
       const library = await libraryResponse.json();
 
-      if (library.length === 0) {
+      if (library.titles.length === 0) {
         console.log('No titles in library, skipping progress test');
         return;
       }
 
-      const titleId = library[0].id;
-      const titleResponse = await api.get(`/api/title/${titleId}`);
+      const titleId = library.titles[0].id;
+      const titleResponse = await api.get(`/api/book/${titleId}`);
       const title = await titleResponse.json();
 
       if (!title.entries || title.entries.length === 0) {
@@ -27,11 +26,10 @@ describe('Progress API', () => {
       }
 
       const entryId = title.entries[0].id;
-
-      // Update progress via POST
-      const response = await api.post(`/api/progress/${titleId}/${entryId}`, { page: 5 });
-
-      expect([200, 204]).toContain(response.status);
+      const response = await api.put(`/api/progress/${titleId}/1?eid=${entryId}`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true });
+      await api.put(`/api/progress/${titleId}/0?eid=${entryId}`);
     });
   });
 

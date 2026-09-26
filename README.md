@@ -31,6 +31,12 @@ Open `http://localhost:9000`. Default credentials shown in logs.
 Just swap the Docker image. All data (database, progress, thumbnails) works as-is.
 Per-entry `info.json` maps use Mango entry-title keys. Startup and scans migrate earlier Rust UUID-keyed metadata; legacy UUID-keyed `date_added` values are replaced with the entry file's creation time, while existing Mango title-keyed dates are preserved.
 
+## API compatibility
+
+Shared library APIs use Mango's catalog and homepage response shapes. Common progress, tag, thumbnail, and image routes match Mango's success-path request and payload shapes; some error-path status/body behavior still differs. This is not full API parity.
+
+Known gaps: Rust does not implement Mango's `POST /api/login`, plugin/subscription endpoints, or MangaDex queue endpoints. Rust also skips nested library directories, so nested-title JSON and recursive operations are not supported; the `time_added` sort method is not implemented. Rust's extra `/api/stats` and progress GET/POST routes have no Crystal counterpart.
+
 ## Configuration
 
 `~/.config/mango/config.yml`:

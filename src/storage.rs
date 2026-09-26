@@ -463,8 +463,10 @@ impl Storage {
     /// Returns all distinct tag names sorted alphabetically
     pub async fn list_tags(&self) -> Result<Vec<String>> {
         let rows = sqlx::query(
-            "SELECT DISTINCT tag FROM tags \
-             ORDER BY tag",
+            "SELECT DISTINCT tags.tag FROM tags \
+             INNER JOIN titles ON tags.id = titles.id \
+             WHERE titles.unavailable = 0 \
+             ORDER BY tags.tag",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -559,6 +561,28 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    /// Get an optional title sort override.
+    pub async fn get_title_sort_title(&self, title_id: &str) -> Result<Option<String>> {
+        Ok(
+            sqlx::query_scalar::<_, Option<String>>("SELECT sort_title FROM titles WHERE id = ?")
+                .bind(title_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .flatten(),
+        )
+    }
+
+    /// Get an optional entry sort override.
+    pub async fn get_entry_sort_title(&self, entry_id: &str) -> Result<Option<String>> {
+        Ok(
+            sqlx::query_scalar::<_, Option<String>>("SELECT sort_title FROM ids WHERE id = ?")
+                .bind(entry_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .flatten(),
+        )
     }
 
     // ========== Dimensions Cache ==========
