@@ -728,7 +728,7 @@ pub async fn bulk_progress(
             };
 
             cache
-                .save_progress(&title_id, &title.path, &username, entry_id, page)
+                .save_progress(&title_id, &title.path, &username, &entry.title, page)
                 .await?;
         }
     }

@@ -210,33 +210,34 @@ pub async fn continue_reading(
     let cache = lib.progress_cache();
     let mut entries_with_progress = Vec::new();
 
-    // Collect all entries with last_read timestamps (O(1) cache lookups instead of O(N) file reads)
+    // Return Mango's single continuation entry for each title.
     for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
-        for entry in &title.entries {
-            if let Some(last_read) = cache.get_last_read(&title.id, &username, &entry.id) {
-                let progress = cache
-                    .get_progress(&title.id, &username, &entry.id)
-                    .unwrap_or(0);
-                let percentage = calculate_progress_percentage(progress, entry.pages);
-
-                entries_with_progress.push(ContinueReadingEntry {
-                    title_id: title.id.clone(),
-                    title_name: title.title.clone(),
-                    entry_id: entry.id.clone(),
-                    entry_name: entry.title.clone(),
-                    pages: entry.pages,
-                    progress,
-                    percentage,
-                    last_read,
-                });
-            }
+        let info = cache.get_title_info(&title.id);
+        let Some(info) = info else {
+            continue;
+        };
+        if let Some((entry, previous)) = title.get_continue_reading_entry(&username, &info) {
+            let last_read = info
+                .get_last_read(&username, &entry.title)
+                .or_else(|| previous.and_then(|entry| info.get_last_read(&username, &entry.title)));
+            let progress = info.get_progress(&username, &entry.title).unwrap_or(0);
+            let percentage = calculate_progress_percentage(progress, entry.pages);
+            entries_with_progress.push(ContinueReadingEntry {
+                title_id: title.id.clone(),
+                title_name: title.title.clone(),
+                entry_id: entry.id.clone(),
+                entry_name: entry.title.clone(),
+                pages: entry.pages,
+                progress,
+                percentage,
+                last_read,
+            });
         }
     }
 
-    // Sort by last_read (most recent first) and take top 8
+    // Sort by last_read (most recent first) and take top 8.
     entries_with_progress.sort_by(|a, b| b.last_read.cmp(&a.last_read));
     entries_with_progress.truncate(8);
-
     Ok(Json(entries_with_progress))
 }
 
@@ -258,7 +259,7 @@ pub async fn start_reading(
             let mut total_progress = 0.0;
             for entry in &title.entries {
                 let page = cache
-                    .get_progress(&title.id, &username, &entry.id)
+                    .get_progress(&title.id, &username, &entry.title)
                     .unwrap_or(0);
                 let pct = if entry.pages > 0 {
                     (page as f32 / entry.pages as f32) * 100.0
@@ -311,10 +312,10 @@ pub async fn recently_added(
     // Collect all entries with date_added within last month (O(1) cache lookups)
     for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
         for entry in &title.entries {
-            if let Some(date_added) = cache.get_date_added(&title.id, &entry.id) {
+            if let Some(date_added) = cache.get_date_added(&title.id, &entry.title) {
                 if date_added > one_month_ago {
                     let progress = cache
-                        .get_progress(&title.id, &username, &entry.id)
+                        .get_progress(&title.id, &username, &entry.title)
                         .unwrap_or(0);
                     let percentage = calculate_progress_percentage(progress, entry.pages);
 
@@ -366,8 +367,8 @@ struct ContinueReadingEntry {
     entry_name: String,
     pages: usize,
     progress: i32,
-    percentage: f32, // Progress percentage (0.0 - 100.0)
-    last_read: i64,
+    percentage: f32,
+    last_read: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -715,13 +716,13 @@ pub async fn update_progress(
         .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
 
     // Verify entry exists
-    let _entry = lib
+    let entry = lib
         .get_entry(&title_id, &entry_id)
         .ok_or_else(|| Error::NotFound(format!("Entry not found: {}", entry_id)))?;
 
-    // Save progress via cache (updates cache and persists to disk)
+    // Save progress via cache (updates cache and persists to disk).
     lib.progress_cache()
-        .save_progress(&title_id, &title.path, &username, &entry_id, page as i32)
+        .save_progress(&title_id, &title.path, &username, &entry.title, page as i32)
         .await?;
 
     // Invalidate response cache

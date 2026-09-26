@@ -37,13 +37,19 @@ pub async fn save_progress(
         .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
 
     // Verify entry exists
-    let _entry = lib
+    let entry = lib
         .get_entry(&title_id, &entry_id)
         .ok_or_else(|| Error::NotFound(format!("Entry not found: {}", entry_id)))?;
 
-    // Save progress via cache (updates cache and persists to disk)
+    // Save progress via cache (updates cache and persists to disk).
     lib.progress_cache()
-        .save_progress(&title_id, &title.path, &username, &entry_id, request.page)
+        .save_progress(
+            &title_id,
+            &title.path,
+            &username,
+            &entry.title,
+            request.page,
+        )
         .await?;
 
     // Invalidate response cache after progress update
@@ -72,14 +78,17 @@ pub async fn get_progress(
     let lib = state.library.load();
 
     // Verify title exists
-    let _ = lib
+    let title = lib
         .get_title(&title_id)
         .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
+    let entry = lib
+        .get_entry(&title_id, &entry_id)
+        .ok_or_else(|| Error::NotFound(format!("Entry not found: {}", entry_id)))?;
 
-    // Get progress from cache
+    // Get progress from cache using Mango's entry-title metadata key.
     let page = lib
         .progress_cache()
-        .get_progress(&title_id, &username, &entry_id)
+        .get_progress(&title.id, &username, &entry.title)
         .unwrap_or(0);
     drop(lib);
 
@@ -99,7 +108,7 @@ pub async fn get_all_progress(
     // Iterate through all titles using cache
     for title in lib.get_titles() {
         for entry in &title.entries {
-            if let Some(page) = cache.get_progress(&title.id, &username, &entry.id) {
+            if let Some(page) = cache.get_progress(&title.id, &username, &entry.title) {
                 if page > 0 {
                     all_progress.insert(format!("{}:{}", title.id, entry.id), page);
                 }

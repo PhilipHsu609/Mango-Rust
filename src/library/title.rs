@@ -137,6 +137,48 @@ impl Title {
         entries
     }
 
+    /// Find the single continuation entry Mango would show for this title.
+    pub fn get_continue_reading_entry<'a>(
+        &'a self,
+        username: &str,
+        info: &super::progress::TitleInfo,
+    ) -> Option<(&'a Entry, Option<&'a Entry>)> {
+        let (method, ascending) = info
+            .get_sort_by(username)
+            .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
+            .unwrap_or((SortMethod::Auto, true));
+        let entries = self.get_entries_sorted(method, ascending);
+        let mut index = entries.iter().rposition(|entry| {
+            info.get_progress(username, &entry.title)
+                .unwrap_or(0)
+                .min(entry.pages as i32)
+                > 0
+        })?;
+
+        let last_read_entry = entries[index];
+        let progress = info
+            .get_progress(username, &last_read_entry.title)
+            .unwrap_or(0)
+            .min(last_read_entry.pages as i32);
+        if progress >= last_read_entry.pages as i32 {
+            if index + 1 < entries.len() {
+                index += 1;
+            } else {
+                index = entries.iter().position(|entry| {
+                    info.get_progress(username, &entry.title)
+                        .unwrap_or(0)
+                        .min(entry.pages as i32)
+                        < entry.pages as i32
+                })?;
+            }
+        }
+
+        let previous = index
+            .checked_sub(1)
+            .and_then(|previous| entries.get(previous).copied());
+        Some((entries[index], previous))
+    }
+
     /// Get all entries recursively (including nested titles)
     pub fn deep_entries(&self) -> Vec<&Entry> {
         let mut all_entries = Vec::new();
@@ -154,7 +196,7 @@ impl Title {
         all_entries
     }
 
-    /// Save reading progress for an entry
+    /// Save reading progress for an entry.
     pub async fn save_entry_progress(
         &self,
         username: &str,
@@ -163,45 +205,55 @@ impl Title {
     ) -> Result<()> {
         use super::progress::TitleInfo;
 
+        let entry = self
+            .entries
+            .iter()
+            .find(|entry| entry.id == entry_id)
+            .ok_or_else(|| {
+                crate::error::Error::NotFound(format!("Entry not found: {}", entry_id))
+            })?;
         let mut info = TitleInfo::load(&self.path).await?;
 
-        // If page is 0, remove the progress (mark as unread)
         if page == 0 {
-            info.remove_progress(username, entry_id);
+            info.remove_progress(username, &entry.title);
         } else {
-            info.set_progress(username, entry_id, page);
+            info.set_progress(username, &entry.title, page);
         }
 
         info.save(&self.path).await?;
         Ok(())
     }
 
-    /// Load reading progress for an entry
+    /// Load reading progress for an entry.
     pub async fn load_entry_progress(&self, username: &str, entry_id: &str) -> Result<i32> {
         use super::progress::TitleInfo;
 
-        let info = TitleInfo::load(&self.path).await?;
-        Ok(info.get_progress(username, entry_id).unwrap_or(0))
-    }
-
-    /// Get progress information for an entry (percentage and page number)
-    pub async fn get_entry_progress(&self, username: &str, entry_id: &str) -> Result<(f32, i32)> {
-        // Find the entry to get its page count
         let entry = self
             .entries
             .iter()
-            .find(|e| e.id == entry_id)
+            .find(|entry| entry.id == entry_id)
             .ok_or_else(|| {
                 crate::error::Error::NotFound(format!("Entry not found: {}", entry_id))
             })?;
+        let info = TitleInfo::load(&self.path).await?;
+        Ok(info.get_progress(username, &entry.title).unwrap_or(0))
+    }
 
+    /// Get progress information for an entry (percentage and page number).
+    pub async fn get_entry_progress(&self, username: &str, entry_id: &str) -> Result<(f32, i32)> {
+        let entry = self
+            .entries
+            .iter()
+            .find(|entry| entry.id == entry_id)
+            .ok_or_else(|| {
+                crate::error::Error::NotFound(format!("Entry not found: {}", entry_id))
+            })?;
         let page = self.load_entry_progress(username, entry_id).await?;
         let percentage = if entry.pages > 0 {
             (page as f32 / entry.pages as f32) * 100.0
         } else {
             0.0
         };
-
         Ok((percentage, page))
     }
 
@@ -213,7 +265,7 @@ impl Title {
 
         // Set progress to last page for all entries
         for entry in &self.entries {
-            info.set_progress(username, &entry.id, entry.pages as i32);
+            info.set_progress(username, &entry.title, entry.pages as i32);
         }
 
         info.save(&self.path).await?;
@@ -228,7 +280,7 @@ impl Title {
 
         // Remove progress for all entries
         for entry in &self.entries {
-            info.remove_progress(username, &entry.id);
+            info.remove_progress(username, &entry.title);
         }
 
         info.save(&self.path).await?;
@@ -248,7 +300,7 @@ impl Title {
         let mut entry_count = 0;
 
         for entry in &self.entries {
-            let page = info.get_progress(username, &entry.id).unwrap_or(0);
+            let page = info.get_progress(username, &entry.title).unwrap_or(0);
             let percentage = if entry.pages > 0 {
                 (page as f32 / entry.pages as f32) * 100.0
             } else {
@@ -269,12 +321,17 @@ impl Title {
         let mut info = TitleInfo::load(&self.path).await?;
 
         for entry in &self.entries {
-            if info.date_added.contains_key(&entry.id) {
+            let has_mango_date = info.date_added.contains_key(&entry.title);
+            let legacy_date = info.migrate_entry_id_to_title(&entry.id, &entry.title);
+            if has_mango_date {
                 continue;
             }
 
             match entry.date_added_timestamp().await {
-                Ok(timestamp) => info.set_date_added_if_new(&entry.id, timestamp),
+                Ok(timestamp) if legacy_date.is_some() => {
+                    info.set_date_added(&entry.title, timestamp);
+                }
+                Ok(timestamp) => info.set_date_added_if_new(&entry.title, timestamp),
                 Err(error) => tracing::warn!(
                     "Failed to read ctime for recently scanned entry {}: {}",
                     entry.path.display(),
@@ -282,6 +339,14 @@ impl Title {
                 ),
             }
         }
+
+        let entry_titles = self
+            .entries
+            .iter()
+            .map(|entry| entry.title.clone())
+            .collect();
+        info.remove_orphaned_entry_ids(&entry_titles);
+        info.normalize_entry_timestamps();
 
         info.save(&self.path).await?;
         Ok(())
@@ -365,10 +430,11 @@ mod tests {
     use crate::library::{entry::Entry, progress::TitleInfo};
 
     #[tokio::test]
-    async fn populate_date_added_uses_entry_ctime_and_preserves_existing_dates() {
+    async fn populate_date_added_uses_entry_titles_and_migrates_legacy_ids() {
         let dir = tempfile::tempdir().unwrap();
         let mut info = TitleInfo::load(dir.path()).await.unwrap();
-        info.set_date_added("existing-entry", 1_600_000_000);
+        info.set_date_added("Existing", 1_600_000_000);
+        info.set_date_added("legacy-uuid", 1_500_000_000);
         info.save(dir.path()).await.unwrap();
 
         let title = Title {
@@ -399,6 +465,16 @@ mod tests {
                     pages: 0,
                     image_files: Vec::new(),
                 },
+                Entry {
+                    id: "legacy-uuid".to_string(),
+                    path: dir.path().join("legacy.cbz"),
+                    title: "Migrated".to_string(),
+                    signature: String::new(),
+                    mtime: 0,
+                    ctime: 1_700_000_002,
+                    pages: 0,
+                    image_files: Vec::new(),
+                },
             ],
             parent_id: None,
             nested_titles: Vec::new(),
@@ -407,7 +483,61 @@ mod tests {
         title.populate_date_added().await.unwrap();
 
         let info = TitleInfo::load(dir.path()).await.unwrap();
-        assert_eq!(info.get_date_added("new-entry"), Some(1_700_000_000));
-        assert_eq!(info.get_date_added("existing-entry"), Some(1_600_000_000));
+        assert_eq!(info.get_date_added("New"), Some(1_700_000_000));
+        assert_eq!(info.get_date_added("Existing"), Some(1_600_000_000));
+        assert_eq!(info.get_date_added("Migrated"), Some(1_700_000_002));
+        assert!(!info.date_added.contains_key("legacy-uuid"));
+    }
+    fn continue_reading_title() -> Title {
+        let dir = std::env::temp_dir();
+        Title {
+            id: "title".to_string(),
+            path: dir,
+            title: "Title".to_string(),
+            signature: String::new(),
+            contents_signature: String::new(),
+            mtime: 0,
+            entries: (1..=3)
+                .map(|number| Entry {
+                    id: format!("entry-{number}"),
+                    path: std::path::PathBuf::new(),
+                    title: format!("Volume {number}"),
+                    signature: String::new(),
+                    mtime: 0,
+                    ctime: 0,
+                    pages: 10,
+                    image_files: Vec::new(),
+                })
+                .collect(),
+            parent_id: None,
+            nested_titles: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn continue_reading_selects_one_progressed_entry_or_its_next_entry() {
+        let title = continue_reading_title();
+        let mut info = TitleInfo::default();
+        info.set_progress("admin", "Volume 1", 10);
+        info.set_progress("admin", "Volume 2", 3);
+
+        let (selected, _) = title.get_continue_reading_entry("admin", &info).unwrap();
+        assert_eq!(selected.id, "entry-2");
+
+        info.set_progress("admin", "Volume 2", 10);
+        let (selected, previous) = title.get_continue_reading_entry("admin", &info).unwrap();
+        assert_eq!(selected.id, "entry-3");
+        assert_eq!(previous.unwrap().id, "entry-2");
+    }
+
+    #[test]
+    fn continue_reading_falls_back_to_first_unfinished_when_latest_is_last() {
+        let title = continue_reading_title();
+        let mut info = TitleInfo::default();
+        info.set_progress("admin", "Volume 3", 10);
+
+        let (selected, previous) = title.get_continue_reading_entry("admin", &info).unwrap();
+        assert_eq!(selected.id, "entry-1");
+        assert!(previous.is_none());
     }
 }

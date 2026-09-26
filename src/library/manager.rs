@@ -196,11 +196,6 @@ impl Library {
                     }
                 }
 
-                // Populate date_added
-                if let Err(e) = title.populate_date_added().await {
-                    tracing::warn!("Failed to populate date_added for {}: {}", title.title, e);
-                }
-
                 Some(title)
             });
 
@@ -729,6 +724,11 @@ impl Library {
         let mut errors = 0;
 
         for (title_id, title) in &self.titles {
+            if let Err(e) = title.populate_date_added().await {
+                tracing::warn!("Failed to align info.json for title {}: {}", title_id, e);
+                errors += 1;
+            }
+
             match self.progress_cache.load_title(title_id, &title.path).await {
                 Ok(_) => loaded += 1,
                 Err(e) => {
@@ -785,29 +785,35 @@ impl Library {
         let mut tx = self.storage.pool().begin().await?;
 
         // 1. Find and mark missing titles as unavailable
-        let db_title_ids: Vec<String> =
-            sqlx::query_scalar::<_, String>("SELECT id FROM titles WHERE unavailable = 0")
+        let db_titles: Vec<(String, String)> =
+            sqlx::query_as("SELECT id, path FROM titles WHERE unavailable = 0")
                 .fetch_all(&mut *tx)
                 .await?;
 
-        let missing_titles: Vec<&String> = db_title_ids
+        let missing_titles: Vec<&String> = db_titles
             .iter()
-            .filter(|id| !found_title_ids.contains(*id))
+            .filter(|(id, path)| {
+                !found_title_ids.contains(id) && should_mark_missing_title(path, &self.path)
+            })
+            .map(|(id, _)| id)
             .collect();
 
         for chunk in missing_titles.chunks(CHUNK_SIZE) {
             Self::batch_update_unavailable(&mut tx, "titles", chunk, 1).await?;
         }
 
-        // 2. Find and mark missing entries as unavailable
-        let db_entry_ids: Vec<String> =
-            sqlx::query_scalar::<_, String>("SELECT id FROM ids WHERE unavailable = 0")
+        // 2. Mark missing entries only when their top-level title still exists.
+        let db_entries: Vec<(String, String)> =
+            sqlx::query_as("SELECT id, path FROM ids WHERE unavailable = 0")
                 .fetch_all(&mut *tx)
                 .await?;
 
-        let missing_entries: Vec<&String> = db_entry_ids
+        let missing_entries: Vec<&String> = db_entries
             .iter()
-            .filter(|id| !found_entry_ids.contains(*id))
+            .filter(|(id, path)| {
+                !found_entry_ids.contains(id) && should_mark_missing_entry(path, &self.path)
+            })
+            .map(|(id, _)| id)
             .collect();
 
         for chunk in missing_entries.chunks(CHUNK_SIZE) {
@@ -887,6 +893,22 @@ impl Library {
         query.execute(&mut **tx).await?;
         Ok(())
     }
+}
+
+fn should_mark_missing_title(relative_path: &str, library_root: &Path) -> bool {
+    let path = Path::new(relative_path);
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    parent.components().count() > 0 && library_root.join(parent).is_dir()
+}
+
+fn should_mark_missing_entry(relative_path: &str, library_root: &Path) -> bool {
+    let path = Path::new(relative_path);
+    let Some(first_component) = path.components().next() else {
+        return false;
+    };
+    library_root.join(first_component.as_os_str()).is_dir()
 }
 
 /// Sorting methods for titles and entries
@@ -983,4 +1005,36 @@ pub fn spawn_periodic_scanner(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{should_mark_missing_entry, should_mark_missing_title};
+
+    #[test]
+    fn missing_records_follow_mango_scan_boundaries() {
+        let library = tempfile::tempdir().unwrap();
+        std::fs::create_dir(library.path().join("Existing")).unwrap();
+        std::fs::create_dir(library.path().join("Existing/Nested")).unwrap();
+
+        assert!(!should_mark_missing_title("Removed", library.path()));
+        assert!(should_mark_missing_title(
+            "Existing/Removed",
+            library.path()
+        ));
+        assert!(should_mark_missing_title(
+            "Existing/Nested/Removed",
+            library.path()
+        ));
+        assert!(!should_mark_missing_title("Gone/Removed", library.path()));
+
+        assert!(should_mark_missing_entry(
+            "Existing/removed.cbz",
+            library.path()
+        ));
+        assert!(!should_mark_missing_entry(
+            "Removed/entry.cbz",
+            library.path()
+        ));
+    }
 }

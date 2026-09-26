@@ -22,7 +22,7 @@
           <tr :id="`title-${title.id}`">
             <td>Title</td>
             <td x-text="title.path"></td>
-            <td x-text="title.id"></td>
+            <td x-text="title.id.replace(/-/g, '')"></td>
             <td><a @click="rm($event)" uk-icon="trash"></a></td>
           </tr>
         </template>
@@ -30,7 +30,7 @@
           <tr :id="`entry-${entry.id}`">
             <td>Entry</td>
             <td x-text="entry.path"></td>
-            <td x-text="entry.id"></td>
+            <td x-text="entry.id.replace(/-/g, '')"></td>
             <td><a @click="rm($event)" uk-icon="trash"></a></td>
           </tr>
         </template>

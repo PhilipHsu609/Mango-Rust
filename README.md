@@ -18,6 +18,7 @@ Open `http://localhost:9000`. Default credentials shown in logs.
 - Multi-user authentication
 - Web reader (paged/continuous modes)
 - Progress tracking & resume
+- Continue Reading selects one Mango-compatible continuation entry per title
 - Homepage Recently Added groups entries of the same title added within 24 hours
 - Tags, search, sorting
 - Admin page lists missing titles and entries separately and supports removing their database records
@@ -28,6 +29,7 @@ Open `http://localhost:9000`. Default credentials shown in logs.
 ## Migration from Mango
 
 Just swap the Docker image. All data (database, progress, thumbnails) works as-is.
+Per-entry `info.json` maps use Mango entry-title keys. Startup and scans migrate earlier Rust UUID-keyed metadata; legacy UUID-keyed `date_added` values are replaced with the entry file's creation time, while existing Mango title-keyed dates are preserved.
 
 ## Configuration
 

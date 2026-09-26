@@ -1,7 +1,8 @@
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use uuid::Uuid;
 
 /// Structure for storing title metadata and progress in info.json
 /// Compatible with original Mango's info.json format
@@ -11,7 +12,7 @@ pub struct TitleInfo {
     #[serde(default = "default_comment")]
     pub comment: String,
 
-    /// Progress tracking: username -> entry_id -> page_number
+    /// Progress tracking: username -> entry_title -> page_number
     #[serde(default)]
     pub progress: HashMap<String, HashMap<String, i32>>,
 
@@ -19,7 +20,7 @@ pub struct TitleInfo {
     #[serde(default)]
     pub display_name: String,
 
-    /// Custom display names for entries: entry_id -> display_name
+    /// Custom display names for entries: entry_title -> display_name
     #[serde(default)]
     pub entry_display_name: HashMap<String, String>,
 
@@ -27,18 +28,16 @@ pub struct TitleInfo {
     #[serde(default)]
     pub cover_url: String,
 
-    /// Custom cover URLs for entries: entry_id -> cover_url
+    /// Custom cover URLs for entries: entry_title -> cover_url
     #[serde(default)]
     pub entry_cover_url: HashMap<String, String>,
 
-    /// Last read timestamp: username -> entry_id -> ISO 8601 datetime
-    /// Matches original Mango format (Time serializes to ISO 8601)
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    /// Last read timestamp: username -> entry_title -> ISO 8601 datetime
+    #[serde(default)]
     pub last_read: HashMap<String, HashMap<String, String>>,
 
-    /// Date added timestamp: entry_id -> ISO 8601 datetime
-    /// Matches original Mango format (Time serializes to ISO 8601)
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    /// Date added timestamp: entry_title -> ISO 8601 datetime
+    #[serde(default)]
     pub date_added: HashMap<String, String>,
 
     /// Sorting preferences: username -> (sort_method, ascending)
@@ -94,42 +93,39 @@ impl TitleInfo {
         Ok(())
     }
 
-    /// Get progress for a specific user and entry
-    pub fn get_progress(&self, username: &str, entry_id: &str) -> Option<i32> {
+    /// Get progress for a specific user and entry title.
+    pub fn get_progress(&self, username: &str, entry_title: &str) -> Option<i32> {
         self.progress
             .get(username)
-            .and_then(|user_progress| user_progress.get(entry_id))
+            .and_then(|user_progress| user_progress.get(entry_title))
             .copied()
     }
 
-    /// Set progress for a specific user and entry
-    pub fn set_progress(&mut self, username: &str, entry_id: &str, page: i32) {
+    /// Set progress for a specific user and entry title.
+    pub fn set_progress(&mut self, username: &str, entry_title: &str, page: i32) {
         self.progress
             .entry(username.to_string())
             .or_default()
-            .insert(entry_id.to_string(), page);
+            .insert(entry_title.to_string(), page);
 
-        // Update last_read timestamp
-        self.set_last_read(username, entry_id, chrono::Utc::now().timestamp());
+        self.set_last_read(username, entry_title, chrono::Utc::now().timestamp());
     }
 
-    /// Remove progress for a specific user and entry
-    pub fn remove_progress(&mut self, username: &str, entry_id: &str) {
+    /// Remove progress for a specific entry title.
+    pub fn remove_progress(&mut self, username: &str, entry_title: &str) {
         if let Some(user_progress) = self.progress.get_mut(username) {
-            user_progress.remove(entry_id);
-            // If user has no more progress entries, remove the user
+            user_progress.remove(entry_title);
             if user_progress.is_empty() {
                 self.progress.remove(username);
             }
         }
     }
 
-    /// Get last read timestamp for a specific user and entry
-    /// Returns Unix timestamp (i64) parsed from ISO 8601 string
-    pub fn get_last_read(&self, username: &str, entry_id: &str) -> Option<i64> {
+    /// Get last read timestamp for a specific entry title.
+    pub fn get_last_read(&self, username: &str, entry_title: &str) -> Option<i64> {
         self.last_read
             .get(username)
-            .and_then(|user_last_read| user_last_read.get(entry_id))
+            .and_then(|user_last_read| user_last_read.get(entry_title))
             .and_then(|iso_string| {
                 chrono::DateTime::parse_from_rfc3339(iso_string)
                     .ok()
@@ -137,51 +133,108 @@ impl TitleInfo {
             })
     }
 
-    /// Set last read timestamp for a specific user and entry
-    /// Converts Unix timestamp to ISO 8601 string for storage (matches original Mango)
-    pub fn set_last_read(&mut self, username: &str, entry_id: &str, timestamp: i64) {
-        // Convert Unix timestamp to ISO 8601 string (matching original Mango format)
+    /// Set last read timestamp for a specific entry title.
+    pub fn set_last_read(&mut self, username: &str, entry_title: &str, timestamp: i64) {
         let datetime = chrono::DateTime::from_timestamp(timestamp, 0)
             .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
-        let iso_string = datetime.to_rfc3339();
+        let iso_string = datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
         self.last_read
             .entry(username.to_string())
             .or_default()
-            .insert(entry_id.to_string(), iso_string);
+            .insert(entry_title.to_string(), iso_string);
     }
 
-    /// Get date added timestamp for an entry
-    /// Returns Unix timestamp (i64) parsed from ISO 8601 string
-    pub fn get_date_added(&self, entry_id: &str) -> Option<i64> {
-        self.date_added.get(entry_id).and_then(|iso_string| {
+    /// Get date added timestamp for an entry title.
+    pub fn get_date_added(&self, entry_title: &str) -> Option<i64> {
+        self.date_added.get(entry_title).and_then(|iso_string| {
             chrono::DateTime::parse_from_rfc3339(iso_string)
                 .ok()
                 .map(|dt| dt.timestamp())
         })
     }
 
-    /// Set date added timestamp for an entry
-    /// Converts Unix timestamp to ISO 8601 string for storage (matches original Mango)
-    pub fn set_date_added(&mut self, entry_id: &str, timestamp: i64) {
-        // Convert Unix timestamp to ISO 8601 string
+    /// Set date added timestamp for an entry title.
+    pub fn set_date_added(&mut self, entry_title: &str, timestamp: i64) {
         let datetime = chrono::DateTime::from_timestamp(timestamp, 0)
             .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
-        let iso_string = datetime.to_rfc3339();
+        let iso_string = datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
-        self.date_added.insert(entry_id.to_string(), iso_string);
+        self.date_added.insert(entry_title.to_string(), iso_string);
     }
 
-    /// Set date added for an entry if not already set
-    /// Converts Unix timestamp to ISO 8601 string for storage (matches original Mango)
-    pub fn set_date_added_if_new(&mut self, entry_id: &str, timestamp: i64) {
-        // Convert Unix timestamp to ISO 8601 string
+    /// Migrate Rust's former entry-ID keys to Mango's entry-title keys.
+    /// Returns the former date-added value so callers can replace it with file ctime.
+    pub fn migrate_entry_id_to_title(
+        &mut self,
+        entry_id: &str,
+        entry_title: &str,
+    ) -> Option<String> {
+        if entry_id == entry_title {
+            return None;
+        }
+
+        for user_progress in self.progress.values_mut() {
+            move_entry_key(user_progress, entry_id, entry_title);
+        }
+        for user_last_read in self.last_read.values_mut() {
+            move_entry_key(user_last_read, entry_id, entry_title);
+        }
+        move_entry_key(&mut self.entry_display_name, entry_id, entry_title);
+        move_entry_key(&mut self.entry_cover_url, entry_id, entry_title);
+
+        let old_date_added = self.date_added.remove(entry_id);
+        if let Some(value) = &old_date_added {
+            self.date_added
+                .entry(entry_title.to_string())
+                .or_insert_with(|| value.clone());
+        }
+
+        old_date_added
+    }
+
+    /// Drop Rust UUID keys that no longer match an entry in the scanned title.
+    pub fn remove_orphaned_entry_ids(&mut self, entry_titles: &HashSet<String>) {
+        let is_orphan = |key: &String| Uuid::parse_str(key).is_ok() && !entry_titles.contains(key);
+        for user_progress in self.progress.values_mut() {
+            user_progress.retain(|key, _| !is_orphan(key));
+        }
+        self.progress
+            .retain(|_, user_progress| !user_progress.is_empty());
+        for user_last_read in self.last_read.values_mut() {
+            user_last_read.retain(|key, _| !is_orphan(key));
+        }
+        self.last_read
+            .retain(|_, user_last_read| !user_last_read.is_empty());
+        self.entry_display_name.retain(|key, _| !is_orphan(key));
+        self.entry_cover_url.retain(|key, _| !is_orphan(key));
+        self.date_added.retain(|key, _| !is_orphan(key));
+    }
+
+    /// Normalize persisted timestamps to Mango's UTC RFC 3339 representation.
+    pub fn normalize_entry_timestamps(&mut self) {
+        for user_last_read in self.last_read.values_mut() {
+            for value in user_last_read.values_mut() {
+                if let Some(normalized) = normalize_utc_timestamp(value) {
+                    *value = normalized;
+                }
+            }
+        }
+        for value in self.date_added.values_mut() {
+            if let Some(normalized) = normalize_utc_timestamp(value) {
+                *value = normalized;
+            }
+        }
+    }
+
+    /// Set date added for an entry title if not already set.
+    pub fn set_date_added_if_new(&mut self, entry_title: &str, timestamp: i64) {
         let datetime = chrono::DateTime::from_timestamp(timestamp, 0)
             .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
-        let iso_string = datetime.to_rfc3339();
+        let iso_string = datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
         self.date_added
-            .entry(entry_id.to_string())
+            .entry(entry_title.to_string())
             .or_insert(iso_string);
     }
 
@@ -195,5 +248,126 @@ impl TitleInfo {
     pub fn set_sort_by(&mut self, username: &str, method: &str, ascending: bool) {
         self.sort_by
             .insert(username.to_string(), (method.to_string(), ascending));
+    }
+}
+
+fn normalize_utc_timestamp(value: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|datetime| {
+            datetime
+                .with_timezone(&chrono::Utc)
+                .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+        })
+}
+
+fn move_entry_key<T>(values: &mut HashMap<String, T>, old_key: &str, new_key: &str) {
+    if old_key == new_key {
+        return;
+    }
+    if let Some(value) = values.remove(old_key) {
+        values.entry(new_key.to_string()).or_insert(value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TitleInfo;
+
+    #[test]
+    fn migrate_entry_id_to_title_preserves_title_values_and_returns_legacy_date() {
+        let mut info = TitleInfo::default();
+        info.progress.insert(
+            "admin".to_string(),
+            [("entry-uuid".to_string(), 4), ("Volume 1".to_string(), 7)]
+                .into_iter()
+                .collect(),
+        );
+        info.last_read.insert(
+            "admin".to_string(),
+            [("entry-uuid".to_string(), "legacy".to_string())]
+                .into_iter()
+                .collect(),
+        );
+        info.entry_display_name
+            .insert("entry-uuid".to_string(), "Custom".to_string());
+        info.entry_cover_url
+            .insert("entry-uuid".to_string(), "/cover.jpg".to_string());
+        info.date_added
+            .insert("entry-uuid".to_string(), "legacy-date".to_string());
+        info.date_added
+            .insert("Volume 1".to_string(), "canonical-date".to_string());
+
+        let old_date = info.migrate_entry_id_to_title("entry-uuid", "Volume 1");
+
+        assert_eq!(old_date.as_deref(), Some("legacy-date"));
+        assert_eq!(info.progress["admin"]["Volume 1"], 7);
+        assert!(!info.progress["admin"].contains_key("entry-uuid"));
+        assert_eq!(info.last_read["admin"]["Volume 1"], "legacy");
+        assert_eq!(info.entry_display_name["Volume 1"], "Custom");
+        assert_eq!(info.entry_cover_url["Volume 1"], "/cover.jpg");
+        assert_eq!(info.date_added["Volume 1"], "canonical-date");
+        assert!(!info.date_added.contains_key("entry-uuid"));
+    }
+
+    #[test]
+    fn serialization_keeps_empty_mango_maps_and_uses_utc_suffix() {
+        let mut info = TitleInfo::default();
+        info.set_date_added("Volume 1", 1_700_000_000);
+        info.set_last_read("admin", "Volume 1", 1_700_000_000);
+
+        let json = serde_json::to_value(info).unwrap();
+
+        assert_eq!(json["date_added"]["Volume 1"], "2023-11-14T22:13:20Z");
+        assert_eq!(
+            json["last_read"]["admin"]["Volume 1"],
+            "2023-11-14T22:13:20Z"
+        );
+        let empty = serde_json::to_value(TitleInfo::default()).unwrap();
+        assert_eq!(empty["date_added"], serde_json::json!({}));
+        assert_eq!(empty["last_read"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn remove_orphaned_uuid_keys_preserves_current_title_keys() {
+        let mut info = TitleInfo::default();
+        let orphan_id = "e8ccea57-32bf-4e26-87f0-f39bdb8ae558";
+        info.date_added
+            .insert(orphan_id.to_string(), "stale".to_string());
+        info.progress.insert(
+            "admin".to_string(),
+            [(orphan_id.to_string(), 9), ("current-title".to_string(), 2)]
+                .into_iter()
+                .collect(),
+        );
+
+        info.remove_orphaned_entry_ids(&["current-title".to_string()].into());
+
+        assert!(!info.date_added.contains_key(orphan_id));
+        assert_eq!(info.progress["admin"]["current-title"], 2);
+        assert!(!info.progress["admin"].contains_key(orphan_id));
+    }
+
+    #[test]
+    fn normalize_entry_timestamps_converts_utc_offsets_without_changing_instants() {
+        let mut info = TitleInfo::default();
+        info.date_added.insert(
+            "Volume 1".to_string(),
+            "2023-11-14T22:13:20+00:00".to_string(),
+        );
+        info.last_read.insert(
+            "admin".to_string(),
+            [(
+                "Volume 1".to_string(),
+                "2023-11-14T17:13:20-05:00".to_string(),
+            )]
+            .into_iter()
+            .collect(),
+        );
+
+        info.normalize_entry_timestamps();
+
+        assert_eq!(info.date_added["Volume 1"], "2023-11-14T22:13:20Z");
+        assert_eq!(info.last_read["admin"]["Volume 1"], "2023-11-14T22:13:20Z");
     }
 }

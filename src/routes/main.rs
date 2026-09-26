@@ -273,40 +273,42 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                 ));
             }
 
-            // Process entries for continue_reading and recently_added
+            // Continue Reading: one Mango-selected entry per title.
+            if let Some((entry, previous)) = title.get_continue_reading_entry(&user.username, &info)
+            {
+                let last_read = info
+                    .get_last_read(&user.username, &entry.title)
+                    .or_else(|| {
+                        previous.and_then(|entry| info.get_last_read(&user.username, &entry.title))
+                    });
+                let progress = info.get_progress(&user.username, &entry.title).unwrap_or(0);
+                let percentage = if entry.pages > 0 {
+                    (progress as f32 / entry.pages as f32) * 100.0
+                } else {
+                    0.0
+                };
+
+                cr_items.push((
+                    last_read.unwrap_or(i64::MIN),
+                    ContinueReadingItem {
+                        entry: HomeCardItem::from_entry(
+                            &entry.id,
+                            &entry.title,
+                            &title.id,
+                            &title.title,
+                            entry.pages,
+                            &entry.path.to_string_lossy(),
+                        ),
+                        percentage,
+                    },
+                ));
+            }
+
+            // Recently added: entries added within last month
             for (entry_index, entry) in title.entries.iter().enumerate() {
-                // Continue reading: entries with last_read timestamp
-                if let Some(last_read) = info.get_last_read(&user.username, &entry.id) {
-                    let progress = info.get_progress(&user.username, &entry.id).unwrap_or(0);
-                    let percentage = if entry.pages > 0 {
-                        (progress as f32 / entry.pages as f32) * 100.0
-                    } else {
-                        0.0
-                    };
-
-                    // Only include entries that are partially read (0 < progress < 100%)
-                    if percentage > 0.0 && percentage < 100.0 {
-                        cr_items.push((
-                            last_read,
-                            ContinueReadingItem {
-                                entry: HomeCardItem::from_entry(
-                                    &entry.id,
-                                    &entry.title,
-                                    &title.id,
-                                    &title.title,
-                                    entry.pages,
-                                    &entry.path.to_string_lossy(),
-                                ),
-                                percentage,
-                            },
-                        ));
-                    }
-                }
-
-                // Recently added: entries added within last month
-                if let Some(date_added) = info.get_date_added(&entry.id) {
+                if let Some(date_added) = info.get_date_added(&entry.title) {
                     if date_added > one_month_ago {
-                        let progress = info.get_progress(&user.username, &entry.id).unwrap_or(0);
+                        let progress = info.get_progress(&user.username, &entry.title).unwrap_or(0);
                         let percentage = if entry.pages > 0 {
                             (progress as f32 / entry.pages as f32) * 100.0
                         } else {

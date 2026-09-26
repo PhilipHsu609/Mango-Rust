@@ -33,22 +33,22 @@ impl ProgressCache {
         }
     }
 
-    /// Load progress for a title from cache
-    pub fn get_progress(&self, title_id: &str, username: &str, entry_id: &str) -> Option<i32> {
+    /// Load progress for a title from cache.
+    pub fn get_progress(&self, title_id: &str, username: &str, entry_title: &str) -> Option<i32> {
         let data = self.read_data()?;
-        data.get(title_id)?.get_progress(username, entry_id)
+        data.get(title_id)?.get_progress(username, entry_title)
     }
 
-    /// Get last read timestamp from cache
-    pub fn get_last_read(&self, title_id: &str, username: &str, entry_id: &str) -> Option<i64> {
+    /// Get last-read timestamp from cache.
+    pub fn get_last_read(&self, title_id: &str, username: &str, entry_title: &str) -> Option<i64> {
         let data = self.read_data()?;
-        data.get(title_id)?.get_last_read(username, entry_id)
+        data.get(title_id)?.get_last_read(username, entry_title)
     }
 
-    /// Get date added from cache
-    pub fn get_date_added(&self, title_id: &str, entry_id: &str) -> Option<i64> {
+    /// Get date added from cache.
+    pub fn get_date_added(&self, title_id: &str, entry_title: &str) -> Option<i64> {
         let data = self.read_data()?;
-        data.get(title_id)?.get_date_added(entry_id)
+        data.get(title_id)?.get_date_added(entry_title)
     }
 
     /// Get display name from cache
@@ -79,29 +79,29 @@ impl ProgressCache {
         Ok(())
     }
 
-    /// Save progress and persist to info.json
+    /// Save progress and persist to info.json.
     pub async fn save_progress(
         &self,
         title_id: &str,
         title_path: &Path,
         username: &str,
-        entry_id: &str,
+        entry_title: &str,
         page: i32,
     ) -> Result<()> {
-        // Update cache and clone for saving in one lock acquisition
+        // Update cache and clone for saving in one lock acquisition.
         let info_to_save = {
             let mut data = self.data.write().map_err(|e| {
-                tracing::error!("Progress cache lock poisoned during save_progress: {}", e);
+                tracing::error!("Progress cache RwLock poisoned during save_progress: {}", e);
                 Error::Internal("Progress cache lock poisoned".to_string())
             })?;
             let info = data
                 .entry(title_id.to_string())
                 .or_insert_with(TitleInfo::default);
-            info.set_progress(username, entry_id, page);
+            info.set_progress(username, entry_title, page);
             info.clone()
         };
 
-        // Persist to file (outside of lock)
+        // Persist to file (outside of lock).
         info_to_save.save(title_path).await?;
 
         Ok(())
