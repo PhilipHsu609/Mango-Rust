@@ -27,7 +27,11 @@ ENV RUSTFLAGS='-C target-feature=-crt-static'
 ENV SQLX_OFFLINE=true
 
 # Build binary
-RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN --mount=type=cache,id=mango-rust-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=mango-rust-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=mango-rust-target-x86_64-unknown-linux-musl,target=/build/target,sharing=locked \
+    cargo build --release --target x86_64-unknown-linux-musl \
+    && cp /build/target/x86_64-unknown-linux-musl/release/mango-rust /build/mango-rust
 
 # ===== Stage 2: Runtime image =====
 FROM alpine:latest
@@ -38,7 +42,7 @@ RUN apk add --no-cache libarchive libgcc
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/mango-rust /usr/local/bin/mango-rust
+COPY --from=builder /build/mango-rust /usr/local/bin/mango-rust
 
 # Copy static assets and templates (needed at runtime)
 COPY --from=builder /build/templates /app/templates
