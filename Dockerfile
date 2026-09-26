@@ -1,8 +1,8 @@
-# ===== Stage 1: Build static binary =====
+# ===== Stage 1: Build binary with dynamic system libraries =====
 FROM rust:1.91-alpine AS builder
 
-# Install musl-dev and build tools for static linking
-RUN apk add --no-cache musl-dev sqlite-dev sqlite-static nodejs npm libarchive-dev pkgconfig
+# Install musl-dev and build tools, including libarchive headers
+RUN apk add --no-cache musl-dev sqlite-dev nodejs npm libarchive-dev pkgconfig
 
 WORKDIR /build
 
@@ -22,18 +22,18 @@ COPY .sqlx ./.sqlx
 COPY package.json package-lock.json ./
 RUN npm ci && npm run build
 
-# Set environment for static linking and offline sqlx
-ENV RUSTFLAGS='-C target-feature=+crt-static'
+# Use dynamic musl linking for runtime libarchive; keep SQLx offline
+ENV RUSTFLAGS='-C target-feature=-crt-static'
 ENV SQLX_OFFLINE=true
 
-# Build static binary
+# Build binary
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # ===== Stage 2: Runtime image =====
 FROM alpine:latest
 
-# Install libarchive runtime library for archive support
-RUN apk add --no-cache libarchive
+# Install runtime shared libraries used by the binary
+RUN apk add --no-cache libarchive libgcc
 
 WORKDIR /app
 

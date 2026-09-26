@@ -152,10 +152,10 @@ docker pull ghcr.io/philiphsu609/mango-rust:v1.0.0
 ## Image Details
 
 - **Base Image**: Alpine Linux (minimal footprint)
-- **Size**: ~33MB (static musl binary)
+- **Size**: Depends on bundled runtime shared libraries
 - **Architecture**: linux/amd64 (arm64 available on request)
 - **Rust Version**: 1.91
-- **Features**: Static linking, offline SQLx, optimized release build
+- **Features**: Dynamic musl linking, runtime libarchive, offline SQLx, optimized release build
 
 ## Troubleshooting
 
