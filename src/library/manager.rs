@@ -39,22 +39,6 @@ impl Library {
         }
     }
 
-    /// Convert absolute path to relative path (relative to library root)
-    /// Example: "/home/user/library/Series/Chapter.zip" -> "Series/Chapter.zip"
-    #[allow(dead_code)]
-    fn to_relative_path(&self, absolute_path: &Path) -> Result<String> {
-        absolute_path
-            .strip_prefix(&self.path)
-            .map(|p| p.to_string_lossy().to_string())
-            .map_err(|_| {
-                crate::error::Error::Internal(format!(
-                    "Path {} is not within library root {}",
-                    absolute_path.display(),
-                    self.path.display()
-                ))
-            })
-    }
-
     /// Try to load library from cache
     /// Returns Ok(true) if loaded from cache, Ok(false) if cache miss/invalid
     pub async fn try_load_from_cache(&mut self) -> Result<bool> {
@@ -277,7 +261,7 @@ impl Library {
         new_entry_ids: &Arc<Mutex<Vec<(String, String, String)>>>,
     ) -> Result<()> {
         title.parent_id = parent_id;
-        if let Some(id) = Self::find_existing_id_static(library_path, title, storage).await? {
+        if let Some(id) = Self::find_existing_title_id(library_path, title, storage).await? {
             title.id = id;
         } else {
             let relative_path = title
@@ -300,9 +284,7 @@ impl Library {
         }
 
         for entry in &mut title.entries {
-            if let Some(id) =
-                Self::find_existing_entry_id_static(library_path, entry, storage).await?
-            {
+            if let Some(id) = Self::find_existing_entry_id(library_path, entry, storage).await? {
                 entry.id = id;
             } else {
                 let relative_path = entry
@@ -340,8 +322,7 @@ impl Library {
         Ok(())
     }
 
-    /// Static helper for finding existing title ID (for use in spawned tasks)
-    async fn find_existing_id_static(
+    async fn find_existing_title_id(
         library_path: &Path,
         title: &Title,
         storage: &Storage,
@@ -349,50 +330,20 @@ impl Library {
         let relative_path = title
             .path
             .strip_prefix(library_path)
-            .map(|p| p.to_string_lossy().to_string())
             .map_err(|_| {
                 crate::error::Error::Internal(format!(
                     "Path {} is not within library root {}",
                     title.path.display(),
                     library_path.display()
                 ))
-            })?;
+            })?
+            .to_string_lossy()
+            .to_string();
 
-        // Tier 1: Exact match
-        if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0",
-        )
-        .bind(&relative_path)
-        .bind(&title.signature)
-        .fetch_optional(storage.pool())
-        .await?
-        {
-            return Ok(Some(id));
-        }
-
-        // Tier 2: Path-only match
-        if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM titles WHERE path = ? AND unavailable = 0",
-        )
-        .bind(&relative_path)
-        .fetch_optional(storage.pool())
-        .await?
-        {
-            // Update signature
-            sqlx::query("UPDATE titles SET signature = ? WHERE id = ?")
-                .bind(&title.signature)
-                .bind(&id)
-                .execute(storage.pool())
-                .await?;
-
-            return Ok(Some(id));
-        }
-
-        Ok(None)
+        Self::find_existing_id("titles", &relative_path, &title.signature, storage).await
     }
 
-    /// Static helper for finding existing entry ID (for use in spawned tasks)
-    async fn find_existing_entry_id_static(
+    async fn find_existing_entry_id(
         library_path: &Path,
         entry: &Entry,
         storage: &Storage,
@@ -400,45 +351,79 @@ impl Library {
         let relative_path = entry
             .path
             .strip_prefix(library_path)
-            .map(|p| p.to_string_lossy().to_string())
             .map_err(|_| {
                 crate::error::Error::Internal(format!(
                     "Path {} is not within library root {}",
                     entry.path.display(),
                     library_path.display()
                 ))
-            })?;
+            })?
+            .to_string_lossy()
+            .to_string();
 
-        // Tier 1: Exact match
-        if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0",
-        )
-        .bind(&relative_path)
-        .bind(&entry.signature)
-        .fetch_optional(storage.pool())
-        .await?
-        {
-            return Ok(Some(id));
+        Self::find_existing_id("ids", &relative_path, &entry.signature, storage).await
+    }
+
+    async fn find_existing_id(
+        table: &'static str,
+        path: &str,
+        signature: &str,
+        storage: &Storage,
+    ) -> Result<Option<String>> {
+        let (exact_query, path_query, signature_query, update_query) = match table {
+            "titles" => (
+                "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0",
+                "SELECT id FROM titles WHERE path = ?",
+                "SELECT id, path FROM titles WHERE signature = ?",
+                "UPDATE titles SET path = ?, signature = ?, unavailable = 0 WHERE id = ?",
+            ),
+            "ids" => (
+                "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0",
+                "SELECT id FROM ids WHERE path = ?",
+                "SELECT id, path FROM ids WHERE signature = ?",
+                "UPDATE ids SET path = ?, signature = ?, unavailable = 0 WHERE id = ?",
+            ),
+            _ => unreachable!("ID table is selected internally"),
+        };
+
+        let mut id = sqlx::query_scalar::<_, String>(exact_query)
+            .bind(path)
+            .bind(signature)
+            .fetch_optional(storage.pool())
+            .await?;
+        let should_update = id.is_none();
+
+        if id.is_none() {
+            id = sqlx::query_scalar::<_, String>(path_query)
+                .bind(path)
+                .fetch_optional(storage.pool())
+                .await?;
         }
 
-        // Tier 2: Path-only match
-        if let Some(id) =
-            sqlx::query_scalar::<_, String>("SELECT id FROM ids WHERE path = ? AND unavailable = 0")
-                .bind(&relative_path)
-                .fetch_optional(storage.pool())
-                .await?
-        {
-            // Update signature
-            sqlx::query("UPDATE ids SET signature = ? WHERE id = ?")
-                .bind(&entry.signature)
-                .bind(&id)
+        if id.is_none() {
+            let candidates = sqlx::query_as::<_, (String, String)>(signature_query)
+                .bind(signature)
+                .fetch_all(storage.pool())
+                .await?;
+            id = candidates
+                .into_iter()
+                .max_by(|(_, left_path), (_, right_path)| {
+                    path_component_similarity(left_path, path)
+                        .total_cmp(&path_component_similarity(right_path, path))
+                })
+                .map(|(id, _)| id);
+        }
+
+        if let Some(id) = id.as_ref().filter(|_| should_update) {
+            sqlx::query(update_query)
+                .bind(path)
+                .bind(signature)
+                .bind(id)
                 .execute(storage.pool())
                 .await?;
-
-            return Ok(Some(id));
         }
 
-        Ok(None)
+        Ok(id)
     }
 
     /// Save library to cache in background task (non-blocking)
@@ -465,126 +450,6 @@ impl Library {
                 Err(e) => tracing::warn!("Failed to save library cache in background: {}", e),
             }
         });
-    }
-
-    /// Find existing title ID from database (by path or signature)
-    #[allow(dead_code)]
-    async fn find_existing_id(&self, title: &Title) -> Result<Option<String>> {
-        let relative_path = self.to_relative_path(&title.path)?;
-
-        // Tier 1: Exact match (path + signature)
-        if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0",
-        )
-        .bind(&relative_path)
-        .bind(&title.signature)
-        .fetch_optional(self.storage.pool())
-        .await?
-        {
-            return Ok(Some(id));
-        }
-
-        // Tier 2: Path-only match (directory modified but not moved)
-        if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM titles WHERE path = ? AND unavailable = 0",
-        )
-        .bind(&relative_path)
-        .fetch_optional(self.storage.pool())
-        .await?
-        {
-            // Update signature
-            sqlx::query("UPDATE titles SET signature = ? WHERE id = ?")
-                .bind(&title.signature)
-                .bind(&id)
-                .execute(self.storage.pool())
-                .await?;
-
-            return Ok(Some(id));
-        }
-
-        // Tier 3: Signature-only match (directory moved/renamed)
-        // Note: Commented out for now as we don't query by signature alone for titles
-        // If needed in future, add: AND unavailable = 0
-        // For Week 2, we'll skip path similarity matching (add in Week 5)
-
-        Ok(None)
-    }
-
-    /// Find existing entry ID from database
-    #[allow(dead_code)]
-    async fn find_existing_entry_id(&self, entry: &Entry) -> Result<Option<String>> {
-        let relative_path = self.to_relative_path(&entry.path)?;
-
-        // Tier 1: Exact match
-        if let Some(id) = sqlx::query_scalar::<_, String>(
-            "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0",
-        )
-        .bind(&relative_path)
-        .bind(&entry.signature)
-        .fetch_optional(self.storage.pool())
-        .await?
-        {
-            return Ok(Some(id));
-        }
-
-        // Tier 2: Path-only match
-        if let Some(id) =
-            sqlx::query_scalar::<_, String>("SELECT id FROM ids WHERE path = ? AND unavailable = 0")
-                .bind(&relative_path)
-                .fetch_optional(self.storage.pool())
-                .await?
-        {
-            // Update signature
-            sqlx::query("UPDATE ids SET signature = ? WHERE id = ?")
-                .bind(&entry.signature)
-                .bind(&id)
-                .execute(self.storage.pool())
-                .await?;
-
-            return Ok(Some(id));
-        }
-
-        Ok(None)
-    }
-
-    /// Persist title ID to database
-    #[allow(dead_code)]
-    async fn persist_title_id(&self, title: &Title) -> Result<()> {
-        let relative_path = self.to_relative_path(&title.path)?;
-
-        sqlx::query(
-            "INSERT INTO titles (id, path, signature, unavailable) VALUES (?, ?, ?, 0)
-             ON CONFLICT(path) DO UPDATE SET id = ?, signature = ?, unavailable = 0",
-        )
-        .bind(&title.id)
-        .bind(&relative_path)
-        .bind(&title.signature)
-        .bind(&title.id)
-        .bind(&title.signature)
-        .execute(self.storage.pool())
-        .await?;
-
-        Ok(())
-    }
-
-    /// Persist entry ID to database
-    #[allow(dead_code)]
-    async fn persist_entry_id(&self, entry: &Entry) -> Result<()> {
-        let relative_path = self.to_relative_path(&entry.path)?;
-
-        sqlx::query(
-            "INSERT INTO ids (id, path, signature, unavailable) VALUES (?, ?, ?, 0)
-             ON CONFLICT(path) DO UPDATE SET id = ?, signature = ?, unavailable = 0",
-        )
-        .bind(&entry.id)
-        .bind(&relative_path)
-        .bind(&entry.signature)
-        .bind(&entry.id)
-        .bind(&entry.signature)
-        .execute(self.storage.pool())
-        .await?;
-
-        Ok(())
     }
 
     /// Get all titles (sorted by name)
@@ -706,82 +571,14 @@ impl Library {
             .find(|entry| entry.id == entry_id)
     }
 
-    /// Get sorted entries for a title with caching
-    pub async fn get_entries_sorted_cached(
-        &self,
-        title_id: &str,
-        username: &str,
-        method: SortMethod,
-        ascending: bool,
-    ) -> Option<Vec<&Entry>> {
-        let title = self.get_title(title_id)?;
-
-        // Generate cache key signature from current entry IDs
-        let mut all_entry_ids: Vec<String> = title.entries.iter().map(|e| e.id.clone()).collect();
-        all_entry_ids.sort(); // Consistent ordering for cache key
-
-        let sort_method_str = match method {
-            SortMethod::Name => "name",
-            SortMethod::TimeModified => "modified",
-            SortMethod::TimeAdded => "added",
-            SortMethod::Progress => "progress",
-            SortMethod::Auto => "auto",
-        };
-
-        // Acquire lock for entire cache operation (check-compute-store)
-        // This prevents TOCTOU race condition where another thread could invalidate
-        // the cache between our check and our write
-        let mut cache = self.cache.lock().await;
-        let cache_key = super::cache::key::sorted_entries_key(
-            title_id,
-            username,
-            &all_entry_ids,
-            sort_method_str,
-            ascending,
-        );
-
-        if let Some(cached_ids) = cache.get_sorted_entries(&cache_key) {
-            drop(cache); // Can drop early on cache hit
-
-            // Build result from cached IDs
-            let mut result = Vec::with_capacity(cached_ids.len());
-            for id in &cached_ids {
-                if let Some(entry) = title.entries.iter().find(|e| e.id == *id) {
-                    result.push(entry);
-                }
-            }
-            return Some(result);
-        }
-
-        // Cache miss - compute sort while holding lock
-        // Sorting is fast (<1ms for typical entry counts), so lock contention is acceptable
-        // This ensures atomicity of check-compute-store operation
-        let sorted_entries = title.get_entries_sorted(method, ascending);
-
-        // Extract IDs in sorted order
-        let sorted_ids: Vec<String> = sorted_entries.iter().map(|e| e.id.clone()).collect();
-
-        // Store result (still holding lock)
-        cache.set_sorted_entries(cache_key, sorted_ids);
-        drop(cache);
-
-        Some(sorted_entries)
-    }
-
     /// Get library root path
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// Invalidate cache for a title after progress update
-    pub async fn invalidate_cache_for_progress(&self, title_id: &str, username: &str) {
-        let mut cache = self.cache.lock().await;
-        cache.invalidate_progress(title_id, username);
-        if let Some(title) = self.get_title(title_id) {
-            for parent in self.parent_titles(title) {
-                cache.invalidate_progress(&parent.id, username);
-            }
-        }
+    /// Invalidate progress-dependent title sorting for a user.
+    pub async fn invalidate_cache_for_progress(&self, username: &str) {
+        self.cache.lock().await.invalidate_progress(username);
     }
     /// Get cache reference for admin/debug access
     pub fn cache(&self) -> &Mutex<super::cache::Cache> {
@@ -1082,6 +879,23 @@ pub fn spawn_periodic_scanner(
         }
     })
 }
+fn path_component_similarity(left: &str, right: &str) -> f64 {
+    let left = Path::new(left);
+    let right = Path::new(right);
+    let component_count = left.components().count().min(right.components().count());
+    if component_count == 0 {
+        return 0.0;
+    }
+
+    let matching_components = left
+        .components()
+        .rev()
+        .zip(right.components().rev())
+        .filter(|(left, right)| left == right)
+        .count();
+    matching_components as f64 / component_count as f64
+}
+
 #[cfg(test)]
 mod sort_method_tests {
     use super::SortMethod;
@@ -1090,5 +904,20 @@ mod sort_method_tests {
     fn parses_mango_date_added_sort_name() {
         assert_eq!(SortMethod::parse("time_added"), SortMethod::TimeAdded);
         assert_eq!(SortMethod::parse("added"), SortMethod::TimeAdded);
+    }
+}
+
+#[cfg(test)]
+mod path_similarity_tests {
+    use super::path_component_similarity;
+
+    #[test]
+    fn moved_path_prefers_matching_trailing_components() {
+        let moved_chapter =
+            path_component_similarity("old/volume-1/chapter-2.cbz", "new/volume-1/chapter-2.cbz");
+        let other_chapter =
+            path_component_similarity("old/chapter-2/chapter-2.cbz", "new/volume-1/chapter-2.cbz");
+
+        assert!(moved_chapter > other_chapter);
     }
 }

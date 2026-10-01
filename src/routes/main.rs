@@ -94,7 +94,6 @@ struct HomeCardItem {
 
 impl HomeCardItem {
     /// Create a card item for an entry
-    #[allow(dead_code)]
     fn from_entry(
         entry_id: &str,
         entry_title: &str,
@@ -135,7 +134,6 @@ impl HomeCardItem {
     }
 
     /// Create a card item for a title
-    #[allow(dead_code)]
     fn from_title(
         title_id: &str,
         title_name: &str,

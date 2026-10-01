@@ -745,8 +745,7 @@ pub async fn bulk_progress(
         }
     }
 
-    lib.invalidate_cache_for_progress(&title_id, &username)
-        .await;
+    lib.invalidate_cache_for_progress(&username).await;
 
     tracing::info!(
         "Bulk progress update: {} entries marked as {} for title {}",

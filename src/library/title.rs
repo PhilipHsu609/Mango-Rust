@@ -189,6 +189,32 @@ impl Title {
                 entries.reverse();
             }
         }
+        if method == SortMethod::Progress {
+            entries.sort_by(|left, right| {
+                let left_progress = if left.pages == 0 {
+                    0.0
+                } else {
+                    info.get_progress(username, &left.title)
+                        .unwrap_or(0)
+                        .clamp(0, left.pages as i32) as f32
+                        / left.pages as f32
+                };
+                let right_progress = if right.pages == 0 {
+                    0.0
+                } else {
+                    info.get_progress(username, &right.title)
+                        .unwrap_or(0)
+                        .clamp(0, right.pages as i32) as f32
+                        / right.pages as f32
+                };
+                left_progress
+                    .total_cmp(&right_progress)
+                    .then_with(|| natord::compare(&left.title, &right.title))
+            });
+            if !ascending {
+                entries.reverse();
+            }
+        }
         let mut index = entries.iter().rposition(|entry| {
             info.get_progress(username, &entry.title)
                 .unwrap_or(0)
@@ -627,6 +653,18 @@ mod tests {
         let (selected, _) = title.get_continue_reading_entry("admin", &info).unwrap();
         assert_eq!(selected.id, "entry-1");
     }
+    #[test]
+    fn continue_reading_uses_progress_sort_order() {
+        let title = continue_reading_title();
+        let mut info = TitleInfo::default();
+        info.set_sort_by("admin", "progress", true);
+        info.set_progress("admin", "Volume 1", 10);
+        info.set_progress("admin", "Volume 2", 3);
+
+        let (selected, _) = title.get_continue_reading_entry("admin", &info).unwrap();
+        assert_eq!(selected.id, "entry-3");
+    }
+
     #[tokio::test]
     async fn whole_title_progress_updates_nested_titles() {
         let dir = tempfile::tempdir().unwrap();

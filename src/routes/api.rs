@@ -803,6 +803,37 @@ async fn mango_title_response(
                 .into_iter()
                 .map(|(entry, sort_title)| (entry, Some(sort_title))),
         );
+    } else if sort_method == SortMethod::Progress {
+        let mut entries = Vec::with_capacity(title.entries.len());
+        for entry in &title.entries {
+            let sort_title = state
+                .storage
+                .get_entry_sort_title(&entry.id)
+                .await?
+                .unwrap_or_else(|| entry.title.clone());
+            entries.push((entry, sort_title));
+        }
+        entries.sort_by(|(left, left_title), (right, right_title)| {
+            let left_progress = entry_progress_percentage(
+                info.get_progress(username, &left.title).unwrap_or(0),
+                left.pages,
+            );
+            let right_progress = entry_progress_percentage(
+                info.get_progress(username, &right.title).unwrap_or(0),
+                right.pages,
+            );
+            left_progress
+                .total_cmp(&right_progress)
+                .then_with(|| natord::compare(left_title, right_title))
+        });
+        if !ascending {
+            entries.reverse();
+        }
+        ordered_entries.extend(
+            entries
+                .into_iter()
+                .map(|(entry, sort_title)| (entry, Some(sort_title))),
+        );
     } else {
         ordered_entries.extend(
             title
@@ -1062,7 +1093,11 @@ struct DimensionsResponse {
     dimensions: Vec<PageDimension>,
 }
 
-fn dimensions_response(dimensions: Vec<PageDimension>, etag: &str) -> axum::response::Response {
+fn dimensions_response(
+    dimensions: Vec<PageDimension>,
+    etag: &str,
+    cache_control: &str,
+) -> axum::response::Response {
     let mut response = success_response(DimensionsResponse { dimensions }).into_response();
     response.headers_mut().insert(
         header::ETAG,
@@ -1070,9 +1105,7 @@ fn dimensions_response(dimensions: Vec<PageDimension>, etag: &str) -> axum::resp
     );
     response.headers_mut().insert(
         header::CACHE_CONTROL,
-        "public, max-age=86400"
-            .parse()
-            .expect("static cache-control header"),
+        cache_control.parse().expect("static cache-control header"),
     );
     response
 }
@@ -1086,15 +1119,31 @@ pub async fn get_dimensions(
 ) -> Result<impl IntoResponse> {
     let lib = state.library.load();
 
-    let entry = lib
-        .get_entry(&title_id, &entry_id)
-        .ok_or_else(|| Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id)))?;
+    let Some(title) = lib.get_title(&title_id) else {
+        return Ok(api_failure(format!("Title ID `{title_id}` not found")).into_response());
+    };
+    let Some(entry) = title.entries.iter().find(|entry| entry.id == entry_id) else {
+        return Ok(api_failure(format!(
+            "Entry ID `{entry_id}` of `{}` not found",
+            title.title
+        ))
+        .into_response());
+    };
     let entry_pages = entry.pages;
-    let etag_source = format!("{}{}", entry.path.display(), entry.mtime);
+    let is_directory = entry.path.is_dir();
+    let mut etag_source = format!("{}{}", entry.path.display(), entry.mtime);
+    if is_directory {
+        etag_source.push_str(&humanize_bytes(entry.size_bytes));
+    }
     let etag = format!("W/{:x}", {
         use sha1::Digest;
         sha1::Sha1::digest(etag_source.as_bytes())
     });
+    let cache_control = if is_directory {
+        "no-cache, max-age=86400"
+    } else {
+        "public, max-age=86400"
+    };
     let previous_etag = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok());
@@ -1115,7 +1164,7 @@ pub async fn get_dimensions(
                     height: d.height,
                 })
                 .collect();
-            return Ok(dimensions_response(dimensions, &etag));
+            return Ok(dimensions_response(dimensions, &etag, cache_control));
         }
         Ok(Some(cached)) => {
             tracing::debug!(
@@ -1189,7 +1238,7 @@ pub async fn get_dimensions(
         }
     }
 
-    Ok(dimensions_response(dimensions, &etag))
+    Ok(dimensions_response(dimensions, &etag, cache_control))
 }
 
 /// Get image dimensions from raw image data
@@ -1265,7 +1314,6 @@ pub async fn update_progress(
         }
     }
 
-    lib.invalidate_cache_for_progress(&title_id, &username)
-        .await;
+    lib.invalidate_cache_for_progress(&username).await;
     Json(serde_json::json!({ "success": true }))
 }

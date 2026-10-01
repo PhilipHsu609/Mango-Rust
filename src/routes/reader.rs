@@ -7,6 +7,7 @@ use axum::{
 use crate::{
     auth::Username,
     error::{Error, Result},
+    library::{SortMethod, TitleInfo},
     util::render_error,
     AppState,
 };
@@ -39,7 +40,7 @@ struct ReaderTemplate {
 pub async fn reader(
     State(state): State<AppState>,
     Path((title_id, entry_id, page)): Path<(String, String, usize)>,
-    Username(_username): Username,
+    Username(username): Username,
 ) -> Result<Html<String>> {
     // Get library read lock
     let lib = state.library.load();
@@ -64,35 +65,81 @@ pub async fn reader(
         )));
     }
 
-    // Get all entries in this title for jump functionality
-    let entries: Vec<EntryOption> = title
-        .entries
+    let info = TitleInfo::load(&title.path).await?;
+    let (sort_method, ascending) = info
+        .get_sort_by(&username)
+        .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
+        .unwrap_or((SortMethod::Auto, true));
+    let mut ordered_entries = Vec::with_capacity(title.entries.len());
+    for item in &title.entries {
+        let sort_title = state
+            .storage
+            .get_entry_sort_title(&item.id)
+            .await?
+            .unwrap_or_else(|| item.title.clone());
+        ordered_entries.push((item, sort_title));
+    }
+    ordered_entries.sort_by(|(left, left_title), (right, right_title)| {
+        let name_order = || natord::compare(left_title, right_title);
+        match sort_method {
+            SortMethod::TimeModified => left.mtime.cmp(&right.mtime).then_with(name_order),
+            SortMethod::TimeAdded => info
+                .get_date_added(&left.title)
+                .unwrap_or_default()
+                .cmp(&info.get_date_added(&right.title).unwrap_or_default())
+                .then_with(name_order),
+            SortMethod::Progress => {
+                let left_progress = if left.pages == 0 {
+                    0.0
+                } else {
+                    info.get_progress(&username, &left.title)
+                        .unwrap_or(0)
+                        .clamp(0, left.pages as i32) as f32
+                        / left.pages as f32
+                };
+                let right_progress = if right.pages == 0 {
+                    0.0
+                } else {
+                    info.get_progress(&username, &right.title)
+                        .unwrap_or(0)
+                        .clamp(0, right.pages as i32) as f32
+                        / right.pages as f32
+                };
+                left_progress
+                    .total_cmp(&right_progress)
+                    .then_with(name_order)
+            }
+            SortMethod::Name | SortMethod::Auto => name_order(),
+        }
+    });
+    if !ascending {
+        ordered_entries.reverse();
+    }
+
+    let entries: Vec<EntryOption> = ordered_entries
         .iter()
-        .map(|e| EntryOption {
-            id: e.id.clone(),
-            name: e.title.clone(),
+        .map(|(item, _)| EntryOption {
+            id: item.id.clone(),
+            name: info
+                .entry_display_name
+                .get(&item.title)
+                .filter(|name| !name.is_empty())
+                .cloned()
+                .unwrap_or_else(|| item.title.clone()),
         })
         .collect();
-
-    // Find current entry index to determine prev/next entry
-    let current_entry_idx = title.entries.iter().position(|e| e.id == entry_id);
-
-    let (prev_entry_url, next_entry_url) = if let Some(idx) = current_entry_idx {
-        let prev_url = if idx > 0 {
-            let prev_entry = &title.entries[idx - 1];
-            Some(format!("/reader/{}/{}/1", title_id, prev_entry.id))
-        } else {
-            None
-        };
-
-        let next_url = if idx < title.entries.len() - 1 {
-            let next_entry = &title.entries[idx + 1];
-            Some(format!("/reader/{}/{}/1", title_id, next_entry.id))
-        } else {
-            None
-        };
-
-        (prev_url, next_url)
+    let current_entry_idx = ordered_entries
+        .iter()
+        .position(|(item, _)| item.id == entry_id);
+    let (prev_entry_url, next_entry_url) = if let Some(index) = current_entry_idx {
+        let previous = index
+            .checked_sub(1)
+            .and_then(|index| ordered_entries.get(index));
+        let next = ordered_entries.get(index + 1);
+        (
+            previous.map(|(entry, _)| format!("/reader/{}/{}/1", title_id, entry.id)),
+            next.map(|(entry, _)| format!("/reader/{}/{}/1", title_id, entry.id)),
+        )
     } else {
         (None, None)
     };
@@ -100,7 +147,12 @@ pub async fn reader(
     let template = ReaderTemplate {
         title_id,
         entry_id,
-        entry_name: entry.title.clone(),
+        entry_name: info
+            .entry_display_name
+            .get(&entry.title)
+            .filter(|name| !name.is_empty())
+            .cloned()
+            .unwrap_or_else(|| entry.title.clone()),
         entry_path: entry.path.display().to_string(),
         current_page: page,
         total_pages,

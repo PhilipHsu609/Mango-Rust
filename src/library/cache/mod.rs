@@ -51,58 +51,14 @@ impl Cache {
         self.lru_cache.set(key, title_ids);
     }
 
-    /// Get cached sorted entries
-    pub fn get_sorted_entries(&mut self, key: &str) -> Option<Vec<String>> {
-        if !self.enabled {
-            return None;
-        }
-        self.lru_cache.get(key)
-    }
-
-    /// Cache sorted entries
-    pub fn set_sorted_entries(&mut self, key: String, entry_ids: Vec<String>) {
-        if !self.enabled {
-            return;
-        }
-        self.lru_cache.set(key, entry_ids);
-    }
-
-    /// Invalidate progress-related caches
-    pub fn invalidate_progress(&mut self, title_id: &str, username: &str) {
+    /// Invalidate progress-dependent title lists for a user.
+    pub fn invalidate_progress(&mut self, username: &str) {
         if !self.enabled {
             return;
         }
 
-        // Invalidate all cached sorted lists for this user that might depend on progress
-        // This includes sorted titles with progress sorting
         let prefix = format!("sorted_titles:{}:", username);
         self.invalidate_by_prefix(&prefix);
-
-        // Also invalidate sorted entries for this title
-        let entry_prefix = format!("sorted_entries:{}:{}:", title_id, username);
-        self.invalidate_by_prefix(&entry_prefix);
-
-        // Invalidate progress sum cache
-        let progress_prefix = format!("progress_sum:{}:{}:", title_id, username);
-        self.invalidate_by_prefix(&progress_prefix);
-    }
-
-    /// Invalidate all caches for a title
-    pub fn invalidate_sorted_for_title(&mut self, title_id: &str) {
-        if !self.enabled {
-            return;
-        }
-
-        // Invalidate sorted entries for this title (all users)
-        let prefix = format!("sorted_entries:{}:", title_id);
-        self.invalidate_by_prefix(&prefix);
-
-        // Invalidate progress sums for this title (all users)
-        let progress_prefix = format!("progress_sum:{}:", title_id);
-        self.invalidate_by_prefix(&progress_prefix);
-
-        // Note: We don't invalidate sorted_titles here because title-level
-        // changes don't affect title sorting (only progress changes do)
     }
 
     /// Invalidate all cache entries with the given prefix
@@ -247,7 +203,7 @@ mod tests {
         assert!(cache.get_sorted_titles("key").is_none());
 
         // Invalidation should be no-op
-        cache.invalidate_progress("title1", "user1");
+        cache.invalidate_progress("user1");
         cache.clear();
     }
 
@@ -267,95 +223,23 @@ mod tests {
     }
 
     #[test]
-    fn test_sorted_entries_cache() {
-        let config = create_test_config();
-        let mut cache = Cache::new(&config);
-
-        let entry_ids = vec!["e1".to_string(), "e2".to_string()];
-
-        // Cache miss
-        assert!(cache.get_sorted_entries("key1").is_none());
-
-        // Cache hit after set
-        cache.set_sorted_entries("key1".to_string(), entry_ids.clone());
-        assert_eq!(cache.get_sorted_entries("key1"), Some(entry_ids));
-    }
-
-    #[test]
     fn test_invalidate_progress() {
         let config = create_test_config();
         let mut cache = Cache::new(&config);
+        let title_ids = vec!["title1".to_string()];
+        let user1_key = key::sorted_titles_key("user1", &title_ids, "progress", true);
+        let user2_key = key::sorted_titles_key("user2", &title_ids, "progress", true);
 
-        // Set up some cached data with proper key format
-        cache.set_sorted_titles(
-            "sorted_titles:user1:abc123:name:true".to_string(),
-            vec!["t1".to_string()],
+        cache.set_sorted_titles(user1_key.clone(), vec!["title1".to_string()]);
+        cache.set_sorted_titles(user2_key.clone(), vec!["title1".to_string()]);
+
+        cache.invalidate_progress("user1");
+
+        assert!(cache.get_sorted_titles(&user1_key).is_none());
+        assert_eq!(
+            cache.get_sorted_titles(&user2_key),
+            Some(vec!["title1".to_string()])
         );
-        cache.set_sorted_entries(
-            "sorted_entries:title1:user1:abc123:name:true".to_string(),
-            vec!["e1".to_string()],
-        );
-        cache.set_sorted_titles(
-            "progress_sum:title1:user1:abc123".to_string(),
-            vec!["100".to_string()],
-        );
-
-        // Verify cached
-        assert!(cache
-            .get_sorted_titles("sorted_titles:user1:abc123:name:true")
-            .is_some());
-        assert!(cache
-            .get_sorted_entries("sorted_entries:title1:user1:abc123:name:true")
-            .is_some());
-
-        // Invalidate progress for title1, user1
-        cache.invalidate_progress("title1", "user1");
-
-        // All related caches should be invalidated
-        assert!(cache
-            .get_sorted_titles("sorted_titles:user1:abc123:name:true")
-            .is_none());
-        assert!(cache
-            .get_sorted_entries("sorted_entries:title1:user1:abc123:name:true")
-            .is_none());
-        assert!(cache
-            .get_sorted_titles("progress_sum:title1:user1:abc123")
-            .is_none());
-    }
-
-    #[test]
-    fn test_invalidate_sorted_for_title() {
-        let config = create_test_config();
-        let mut cache = Cache::new(&config);
-
-        // Set up cached data for a title
-        cache.set_sorted_entries(
-            "sorted_entries:title1:user1:abc:name:true".to_string(),
-            vec!["e1".to_string()],
-        );
-        cache.set_sorted_entries(
-            "sorted_entries:title1:user2:def:name:true".to_string(),
-            vec!["e2".to_string()],
-        );
-
-        // Verify cached
-        assert!(cache
-            .get_sorted_entries("sorted_entries:title1:user1:abc:name:true")
-            .is_some());
-        assert!(cache
-            .get_sorted_entries("sorted_entries:title1:user2:def:name:true")
-            .is_some());
-
-        // Invalidate all caches for title1
-        cache.invalidate_sorted_for_title("title1");
-
-        // All entries for title1 should be invalidated
-        assert!(cache
-            .get_sorted_entries("sorted_entries:title1:user1:abc:name:true")
-            .is_none());
-        assert!(cache
-            .get_sorted_entries("sorted_entries:title1:user2:def:name:true")
-            .is_none());
     }
 
     #[test]
@@ -364,15 +248,13 @@ mod tests {
         let mut cache = Cache::new(&config);
 
         cache.set_sorted_titles("key1".to_string(), vec!["t1".to_string()]);
-        cache.set_sorted_entries("key2".to_string(), vec!["e1".to_string()]);
 
-        assert_eq!(cache.stats().entry_count, 2);
+        assert_eq!(cache.stats().entry_count, 1);
 
         cache.clear();
 
         assert_eq!(cache.stats().entry_count, 0);
         assert!(cache.get_sorted_titles("key1").is_none());
-        assert!(cache.get_sorted_entries("key2").is_none());
     }
 
     #[test]

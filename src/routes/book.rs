@@ -278,11 +278,12 @@ pub async fn get_book(
             .map(|e| format!("/api/cover/{}/{}", title.id, e.id))
             .unwrap_or_else(|| "/static/img/placeholder.png".to_string());
 
+        let sort_title = state.storage.get_title_sort_title(&title.id).await?;
         let title_info = TitleInfo {
             id: title.id.clone(),
             title: title.title.clone(),
             display_name: title.title.clone(),
-            sort_title: None, // TODO: load from info.json if available
+            sort_title,
             cover_url,
             content_label,
             parents,
@@ -325,12 +326,24 @@ pub async fn get_book(
             });
         }
 
-        // Build entry items - use sort method if not progress-based
-        let all_entries = if matches!(sort_method, SortMethod::Progress) {
-            title.get_entries_sorted(SortMethod::Name, true) // Get name-sorted as base
+        // Build entry items in the selected order.
+        let mut all_entries = if matches!(sort_method, SortMethod::Progress) {
+            title.get_entries_sorted(SortMethod::Name, true)
         } else {
             title.get_entries_sorted(sort_method, ascending)
         };
+        if matches!(sort_method, SortMethod::TimeAdded) {
+            let info = crate::library::TitleInfo::load(&title.path).await?;
+            all_entries.sort_by(|left, right| {
+                info.get_date_added(&left.title)
+                    .unwrap_or_default()
+                    .cmp(&info.get_date_added(&right.title).unwrap_or_default())
+                    .then_with(|| natord::compare(&left.title, &right.title))
+            });
+            if !ascending {
+                all_entries.reverse();
+            }
+        }
 
         let mut items = Vec::new();
         for entry in all_entries {
