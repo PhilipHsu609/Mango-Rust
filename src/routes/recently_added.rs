@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub(super) const RECENT_ITEMS_LIMIT: usize = 8;
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 
@@ -20,7 +22,28 @@ pub(super) fn group_recent_entries<T>(
     mut entries: Vec<RecentEntry<T>>,
     limit: usize,
 ) -> Vec<GroupedRecentEntry<T>> {
-    entries.sort_by(|a, b| b.date_added.cmp(&a.date_added));
+    let mut latest_by_title = HashMap::<String, i64>::new();
+    for entry in &entries {
+        if let Some(latest) = latest_by_title.get_mut(entry.title_id.as_str()) {
+            *latest = (*latest).max(entry.date_added);
+        } else {
+            latest_by_title.insert(entry.title_id.clone(), entry.date_added);
+        }
+    }
+
+    // Keep equal-second entries from one recent title batch adjacent.
+    entries.sort_by(|a, b| {
+        let a_title_latest = latest_by_title
+            .get(a.title_id.as_str())
+            .expect("every recent entry has a title timestamp");
+        let b_title_latest = latest_by_title
+            .get(b.title_id.as_str())
+            .expect("every recent entry has a title timestamp");
+        b.date_added
+            .cmp(&a.date_added)
+            .then_with(|| b_title_latest.cmp(a_title_latest))
+            .then_with(|| a.title_id.cmp(&b.title_id))
+    });
 
     let mut groups: Vec<GroupedRecentEntry<T>> = Vec::with_capacity(entries.len().min(limit));
     for entry in entries {
@@ -134,5 +157,21 @@ mod tests {
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].grouped_count, 3);
         assert_eq!(groups[1].item, "b");
+    }
+    #[test]
+    fn equal_timestamps_keep_entries_of_the_same_title_together() {
+        let groups = group_recent_entries(
+            vec![
+                entry("a", 200_000, "a-newest", 0.0),
+                entry("b", 199_000, "b", 0.0),
+                entry("a", 199_000, "a-same-second", 0.0),
+            ],
+            8,
+        );
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].title_id, "a");
+        assert_eq!(groups[0].grouped_count, 2);
+        assert_eq!(groups[1].title_id, "b");
     }
 }
