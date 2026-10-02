@@ -24,6 +24,7 @@ export async function setup() {
   const testConfig = `host: localhost
 port: 9000
 library_path: ${TEST_DATA_DIR}
+library_cache_path: ${TEST_DATA_DIR}/mango-test-cache.bin
 db_path: ${TEST_DATA_DIR}/mango-test.db
 log_level: info
 `;

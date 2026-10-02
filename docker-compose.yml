@@ -14,9 +14,9 @@ services:
       # Config file
       - ${CONFIG_DIRECTORY_PATH:-./config}:/root/.config/mango
     environment:
-      - MANGO_HOST=0.0.0.0
-      - MANGO_PORT=9000
-      - MANGO_DB_PATH=/root/mango/mango.db
-      - MANGO_LIBRARY_PATH=/root/mango/library
-      - MANGO_LOG_LEVEL=${LOG_LEVEL:-info}
+      - HOST=0.0.0.0
+      - PORT=9000
+      - DB_PATH=/root/mango/mango.db
+      - LIBRARY_PATH=/root/mango/library
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     restart: unless-stopped

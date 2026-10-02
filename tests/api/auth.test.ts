@@ -70,6 +70,51 @@ describe('Auth API', () => {
       });
       expect(response.headers.get('set-cookie')).toBeNull();
     });
+
+    it('accepts Bearer session IDs on protected API routes', async () => {
+      const loginResponse = await fetch(`${BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'testuser', password: 'testpass123' }),
+      });
+      const { session_id: sessionId } = await loginResponse.json();
+
+      const response = await fetch(`${BASE_URL}/api/library`, {
+        headers: { Authorization: `Bearer ${sessionId}` },
+      });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('accepts Basic credentials on protected non-OPDS routes', async () => {
+      const credentials = Buffer.from('testuser:testpass123').toString('base64');
+
+      const response = await fetch(`${BASE_URL}/api/library`, {
+        headers: { Authorization: `Basic ${credentials}` },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('set-cookie')).toContain('mango-sessid-');
+    });
+
+    it('gives a valid session priority over Basic credentials', async () => {
+      const loginResponse = await fetch(`${BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'testuser', password: 'testpass123' }),
+      });
+      const sessionCookie = loginResponse.headers.get('set-cookie')?.split(';')[0];
+      const credentials = Buffer.from('testuser2:testpass123').toString('base64');
+
+      const response = await fetch(`${BASE_URL}/api/admin/users`, {
+        headers: {
+          Cookie: sessionCookie ?? '',
+          Authorization: `Basic ${credentials}`,
+        },
+      });
+
+      expect(response.status).toBe(200);
+    });
   });
 
   describe('GET /login', () => {

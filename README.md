@@ -41,15 +41,16 @@ Known gaps: plugin and subscription endpoints and MangaDex queue endpoints are n
 
 `~/.config/mango/config.yml`:
 
-```yaml
 host: 0.0.0.0
 port: 9000
 library_path: ~/mango/library
-db_path: ~/mango/mango.db
+db_path: ~/mango.db
 scan_interval_minutes: 30
 ```
 
-Or use env vars: `MANGO_HOST`, `MANGO_PORT`, `MANGO_LIBRARY_PATH`, `MANGO_DB_PATH`
+`CONFIG_PATH` selects a different YAML file; the CLI also accepts `-c PATH` or `--config=PATH`, which takes precedence over `CONFIG_PATH`. Configuration precedence is YAML file, environment, then defaults. Every configuration key is also available as an uppercase environment variable, such as `HOST`, `PORT`, `LIBRARY_PATH`, and `DB_PATH`.
+
+Login modes use `DISABLE_LOGIN=true` with `DEFAULT_USERNAME`, or `AUTH_PROXY_HEADER_NAME` when a trusted reverse proxy supplies the username.
 
 ## OPDS
 

@@ -5,7 +5,8 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
-use tower_sessions::Session;
+use std::str::FromStr;
+use tower_sessions::{session::Id, Session, SessionStore};
 
 use crate::AppState;
 
@@ -23,71 +24,124 @@ pub async fn require_auth(
     mut request: Request,
     next: Next,
 ) -> Response {
-    // Skip auth for public paths
     let path = request.uri().path();
-    if is_public_path(path) {
+    if request.method() == axum::http::Method::OPTIONS || is_public_path(path) {
         return next.run(request).await;
     }
 
-    // Track if this is an OPDS/download path (needs RFC 7235 compliant 401 on auth failure)
     let is_opds_path = path.starts_with("/opds") || path.starts_with("/api/download");
+    let authorization = request
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|header| header.to_str().ok())
+        .map(str::to_owned);
 
-    // For OPDS paths, try Basic Auth first (for e-reader support)
-    if is_opds_path {
-        tracing::debug!("OPDS path detected: {}", path);
-        if let Some(auth_header) = request.headers().get("authorization") {
-            tracing::debug!("Authorization header found");
-            if let Ok(auth_str) = auth_header.to_str() {
-                if let Some(stripped) = auth_str.strip_prefix("Basic ") {
-                    tracing::debug!("Basic auth detected");
-                    if let Some(username) = verify_basic_auth(&state, stripped).await {
-                        tracing::debug!("Basic auth successful for user: {}", username);
-                        request.extensions_mut().insert(username.clone());
-                        return next.run(request).await;
-                    } else {
-                        tracing::debug!("Basic auth failed");
-                    }
-                }
-            }
-        } else {
-            tracing::debug!("No authorization header found");
-        }
-    }
-
-    // Check if user has valid session
+    // Cookie sessions take precedence over Authorization credentials and configured identities.
     if let Ok(Some(token)) = session.get::<String>(SESSION_TOKEN_KEY).await {
-        // Verify token in database
         match state.storage.verify_token(&token).await {
             Ok(Some(username)) => {
-                // Add username to request extensions for handlers to use
-                request.extensions_mut().insert(username.clone());
+                request.extensions_mut().insert(username);
                 return next.run(request).await;
             }
             Ok(None) => {
-                // Token invalid, clear session
                 let _ = session.delete().await;
             }
-            Err(e) => {
-                tracing::error!("Error verifying token: {}", e);
+            Err(error) => tracing::error!("Error verifying token: {}", error),
+        }
+    }
+
+    // Mango accepts Basic credentials on any protected path and stores the token in the session.
+    if let Some(credentials) = authorization
+        .as_deref()
+        .and_then(|value| value.strip_prefix("Basic "))
+    {
+        if let Some((username, token)) = verify_basic_auth(&state, credentials).await {
+            if let Err(error) = session.insert(SESSION_TOKEN_KEY, token).await {
+                tracing::error!("Error saving Basic-auth session token: {}", error);
+            }
+            request.extensions_mut().insert(username);
+            return next.run(request).await;
+        }
+    }
+
+    if let Some(session_id) = authorization
+        .as_deref()
+        .and_then(|value| value.strip_prefix("Bearer "))
+    {
+        match Id::from_str(session_id) {
+            Ok(id) => match state.session_store.load(&id).await {
+                Ok(Some(record)) => {
+                    if let Some(token) = record
+                        .data
+                        .get(SESSION_TOKEN_KEY)
+                        .and_then(serde_json::Value::as_str)
+                    {
+                        match state.storage.verify_token(token).await {
+                            Ok(Some(username)) => {
+                                request.extensions_mut().insert(username);
+                                return next.run(request).await;
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                tracing::error!("Error verifying bearer session token: {}", error)
+                            }
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => tracing::error!("Error loading bearer session: {}", error),
+            },
+            Err(error) => tracing::debug!("Invalid bearer session ID: {}", error),
+        }
+    }
+
+    if state.config.disable_login {
+        if let Some(username) =
+            authenticated_configured_user(&state, &state.config.default_username).await
+        {
+            request.extensions_mut().insert(username);
+            return next.run(request).await;
+        }
+    } else if !state.config.auth_proxy_header_name.is_empty() {
+        if let Some(username) = request
+            .headers()
+            .get(&state.config.auth_proxy_header_name)
+            .and_then(|header| header.to_str().ok())
+        {
+            if let Some(username) = authenticated_configured_user(&state, username).await {
+                request.extensions_mut().insert(username);
+                return next.run(request).await;
             }
         }
     }
 
     if is_opds_path {
-        use axum::http::header;
         return (
             StatusCode::UNAUTHORIZED,
-            [(header::WWW_AUTHENTICATE, "Basic realm=\"Mango\"")],
+            [(
+                axum::http::header::WWW_AUTHENTICATE,
+                "Basic realm=\"Mango\"",
+            )],
         )
             .into_response();
     }
 
-    // API clients receive Mango's 401; browser pages redirect.
     if path.starts_with("/api") {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
 
     Redirect::to("/login").into_response()
+}
+
+async fn authenticated_configured_user(state: &AppState, username: &str) -> Option<String> {
+    match state.storage.username_exists(username).await {
+        Ok(true) => Some(username.to_owned()),
+        Ok(false) => None,
+        Err(error) => {
+            tracing::error!("Error checking configured auth user: {}", error);
+            None
+        }
+    }
 }
 
 /// Admin authorization middleware - requires authenticated user to be admin
@@ -122,6 +176,7 @@ pub async fn require_admin(
 /// Matches original AuthHandler's exclude logic
 fn is_public_path(path: &str) -> bool {
     path == "/login"
+        || path == "/logout"
         || path.starts_with("/api/login")
         || path.starts_with("/static/")
         || path.starts_with("/img/")
@@ -130,37 +185,29 @@ fn is_public_path(path: &str) -> bool {
         || path.starts_with("/uploads/")
 }
 
-/// Verify HTTP Basic Auth credentials
-/// Returns username if credentials are valid
-async fn verify_basic_auth(state: &AppState, base64_credentials: &str) -> Option<String> {
+/// Verify HTTP Basic Auth credentials and return the username and session token.
+async fn verify_basic_auth(state: &AppState, base64_credentials: &str) -> Option<(String, String)> {
     use base64::{engine::general_purpose, Engine as _};
 
     tracing::debug!("Verifying basic auth credentials");
 
-    // Decode base64
     let decoded = general_purpose::STANDARD.decode(base64_credentials).ok()?;
-    tracing::debug!("Base64 decoded successfully");
-
     let credentials = String::from_utf8(decoded).ok()?;
-    tracing::debug!("Credentials string: {}", credentials);
-
-    // Split into username:password
     let (username, password) = credentials.split_once(':')?;
 
     tracing::debug!("Attempting to verify user: {}", username);
 
-    // Verify credentials against database
     match state.storage.verify_user(username, password).await {
-        Ok(Some(_token)) => {
+        Ok(Some(token)) => {
             tracing::debug!("User verified successfully: {}", username);
-            Some(username.to_string())
+            Some((username.to_owned(), token))
         }
         Ok(None) => {
             tracing::debug!("User verification failed - invalid credentials");
             None
         }
-        Err(e) => {
-            tracing::error!("Error verifying user: {}", e);
+        Err(error) => {
+            tracing::error!("Error verifying user: {}", error);
             None
         }
     }

@@ -12,6 +12,7 @@ interface ServerConfig {
   host: string;
   maxStartupTime: number; // milliseconds
   pollInterval: number; // milliseconds
+  args: string[];
 }
 
 const defaultConfig: ServerConfig = {
@@ -19,6 +20,7 @@ const defaultConfig: ServerConfig = {
   host: 'localhost',
   maxStartupTime: 30000, // 30 seconds
   pollInterval: 500, // 500ms
+  args: [],
 };
 
 /**
@@ -26,7 +28,10 @@ const defaultConfig: ServerConfig = {
  * @param config - Optional server configuration
  * @returns Promise that resolves when server is ready
  */
-export async function startServer(config: Partial<ServerConfig> = {}): Promise<void> {
+export async function startServer(
+  config: Partial<ServerConfig> = {},
+  envOverrides: NodeJS.ProcessEnv = {},
+): Promise<void> {
   const cfg = { ...defaultConfig, ...config };
 
   if (serverProcess) {
@@ -40,18 +45,19 @@ export async function startServer(config: Partial<ServerConfig> = {}): Promise<v
   const testDataDir = process.env.HOME + '/test-manga-library';
 
   // Spawn cargo run process
-  serverProcess = spawn('cargo', ['run', '--release'], {
+  serverProcess = spawn('cargo', ['run', '--release', '--', ...cfg.args], {
     cwd: process.cwd().replace('/tests', ''), // Run from project root
     env: {
       ...process.env,
       RUST_LOG: 'info',
-      MANGO_PORT: cfg.port.toString(),
-      MANGO_HOST: cfg.host,
+      PORT: cfg.port.toString(),
+      HOST: cfg.host,
       // All test data in test library directory
-      MANGO_LIBRARY_PATH: testDataDir,
-      MANGO_DB_PATH: `${testDataDir}/mango-test.db`,
-      MANGO_CACHE_PATH: `${testDataDir}/mango-test-cache.bin`,
-      MANGO_CONFIG_PATH: `${testDataDir}/config-test.yml`,
+      LIBRARY_PATH: testDataDir,
+      DB_PATH: `${testDataDir}/mango-test.db`,
+      LIBRARY_CACHE_PATH: `${testDataDir}/mango-test-cache.bin`,
+      CONFIG_PATH: `${testDataDir}/config-test.yml`,
+      ...envOverrides,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

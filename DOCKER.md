@@ -59,9 +59,9 @@ docker run -d \
   -p 9000:9000 \
   -v /path/to/manga:/root/mango/library:ro \
   -v /path/to/data:/root/mango \
-  -e MANGO_HOST=0.0.0.0 \
-  -e MANGO_PORT=9000 \
-  -e MANGO_LOG_LEVEL=info \
+  -e HOST=0.0.0.0 \
+  -e PORT=9000 \
+  -e LOG_LEVEL=info \
   ghcr.io/philiphsu609/mango-rust:latest
 ```
 
@@ -80,9 +80,9 @@ services:
       - /path/to/manga:/root/mango/library:ro
       - mango-data:/root/mango
     environment:
-      - MANGO_HOST=0.0.0.0
-      - MANGO_PORT=9000
-      - MANGO_LOG_LEVEL=info
+      - HOST=0.0.0.0
+      - PORT=9000
+      - LOG_LEVEL=info
     restart: unless-stopped
 
 volumes:
@@ -97,13 +97,18 @@ docker-compose up -d
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MANGO_HOST` | `0.0.0.0` | Server host address |
-| `MANGO_PORT` | `9000` | Server port |
-| `MANGO_DB_PATH` | `/root/mango/mango.db` | SQLite database path |
-| `MANGO_LIBRARY_PATH` | `/root/mango/library` | Manga library directory |
-| `MANGO_LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
+| Variable | Description |
+|----------|-------------|
+| `CONFIG_PATH` | Path to the YAML configuration file; defaults to `~/.config/mango/config.yml` |
+| `HOST`, `PORT`, `BASE_URL`, `SESSION_SECRET` | Bind address, port, URL prefix, and session secret |
+| `LIBRARY_PATH`, `LIBRARY_CACHE_PATH`, `DB_PATH`, `QUEUE_DB_PATH` | Library, cache, application database, and queue database paths |
+| `SCAN_INTERVAL_MINUTES`, `THUMBNAIL_GENERATION_INTERVAL_HOURS` | Periodic library scan and thumbnail generation intervals |
+| `LOG_LEVEL`, `UPLOAD_PATH`, `PLUGIN_PATH`, `DOWNLOAD_TIMEOUT_SECONDS` | Logging, upload/plugin paths, and download timeout |
+| `CACHE_ENABLED`, `CACHE_SIZE_MBS`, `CACHE_LOG_ENABLED` | Library cache controls |
+| `DISABLE_LOGIN`, `DEFAULT_USERNAME`, `AUTH_PROXY_HEADER_NAME` | Login bypass identity or trusted authentication proxy header |
+| `PLUGIN_UPDATE_INTERVAL_HOURS` | Plugin update interval |
+
+Environment variables use the same names as configuration keys. Precedence is YAML file, environment, then defaults. Mango-Rust uses the `config` crate to load and merge these sources.
 
 ## Volumes
 

@@ -37,6 +37,7 @@ pub struct AppState {
     pub storage: Storage,
     pub library: Arc<ArcSwap<Library>>,
     pub config: Arc<Config>,
+    pub session_store: SqliteStore,
 }
 
 /// Build and run the Axum server
@@ -48,7 +49,7 @@ pub async fn run(config: Config) -> Result<()> {
     tracing::info!("Library path: {}", config.library_path.display());
 
     // Initialize storage (connects to database, runs migrations)
-    let database_url = format!("sqlite://{}?mode=rwc", config.db_path.to_string_lossy());
+    let database_url = config.database_url();
     tracing::info!("Connecting to database: {}", database_url);
     let storage = Storage::new(&database_url).await?;
     tracing::info!("Database initialized at {}", config.db_path.display());
@@ -117,13 +118,6 @@ pub async fn run(config: Config) -> Result<()> {
 
     tracing::info!("Library initialization complete (server ready)");
 
-    // Create application state
-    let app_state = AppState {
-        storage: storage.clone(),
-        library,
-        config: config.clone(),
-    };
-
     // Create session store (uses same database)
     let session_store = SqliteStore::new(storage.pool().clone());
     session_store
@@ -131,11 +125,18 @@ pub async fn run(config: Config) -> Result<()> {
         .await
         .map_err(|e| crate::error::Error::Internal(format!("Session migration failed: {}", e)))?;
 
+    // Create application state
+    let app_state = AppState {
+        storage: storage.clone(),
+        library,
+        config: config.clone(),
+        session_store: session_store.clone(),
+    };
+
     let session_layer = SessionManagerLayer::new(session_store)
         .with_name(format!("mango-sessid-{}", config.port))
         .with_secure(false) // Set to true in production with HTTPS
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
-
     // Build router
     let app = Router::new()
         // Public routes (no auth required)

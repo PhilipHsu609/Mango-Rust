@@ -56,10 +56,10 @@ RUN mkdir -p /root/.config/mango /root/mango/library
 EXPOSE 9000
 
 # Environment variables (can be overridden)
-ENV MANGO_HOST=0.0.0.0
-ENV MANGO_PORT=9000
-ENV MANGO_DB_PATH=/root/mango/mango.db
-ENV MANGO_LIBRARY_PATH=/root/mango/library
-ENV MANGO_LOG_LEVEL=info
+ENV HOST=0.0.0.0
+ENV PORT=9000
+ENV DB_PATH=/root/mango/mango.db
+ENV LIBRARY_PATH=/root/mango/library
+ENV LOG_LEVEL=info
 
 CMD ["/usr/local/bin/mango-rust"]

@@ -2,9 +2,34 @@ use mango_rust::{server, Config, Storage};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const USER_UPDATE_USAGE: &str =
-    "Usage: mango-rust admin user update <username> --password <password>";
+    "Usage: mango-rust [-c|--config <PATH>] admin user update <username> --password <password>";
 
-async fn run_admin_command(args: &[String]) -> Result<(), String> {
+fn extract_config_path(args: Vec<String>) -> Result<(Option<String>, Vec<String>), String> {
+    let mut config_path = None;
+    let mut remaining = Vec::with_capacity(args.len());
+    let mut args = args.into_iter();
+
+    while let Some(arg) = args.next() {
+        if arg == "-c" || arg == "--config" {
+            config_path = Some(
+                args.next()
+                    .filter(|path| !path.is_empty())
+                    .ok_or_else(|| "--config requires a path".to_string())?,
+            );
+        } else if let Some(path) = arg.strip_prefix("--config=") {
+            if path.is_empty() {
+                return Err("--config requires a path".to_string());
+            }
+            config_path = Some(path.to_string());
+        } else {
+            remaining.push(arg);
+        }
+    }
+
+    Ok((config_path, remaining))
+}
+
+async fn run_admin_command(args: &[String], config_path: Option<&str>) -> Result<(), String> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!("{USER_UPDATE_USAGE}");
         return Ok(());
@@ -35,8 +60,8 @@ async fn run_admin_command(args: &[String]) -> Result<(), String> {
     }
 
     let password = password.ok_or_else(|| USER_UPDATE_USAGE.to_string())?;
-    let config = Config::load(None).map_err(|error| error.to_string())?;
-    let database_url = format!("sqlite://{}?mode=rwc", config.db_path.to_string_lossy());
+    let config = Config::load(config_path).map_err(|error| error.to_string())?;
+    let database_url = config.database_url();
     let storage = Storage::new(&database_url)
         .await
         .map_err(|error| error.to_string())?;
@@ -64,9 +89,13 @@ async fn run_admin_command(args: &[String]) -> Result<(), String> {
 
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let (config_path, args) = extract_config_path(std::env::args().skip(1).collect())
+        .unwrap_or_else(|error| {
+            eprintln!("{error}");
+            std::process::exit(2);
+        });
     if args.first().is_some_and(|arg| arg == "admin") {
-        if let Err(error) = run_admin_command(&args[1..]).await {
+        if let Err(error) = run_admin_command(&args[1..], config_path.as_deref()).await {
             eprintln!("{error}");
             std::process::exit(2);
         }
@@ -74,7 +103,7 @@ async fn main() {
     }
 
     // Load configuration
-    let config = Config::load(None).unwrap_or_else(|e| {
+    let config = Config::load(config_path.as_deref()).unwrap_or_else(|e| {
         eprintln!("Failed to load config: {}", e);
         std::process::exit(1);
     });

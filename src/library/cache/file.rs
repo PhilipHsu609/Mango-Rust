@@ -246,8 +246,8 @@ mod tests {
             cache_size_mbs: 100,
             cache_log_enabled: false,
             disable_login: false,
-            default_username: None,
-            auth_proxy_header_name: None,
+            default_username: String::new(),
+            auth_proxy_header_name: String::new(),
             plugin_update_interval_hours: 24,
         };
 
