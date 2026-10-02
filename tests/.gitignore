@@ -5,19 +5,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Playwright
-playwright-report/
-test-results/
-playwright/.cache/
-
-# Test artifacts
-screenshots/
-videos/
-reports/
-*.png
-*.mp4
-*.webm
-
 # Logs
 *.log
 npm-debug.log*

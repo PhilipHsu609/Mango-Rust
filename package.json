@@ -13,9 +13,7 @@
     "build:css": "lessc static/css/mango.less static/dist/css/mango.css && lessc static/css/tags.less static/dist/css/tags.css",
     "build": "npm run copy:img && npm run copy:font && npm run build:css",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "test:smoke": "playwright test",
-    "test:ci": "vitest run && playwright test"
+    "test:watch": "vitest"
   },
   "repository": {
     "type": "git",
