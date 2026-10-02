@@ -84,6 +84,144 @@ describe('Admin API', () => {
       }
     });
   });
+  describe('User input validation', () => {
+    it('enforces Mango username and password rules for user creation and updates', async () => {
+      const suffix = Date.now().toString();
+      const sourceUsername = `validation-source-${suffix}`;
+      const validBoundaryUsername = 'A_1';
+      const cookie = getSessionCookie()!;
+
+      const invalidCreates = [
+        { username: 'ab', password: 'valid1', error: 'Username should contain at least 3 characters' },
+        {
+          username: `1${suffix}`,
+          password: 'valid1',
+          error: 'Username can only contain alphanumeric characters, underscores, and hyphens',
+        },
+        {
+          username: `bad!${suffix}`,
+          password: 'valid1',
+          error: 'Username can only contain alphanumeric characters, underscores, and hyphens',
+        },
+        {
+          username: `é${suffix}`,
+          password: 'valid1',
+          error: 'Username can only contain alphanumeric characters, underscores, and hyphens',
+        },
+        {
+          username: `short-${suffix}`,
+          password: '12345',
+          error: 'Password should contain at least 6 characters',
+        },
+        {
+          username: `nonascii-${suffix}`,
+          password: 'abcdeé',
+          error: 'password should contain ASCII characters only',
+        },
+      ];
+
+      try {
+        for (const { username, password, error } of invalidCreates) {
+          const response = await api.post('/api/admin/users', {
+            username,
+            password,
+            is_admin: false,
+          });
+          expect(response.status).toBe(400);
+          expect(await response.text()).toBe(error);
+        }
+
+
+        const validCreate = await api.post('/api/admin/users', {
+          username: validBoundaryUsername,
+          password: '123456',
+          is_admin: false,
+        });
+        expect(validCreate.status).toBe(201);
+
+        const sourceCreate = await api.post('/api/admin/users', {
+          username: sourceUsername,
+          password: 'valid-password',
+          is_admin: false,
+        });
+        expect(sourceCreate.status).toBe(201);
+
+        const invalidRename = await fetch(
+          `${BASE_URL}/admin/user/edit/${encodeURIComponent(sourceUsername)}`,
+          {
+            method: 'POST',
+            headers: {
+              Cookie: cookie,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({ username: 'invalid!' }),
+          },
+        );
+        expect(invalidRename.status).toBe(400);
+        expect(await invalidRename.text()).toBe(
+          'Username can only contain alphanumeric characters, underscores, and hyphens',
+        );
+
+        const emptyPasswordUpdate = await fetch(
+          `${BASE_URL}/api/admin/users/${encodeURIComponent(sourceUsername)}`,
+          {
+            method: 'PATCH',
+            headers: {
+              Cookie: cookie,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ is_admin: false, password: '' }),
+          },
+        );
+        expect(emptyPasswordUpdate.status).toBe(204);
+
+        const unchangedPasswordLogin = await fetch(`${BASE_URL}/api/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: sourceUsername, password: 'valid-password' }),
+        });
+        expect(unchangedPasswordLogin.status).toBe(200);
+
+        const invalidPasswordUpdate = await fetch(
+          `${BASE_URL}/api/admin/users/${encodeURIComponent(sourceUsername)}`,
+          {
+            method: 'PATCH',
+            headers: {
+              Cookie: cookie,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ is_admin: false, password: 'abcdeé' }),
+          },
+        );
+        expect(invalidPasswordUpdate.status).toBe(400);
+        expect(await invalidPasswordUpdate.text()).toBe(
+          'password should contain ASCII characters only',
+        );
+
+        const invalidPasswordChange = await api.post('/api/user/change-password', {
+          current_password: 'testpass123',
+          new_password: 'abcdeé',
+        });
+        expect(invalidPasswordChange.status).toBe(400);
+        expect(await invalidPasswordChange.text()).toBe(
+          'password should contain ASCII characters only',
+        );
+      } finally {
+        for (const username of [
+          ...invalidCreates.map(({ username }) => username),
+          validBoundaryUsername,
+          sourceUsername,
+          'invalid!',
+        ]) {
+          await fetch(`${BASE_URL}/api/admin/users/${encodeURIComponent(username)}`, {
+            method: 'DELETE',
+            headers: { Cookie: cookie },
+          });
+        }
+      }
+    });
+  });
+
 
   describe('POST /api/admin/upload/cover', () => {
     it('persists title and entry cover URLs, serves uploads, and exposes entry covers in OPDS', async () => {

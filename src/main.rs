@@ -35,10 +35,6 @@ async fn run_admin_command(args: &[String]) -> Result<(), String> {
     }
 
     let password = password.ok_or_else(|| USER_UPDATE_USAGE.to_string())?;
-    if password.len() < 6 {
-        return Err("Password must be at least 6 characters".to_string());
-    }
-
     let config = Config::load(None).map_err(|error| error.to_string())?;
     let database_url = format!("sqlite://{}?mode=rwc", config.db_path.to_string_lossy());
     let storage = Storage::new(&database_url)

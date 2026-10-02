@@ -6,18 +6,18 @@
 
 ## Open in-scope behavior gaps
 
-1. **User-input validation.** `Mango/src/util/validation.cr` requires usernames of at least 3 characters matching `[A-Za-z_][A-Za-z0-9_-]*` and passwords of at least 6 ASCII characters. Rust web/API create and update paths call `Storage::create_user`/`update_user` without those checks; the CLI checks only password length.
-2. **Authentication modes.** Mango supports Bearer tokens, `disable_login` with `default_username`, and `auth_proxy_header_name` (`Mango/src/handlers/auth_handler.cr`). Rust `require_auth` supports sessions, Basic credentials on OPDS/archive-download paths, and browser/API failures, but not those Mango modes.
-3. **Configuration contracts.** Mango honors `CONFIG_PATH`, derives environment variables for every option, uses file > environment > default precedence, and normalizes `base_url` to end in `/`. Rust loads a fixed default path unless its caller passes a path, overrides only selected `MANGO_*` variables after YAML, and validates but does not store the normalized trailing slash. Default database paths also differ: `~/mango.db` in Mango, `~/mango/mango.db` in Rust.
-4. **CLI parity.** Mango supports `admin user add/delete/update/list` and `--config`; Rust implements only `admin user update <username> --password <password>` and loads the default config.
-5. **API-reference surface.** Mango serves the `/api` page and `/openapi.json`; Rust registers neither. Documentation surface only, not a missing API operation.
-6. **Reader error branch.** Mango renders `reader-error.html.ecr` when an entry has `err_msg`, with next-entry and return-to-title actions. Rust's reader has no equivalent error page/branch.
-7. **HTTP and state differences.** CORS/preflight headers, 365-day versus 7-day sessions, login callback redirects, HTML error pages versus Rust text errors, route status/body behavior, image ETags/cache headers, scan timing, and cover upload validation/path semantics differ in inspected source; details are recorded in the route matrix.
-8. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Invalid archives are retained as error entries by Mango but dropped by the Rust scanner. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
+1. **Authentication modes.** Mango supports Bearer tokens, `disable_login` with `default_username`, and `auth_proxy_header_name` (`Mango/src/handlers/auth_handler.cr`). Rust `require_auth` supports sessions, Basic credentials on OPDS/archive-download paths, and browser/API failures, but not those Mango modes.
+2. **Configuration contracts.** Mango honors `CONFIG_PATH`, derives environment variables for every option, uses file > environment > default precedence, and normalizes `base_url` to end in `/`. Rust loads a fixed default path unless its caller passes a path, overrides only selected `MANGO_*` variables after YAML, and validates but does not store the normalized trailing slash. Default database paths also differ: `~/mango.db` in Mango, `~/mango/mango.db` in Rust.
+3. **CLI parity.** Mango supports `admin user add/delete/update/list` and `--config`; Rust implements only `admin user update <username> --password <password>` and loads the default config.
+4. **API-reference surface.** Mango serves the `/api` page and `/openapi.json`; Rust registers neither. Documentation surface only, not a missing API operation.
+5. **Reader error branch.** Mango renders `reader-error.html.ecr` when an entry has `err_msg`, with next-entry and return-to-title actions. Rust's reader has no equivalent error page/branch.
+6. **HTTP and state differences.** CORS/preflight headers, 365-day versus 7-day sessions, login callback redirects, HTML error pages versus Rust text errors, route status/body behavior, image ETags/cache headers, scan timing, and cover upload validation/path semantics differ in inspected source; details are recorded in the route matrix.
+7. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Invalid archives are retained as error entries by Mango but dropped by the Rust scanner. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
 
 ## Resolved behavior gaps
 
-- **Existing-user rename.** `user_edit_post_existing` now passes the URL username as the existing account key and the submitted form username as the new key. An integration test exercises the admin form route, checks that the renamed user replaces the old listing while retaining its role, and authenticates with the unchanged password. Username validation and Mango's error-query redirect behavior remain separate gaps.
+- **Existing-user rename.** `user_edit_post_existing` passes the URL username as the existing account key and the submitted form username as the new key. Its integration test checks the renamed listing, retained role, and unchanged password.
+- **User-input validation.** `src/storage.rs` enforces Mango's minimum username/password lengths, ASCII password requirement, and username character/first-character rules for create, update, and password-change operations. The storage boundary covers web/API and CLI callers; integration coverage checks invalid inputs and the exact minimum accepted values.
 
 ## Status vocabulary
 
@@ -36,13 +36,12 @@
 | `GET /login`, `POST /login`, `GET /logout` | Same paths; `src/routes/login.rs` | Different: Mango consumes saved callback after login; Rust always redirects to `/`. |
 | `GET /`, `GET /library`, `GET /book/:title` | Same page shapes (`/book/:id`); `src/routes/main.rs`, `book.rs` | Matched route/page purposes; home/title data selection and template contracts have specific differences below. |
 | `GET /tags`, `GET /tags/:tag` | Same paths; `src/routes/main.rs` | Matched route/page purposes; sort-query parsing and error behavior differ. |
-| `GET /admin`, `/admin/user`, `/admin/user/edit`, `/admin/missing` | Same paths; `src/routes/admin.rs` | Matched route/page purposes; user validation and edit-error feedback differ. |
-| `POST /admin/user/edit`, `POST /admin/user/edit/:original_username` | Same create/edit paths (`:username`); `src/routes/admin.rs` | Rename behavior now applies the submitted username; user validation and Mango's error-query redirect remain different. |
+| `GET /admin`, `/admin/user`, `/admin/user/edit`, `/admin/missing` | Same paths; `src/routes/admin.rs` | Matched route/page purposes; edit-error feedback differs. |
+| `POST /admin/user/edit`, `POST /admin/user/edit/:original_username` | Same create/edit paths (`:username`); `src/routes/admin.rs` | Rename and Mango input validation rules are implemented; Mango's error-query redirect behavior remains different. |
 | `GET /reader/:title/:entry`, `GET /reader/:title/:entry/:page` | Same route shapes (`:tid/:eid[/page]`); `src/routes/reader.rs` | Different: Mango continuation detects errored entries and renders a dedicated error page; no Rust equivalent found. |
 | `GET /opds`, `GET /opds/book/:title_id` | Same paths; `src/routes/opds.rs` | Matched route/page purposes; Crystal omits error entries in title feed; exact rendered-field and error parity is not established. |
 | `GET /api` | No Rust route/template | Missing documentation page. |
 | `GET /download/plugins`, `GET /admin/downloads`, `GET /admin/subscriptions` | No Rust route/template | Explicitly excluded download/plugin UI. |
-
 
 ### Crystal JSON/WebSocket API routes
 
@@ -86,7 +85,7 @@ Every declaration in `Mango/src/routes/api.cr` was compared to the complete Rust
 |---|---|---|
 | Startup, server, sessions, logging | `Mango/src/{mango,main_fiber,server,logger}.cr`, `Mango/src/handlers/*.cr` → `src/{main,server,auth}.rs` | Different architectures. Same session cookie name; 365-day Crystal session versus 7-day Rust inactivity expiry. Crystal adds configured base path, custom log formatting and OPTIONS/CORS behavior; Rust uses Axum/Tower tracing and filesystem static mounts. |
 | Configuration | `Mango/src/config.cr` → `src/config.rs` | Different: environment key set/prefix, precedence, `CONFIG_PATH`, trailing-slash normalization, and default DB path differ. Rust's `validate` computes a normalized URL copy but leaves `base_url` unchanged. |
-| User storage and validation | `Mango/src/storage.cr`, `Mango/src/util/validation.cr` → `src/storage.rs`, `src/routes/admin.rs`, `src/main.rs` | DB operations broadly overlap; validation policy does not. Rust web/API create/update paths do not apply Mango username/password checks; CLI checks password length only. |
+| User storage and validation | `Mango/src/storage.cr`, `Mango/src/util/validation.cr` → `src/storage.rs`, `src/routes/admin.rs`, `src/routes/main.rs`, `src/main.rs` | Rust applies Mango's username/password rules at storage create/update/password-change boundaries, covering web/API and CLI callers. |
 | SQLite schema/migration history | All 12 `Mango/migration/*.cr` → all 7 `migrations/*.sql`, `src/storage.rs` | Current core tables overlap, but Rust creates final schemas rather than replaying Crystal's history. Crystal relative-path migrations and `md_account` are absent in Rust; legacy DB conversion is not demonstrated. MangaDex account token table is listed with excluded integration below. Rust also has `display_name` and `dimensions` schema additions. |
 | Identity and unavailable records | `Mango/src/storage.cr`, `Mango/src/library/title.cr` → `src/storage.rs`, `src/library/{manager,title}.rs` | Both reconcile stable IDs by path/signature and track unavailable records; matching/fallback policy is analogous, but transaction/upsert/failure ordering differs. |
 | Archive/directory scan | `Mango/src/{archive.cr,library/{archive_entry,dir_entry,title}.cr,util/validation.cr}` → `src/library/{entry,title}.rs`, `src/util.rs` | Different: Crystal validates archives and retains invalid entries with `err_msg`; Rust extraction errors are surfaced during scan and entries are dropped. Extractable extension sets and image filters differ; Rust uses `compress-tools`, Crystal ZIP plus `archive.cr`. |

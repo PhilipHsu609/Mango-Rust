@@ -622,13 +622,6 @@ pub async fn change_password_api(
     user: User,
     axum::Json(request): axum::Json<ChangePasswordRequest>,
 ) -> Result<axum::http::StatusCode> {
-    // Validate new password length
-    if request.new_password.len() < 6 {
-        return Err(crate::error::Error::BadRequest(
-            "New password must be at least 6 characters".to_string(),
-        ));
-    }
-
     // Change the password
     state
         .storage

@@ -27,6 +27,42 @@ pub struct Storage {
     pool: SqlitePool,
 }
 
+fn validate_username(username: &str) -> Result<()> {
+    if username.len() < 3 {
+        return Err(Error::BadRequest(
+            "Username should contain at least 3 characters".to_string(),
+        ));
+    }
+
+    let mut bytes = username.bytes();
+    let valid_first = matches!(bytes.next(), Some(b'a'..=b'z' | b'A'..=b'Z' | b'_'));
+    if !valid_first
+        || !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    {
+        return Err(Error::BadRequest(
+            "Username can only contain alphanumeric characters, underscores, and hyphens"
+                .to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_password(password: &str) -> Result<()> {
+    if password.len() < 6 {
+        return Err(Error::BadRequest(
+            "Password should contain at least 6 characters".to_string(),
+        ));
+    }
+    if !password.is_ascii() {
+        return Err(Error::BadRequest(
+            "password should contain ASCII characters only".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 impl Storage {
     /// Initialize storage and run migrations
     pub async fn new(database_url: &str) -> Result<Self> {
@@ -203,6 +239,8 @@ impl Storage {
     /// Create a new user
     /// Matches original Storage#new_user
     pub async fn create_user(&self, username: &str, password: &str, is_admin: bool) -> Result<()> {
+        validate_username(username)?;
+        validate_password(password)?;
         let password_hash = hash_password(password)?;
         let admin_flag = if is_admin { 1 } else { 0 };
 
@@ -226,9 +264,12 @@ impl Storage {
         password: Option<&str>,
         is_admin: bool,
     ) -> Result<()> {
+        validate_username(new_username)?;
+        let password = password.filter(|password| !password.is_empty());
         let admin_flag = if is_admin { 1 } else { 0 };
 
         if let Some(new_password) = password {
+            validate_password(new_password)?;
             let password_hash = hash_password(new_password)?;
             sqlx::query(
                 "UPDATE users SET username = ?, password = ?, admin = ? WHERE username = ?",
@@ -260,6 +301,7 @@ impl Storage {
         current_password: &str,
         new_password: &str,
     ) -> Result<()> {
+        validate_password(new_password)?;
         // First, get the current password hash
         let row: Option<(String,)> =
             sqlx::query_as("SELECT password FROM users WHERE username = ?")
