@@ -60,23 +60,23 @@ describe('Admin API', () => {
   it('matches Mango when deleting the current or an absent user', async () => {
     const username = `self-delete-${Date.now()}`;
     const password = 'self-delete-password';
-    const createResponse = await api.post('/api/admin/users', {
-      username,
-      password,
-      is_admin: true,
-    });
-    expect(createResponse.status).toBe(201);
-
-    const loginResponse = await fetch(`${BASE_URL}/api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-    expect(loginResponse.status).toBe(200);
-    const cookie = loginResponse.headers.get('set-cookie')?.split(';')[0];
-    expect(cookie).toBeDefined();
-
     try {
+      const createResponse = await api.post('/api/admin/users', {
+        username,
+        password,
+        is_admin: true,
+      });
+      expect(createResponse.status).toBe(201);
+
+      const loginResponse = await fetch(`${BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      expect(loginResponse.status).toBe(200);
+      const cookie = loginResponse.headers.get('set-cookie')?.split(';')[0];
+      expect(cookie).toBeDefined();
+
       const selfDeleteResponse = await fetch(
         `${BASE_URL}/api/admin/user/delete/${encodeURIComponent(username)}`,
         { method: 'DELETE', headers: { Cookie: cookie! } },
