@@ -1,69 +1,36 @@
-# Mango-Rust Tests
+# Mango-Rust tests
 
-Lightweight test suite acting as ground truth for the application.
+## Suites
 
-## Test Structure
+- Rust unit and library tests: `cargo test` from the repository root.
+- HTTP/API contract tests: `tests/api/*.test.ts` with Vitest. Vitest starts and stops the Rust server; invalid form logins redirect to `/login` as in Mango.
+- Browser smoke tests: `tests/smoke/smoke.spec.ts` with Playwright. Playwright starts and stops the Rust server.
+- Archive fixtures: `tests/fixtures/setup-test-library.sh`.
 
-```
-tests/
-  api/           # API contract tests (vitest, no browser)
-    auth.test.ts     # Authentication, authorization, session management
-    library.test.ts  # Library listing, title details, stats
-    admin.test.ts    # Admin scan, user management
-    progress.test.ts # Reading progress tracking
-    opds.test.ts     # OPDS feed format and auth
-    client.ts        # HTTP client helper
-    setup.ts         # Test setup (server lifecycle, user creation)
-  smoke/         # Minimal E2E tests (Playwright)
-    smoke.spec.ts    # Login, navigation, logout
-  helpers/       # Shared utilities
-    auth.ts          # User creation
-    server.ts        # Server lifecycle
-```
+## Running
 
-## Running Tests
+Install application and test dependencies from the repository root:
 
 ```bash
-cd tests
-
-# Install dependencies (first time)
-npm install
-
-# Run API contract tests (requires running server)
-npm test
-
-# Run smoke tests (requires running server)
-npm run test:smoke
-
-# Run both (CI mode)
-npm run test:ci
-
-# Watch mode during development
-npm run test:watch
+npm ci
+npm run build
+(cd tests && npm ci)
+(cd tests && npx playwright install chromium)
 ```
 
-## Philosophy
+Run the suites using disposable test data and retain the installed Rust toolchain/cache paths:
 
-- **API contracts are ground truth** - Tests verify response shapes, not CSS
-- **Minimal E2E** - Only 4 smoke tests to verify the app boots and works
-- **Fast feedback** - API tests run in seconds, not minutes
-- **Stable** - Tests don't break when UI changes
+```bash
+ORIGINAL_HOME="$HOME"
+export CARGO_HOME="${CARGO_HOME:-$ORIGINAL_HOME/.cargo}"
+export RUSTUP_HOME="${RUSTUP_HOME:-$ORIGINAL_HOME/.rustup}"
+TEST_HOME="$(mktemp -d)"
+trap 'rm -rf "$TEST_HOME"' EXIT
+export HOME="$TEST_HOME"
 
-## Test Counts
+bash tests/fixtures/setup-test-library.sh
+cargo test
+(cd tests && CI=true npm run test:ci)
+```
 
-| Suite | Tests | Purpose |
-|-------|-------|---------|
-| Auth | 15 | Login, logout, session, admin access |
-| Library | 6 | Listings, details, sorting, stats |
-| Admin | 2 | Scan, user management |
-| Progress | 2 | Read/write progress |
-| OPDS | 3 | Feed format, auth |
-| Smoke | 4 | Login, navigate, logout |
-
-**Total: ~32 tests** (down from 121 brittle Playwright tests)
-
-## Requirements
-
-- Node.js 20+
-- Running Mango server on localhost:9000
-- Test users created (done automatically by setup)
+CI builds the Rust binary, then runs the API and browser suites. It does not run Rust unit tests; run `cargo test` separately.

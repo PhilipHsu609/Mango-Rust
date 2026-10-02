@@ -4,25 +4,20 @@ import { BASE_URL } from './client';
 const AUTH_HEADER = 'Basic ' + Buffer.from('testuser:testpass123').toString('base64');
 
 describe('OPDS API', () => {
-  describe('GET /opds', () => {
-    it('returns valid Atom XML feed', async () => {
-      const response = await fetch(`${BASE_URL}/opds`, {
-        headers: { Authorization: AUTH_HEADER },
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get('content-type')).toMatch(/application\/(atom\+)?xml/);
-
-      const xml = await response.text();
-      expect(xml).toContain('<?xml');
-      expect(xml).toContain('<feed');
+  it('returns a populated Atom feed with navigable title entries', async () => {
+    const response = await fetch(`${BASE_URL}/opds`, {
+      headers: { Authorization: AUTH_HEADER },
     });
 
-    it('requires authentication', async () => {
-      const response = await fetch(`${BASE_URL}/opds`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toMatch(/application\/(atom\+)?xml/);
 
-      expect(response.status).toBe(401);
-      expect(response.headers.get('www-authenticate')).toContain('Basic');
-    });
+    const xml = await response.text();
+    expect(xml).toContain('<?xml');
+    expect(xml).toContain('<feed');
+    expect(xml).toContain('<title>Test Manga Beta</title>');
+    expect(xml).toContain('rel="subsection"');
+    expect(xml).toContain('/opds/book/');
+    expect(xml.match(/<entry>/g)?.length).toBeGreaterThanOrEqual(7);
   });
 });

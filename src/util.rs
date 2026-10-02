@@ -246,63 +246,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_navigation_state_home() {
-        let nav = NavigationState::home();
-        assert!(nav.home_active);
-        assert!(!nav.library_active);
-        assert!(!nav.tags_active);
-        assert!(!nav.admin_active);
-        assert!(!nav.is_admin);
-    }
+    fn navigation_states_select_one_route_and_allow_admin_override() {
+        let cases = [
+            (NavigationState::home(), [true, false, false, false]),
+            (NavigationState::library(), [false, true, false, false]),
+            (NavigationState::tags(), [false, false, true, false]),
+            (NavigationState::admin(), [false, false, false, true]),
+        ];
 
-    #[test]
-    fn test_navigation_state_library() {
-        let nav = NavigationState::library();
-        assert!(!nav.home_active);
-        assert!(nav.library_active);
-        assert!(!nav.tags_active);
-        assert!(!nav.admin_active);
-        assert!(!nav.is_admin);
-    }
+        for (state, expected_active) in cases {
+            assert_eq!(
+                [
+                    state.home_active,
+                    state.library_active,
+                    state.tags_active,
+                    state.admin_active,
+                ],
+                expected_active
+            );
+            assert!(!state.is_admin);
+        }
 
-    #[test]
-    fn test_navigation_state_tags() {
-        let nav = NavigationState::tags();
-        assert!(!nav.home_active);
-        assert!(!nav.library_active);
-        assert!(nav.tags_active);
-        assert!(!nav.admin_active);
-        assert!(!nav.is_admin);
-    }
-
-    #[test]
-    fn test_navigation_state_admin() {
-        let nav = NavigationState::admin();
-        assert!(!nav.home_active);
-        assert!(!nav.library_active);
-        assert!(!nav.tags_active);
-        assert!(nav.admin_active);
-        assert!(!nav.is_admin);
-    }
-
-    #[test]
-    fn test_navigation_state_with_admin() {
-        let nav = NavigationState::library().with_admin(true);
-        assert!(!nav.home_active);
-        assert!(nav.library_active);
-        assert!(!nav.tags_active);
-        assert!(!nav.admin_active);
-        assert!(nav.is_admin);
-    }
-
-    #[test]
-    fn test_navigation_state_builder_chain() {
-        // Test that builder pattern works
-        let nav_admin = NavigationState::home().with_admin(true);
-        assert!(nav_admin.is_admin);
-
-        let nav_regular = NavigationState::home().with_admin(false);
-        assert!(!nav_regular.is_admin);
+        assert!(NavigationState::home().with_admin(true).is_admin);
+        assert!(!NavigationState::home().with_admin(false).is_admin);
     }
     #[tokio::test]
     async fn absent_sort_prefers_auto_ascending() {

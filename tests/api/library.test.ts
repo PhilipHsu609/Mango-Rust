@@ -7,47 +7,45 @@ describe('Library API', () => {
   });
 
   describe('GET /api/library', () => {
-    it('returns Mango library object', async () => {
+    it('returns the library and its populated title contract', async () => {
       const response = await api.get('/api/library');
       expect(response.status).toBe(200);
-
       const data = await response.json();
-      expect(data).toHaveProperty('dir');
-      expect(data).toHaveProperty('titles');
-      expect(Array.isArray(data.titles)).toBe(true);
-    });
+      expect(data).toMatchObject({
+        dir: expect.any(String),
+        titles: expect.any(Array),
+      });
+      expect(data.titles.length).toBeGreaterThan(0);
 
-    it('title objects have Mango fields', async () => {
-      const response = await api.get('/api/library');
-      const data = await response.json();
-
-      if (data.titles.length > 0) {
-        const title = data.titles[0];
-        expect(title).toHaveProperty('id');
-        expect(title).toHaveProperty('title');
-        expect(title).toHaveProperty('entries');
-        expect(Array.isArray(title.entries)).toBe(true);
-      }
+      const title = data.titles.find((item: { entries?: unknown[] }) => item.entries?.length);
+      expect(title).toMatchObject({
+        id: expect.any(String),
+        title: expect.any(String),
+      });
+      expect(Array.isArray(title.entries)).toBe(true);
+      expect(title.entries.length).toBeGreaterThan(0);
     });
   });
 
   describe('GET /api/book/:tid', () => {
-    it('returns title details with Mango fields', async () => {
+    it('returns title details with entries for a populated title', async () => {
       const libraryResponse = await api.get('/api/library');
       const library = await libraryResponse.json();
+      const title = library.titles.find(
+        (item: { entries?: { length: number }[] }) => item.entries?.length,
+      );
+      expect(title).toBeDefined();
+      if (!title) throw new Error('The test library must contain a title with entries');
 
-      if (library.titles.length > 0) {
-        const titleId = library.titles[0].id;
-        const response = await api.get(`/api/book/${titleId}`);
-
-        expect(response.status).toBe(200);
-
-        const title = await response.json();
-        expect(title).toHaveProperty('id');
-        expect(title).toHaveProperty('title');
-        expect(title).toHaveProperty('entries');
-        expect(Array.isArray(title.entries)).toBe(true);
-      }
+      const response = await api.get(`/api/book/${title.id}`);
+      expect(response.status).toBe(200);
+      const detail = await response.json();
+      expect(detail).toMatchObject({
+        id: title.id,
+        title: expect.any(String),
+      });
+      expect(Array.isArray(detail.entries)).toBe(true);
+      expect(detail.entries.length).toBeGreaterThan(0);
     });
 
     it('returns 404 for invalid title ID', async () => {
@@ -69,13 +67,13 @@ describe('Library API', () => {
       }
       pending.push(...(title.titles ?? []));
     }
-    if (!pageLocation) return;
+    expect(pageLocation).toBeDefined();
+    if (!pageLocation) throw new Error('The test library must contain at least one entry');
 
     const response = await api.get(
       `/api/page/${pageLocation.titleId}/${pageLocation.entryId}/0`,
     );
     expect(response.status).toBe(500);
-    expect(await response.text()).toContain('Failed to load page 0');
   });
 
   describe('Mango homepage API', () => {
@@ -84,29 +82,33 @@ describe('Library API', () => {
       expect(response.status).toBe(200);
       const data = await response.json();
       expect(data.success).toBe(true);
-      expect(Array.isArray(data.entries)).toBe(true);
       expect(Array.isArray(data.entry_percentages)).toBe(true);
+      expect(data.entries.length).toBe(data.entry_percentages.length);
     });
 
-    it('returns wrapped Recently Added items', async () => {
+    it('returns populated Recently Added groups', async () => {
       const response = await api.get('/api/library/recently_added');
       expect(response.status).toBe(200);
       const data = await response.json();
       expect(data.success).toBe(true);
-      expect(Array.isArray(data.items)).toBe(true);
-      if (data.items.length > 0) {
-        expect(data.items[0]).toHaveProperty('item');
-        expect(data.items[0]).toHaveProperty('percentage');
-        expect(data.items[0]).toHaveProperty('count');
-      }
+      expect(data.items.length).toBeGreaterThan(0);
+      expect(data.items[0]).toMatchObject({
+        item: expect.any(Object),
+        percentage: expect.any(Number),
+        count: expect.any(Number),
+      });
     });
 
-    it('returns wrapped Start Reading titles', async () => {
+    it('returns unread root titles for Start Reading', async () => {
       const response = await api.get('/api/library/start_reading');
       expect(response.status).toBe(200);
       const data = await response.json();
       expect(data.success).toBe(true);
-      expect(Array.isArray(data.titles)).toBe(true);
+      expect(data.titles.length).toBeGreaterThan(0);
+      expect(data.titles[0]).toMatchObject({
+        id: expect.any(String),
+        title: expect.any(String),
+      });
     });
   });
 

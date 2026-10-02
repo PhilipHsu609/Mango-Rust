@@ -13,7 +13,7 @@ describe('Admin API', () => {
       expect(response.status).toBe(200);
 
       const result = await response.json();
-      expect(typeof result.titles).toBe('number');
+      expect(result.titles).toBeGreaterThan(0);
       const libraryResponse = await api.get('/api/library');
       const library = await libraryResponse.json();
       expect(result.titles).toBe(library.titles.length);
@@ -22,18 +22,14 @@ describe('Admin API', () => {
   });
 
   describe('GET /api/admin/users', () => {
-    it('returns list of users', async () => {
+    it('returns the seeded users with their admin roles', async () => {
       const response = await api.get('/api/admin/users');
-
       expect(response.status).toBe(200);
-
       const users = await response.json();
-      expect(Array.isArray(users)).toBe(true);
-
-      if (users.length > 0) {
-        expect(users[0]).toHaveProperty('username');
-        expect(users[0]).toHaveProperty('is_admin');
-      }
+      expect(users).toEqual(expect.arrayContaining([
+        { username: 'testuser', is_admin: true },
+        { username: 'testuser2', is_admin: false },
+      ]));
     });
   });
   describe('POST /api/admin/upload/cover', () => {
@@ -82,10 +78,18 @@ describe('Admin API', () => {
           body: entryForm,
         },
       );
+      expect(entryUploadResponse.status).toBe(200);
       expect(await entryUploadResponse.json()).toEqual({ success: true });
 
+      const detailAfterEntryUpload = await api.get(`/api/book/${encodeURIComponent(title.id)}`);
+      const updatedTitle = await detailAfterEntryUpload.json();
+      const updatedEntry = updatedTitle.entries.find(
+        (candidate: { id: string }) => candidate.id === entry.id,
+      );
+      expect(updatedEntry.cover_url).toContain('/uploads/img/');
+
       const opdsResponse = await api.get(`/opds/book/${encodeURIComponent(title.id)}`);
-      expect(await opdsResponse.text()).toContain('/uploads/img/');
+      expect(await opdsResponse.text()).toContain(updatedEntry.cover_url);
     });
   });
   describe('PUT /api/admin/display_name', () => {
@@ -97,9 +101,11 @@ describe('Admin API', () => {
       const updateResponse = await api.put(
         `/api/admin/display_name/${encodeURIComponent(title.id)}/${encodeURIComponent(displayName)}`,
       );
+      expect(updateResponse.status).toBe(200);
       expect(await updateResponse.json()).toEqual({ success: true });
 
       const detailResponse = await api.get(`/api/book/${encodeURIComponent(title.id)}?depth=0`);
+      expect(detailResponse.status).toBe(200);
       const detail = await detailResponse.json();
       expect(detail.display_name).toBe(displayName);
 
@@ -107,6 +113,7 @@ describe('Admin API', () => {
         headers: { Cookie: getSessionCookie()! },
       });
       expect(await pageResponse.text()).toContain('Contract Display &amp; Volume');
+      expect(pageResponse.status).toBe(200);
     });
   });
 
@@ -120,6 +127,7 @@ describe('Admin API', () => {
       const updateResponse = await api.put(
         `/api/admin/sort_title/${encodeURIComponent(title.id)}?name=${encodeURIComponent(sortTitle)}`,
       );
+      expect(updateResponse.status).toBe(200);
       expect(await updateResponse.json()).toEqual({ success: true });
 
       const sortedResponse = await api.get('/api/library?depth=0');

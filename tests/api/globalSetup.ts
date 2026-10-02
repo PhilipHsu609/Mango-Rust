@@ -1,5 +1,5 @@
-import { startServer, stopServer, waitForServerReady } from '../helpers/server.js';
-import { createTestUser, REGULAR_USER } from '../helpers/auth.js';
+import { startServer, stopServer } from '../helpers/server.js';
+import { createTestUser, REGULAR_USER } from '../helpers/test-users.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -34,8 +34,8 @@ log_level: info
 
   // Create test users
   const dbPath = path.join(TEST_DATA_DIR, 'mango-test.db');
-  await createTestUser(dbPath);
-  await createTestUser(dbPath, REGULAR_USER, false);
+  createTestUser(dbPath);
+  createTestUser(dbPath, REGULAR_USER, false);
 
   console.log('Global setup: Complete');
 }

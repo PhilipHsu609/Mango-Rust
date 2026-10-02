@@ -185,19 +185,6 @@ export async function stopServer(): Promise<void> {
   });
 }
 
-/**
- * Get the current server process (for debugging)
- */
-export function getServerProcess(): ChildProcess | null {
-  return serverProcess;
-}
-
-/**
- * Check if server is currently running
- */
-export function isServerRunning(): boolean {
-  return serverProcess !== null && !serverProcess.killed;
-}
 
 /**
  * Sleep utility

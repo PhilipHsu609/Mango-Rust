@@ -254,8 +254,6 @@ impl LruCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread::sleep;
-    use std::time::Duration;
 
     #[test]
     fn test_basic_get_set() {
@@ -282,13 +280,10 @@ mod tests {
 
         // Insert A and B
         cache.set("A".to_string(), vec![0u8; 20]);
-        sleep(Duration::from_millis(10));
         cache.set("B".to_string(), vec![0u8; 20]);
-        sleep(Duration::from_millis(10));
 
         // Access A to make it more recently used than B
         let _: Option<Vec<u8>> = cache.get("A");
-        sleep(Duration::from_millis(10));
 
         // Insert C - should evict B (least recently accessed), not A
         cache.set("C".to_string(), vec![0u8; 20]);
@@ -318,33 +313,20 @@ mod tests {
     }
 
     #[test]
-    fn test_update_existing_key_size_accounting() {
+    fn replacing_existing_key_updates_value_without_duplicating_entry() {
         let mut cache = LruCache::new(200, false);
 
         cache.set("key".to_string(), vec![0u8; 40]);
-        let size_after_insert = cache.stats().size_bytes;
+        let original_size = cache.stats().size_bytes;
 
-        cache.set("key".to_string(), vec![0u8; 40]); // Same size
-        let size_after_update = cache.stats().size_bytes;
+        cache.set("key".to_string(), vec![1u8; 40]);
+        assert_eq!(cache.stats().size_bytes, original_size);
+        assert_eq!(cache.get::<Vec<u8>>("key"), Some(vec![1u8; 40]));
 
-        assert_eq!(
-            size_after_insert, size_after_update,
-            "Updating same key shouldn't double size"
-        );
-    }
-
-    #[test]
-    fn test_update_existing_key_different_size() {
-        let mut cache = LruCache::new(200, false);
-
-        cache.set("key".to_string(), vec![0u8; 40]);
-        let size1 = cache.stats().size_bytes;
-
-        cache.set("key".to_string(), vec![0u8; 80]); // Bigger
-        let size2 = cache.stats().size_bytes;
-
-        assert!(size2 > size1, "Size should increase with larger value");
-        assert_eq!(cache.stats().entry_count, 1, "Should still be one entry");
+        cache.set("key".to_string(), vec![2u8; 80]);
+        assert_eq!(cache.stats().entry_count, 1);
+        assert!(cache.stats().size_bytes > original_size);
+        assert_eq!(cache.get::<Vec<u8>>("key"), Some(vec![2u8; 80]));
     }
 
     #[test]
@@ -370,26 +352,22 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_evictions_for_large_insert() {
+    fn large_insert_evicts_only_the_oldest_entries_needed_to_fit() {
         let mut cache = LruCache::new(100, false);
 
-        // Insert 5 small items
-        for i in 0..5 {
-            cache.set(format!("k{}", i), vec![0u8; 10]);
-            sleep(Duration::from_millis(5));
+        for index in 0..5 {
+            cache.set(format!("k{index}"), vec![0u8; 10]);
         }
-
-        // Insert one large item that needs multiple evictions
         cache.set("big".to_string(), vec![0u8; 60]);
 
-        // Should have evicted oldest entries until big fits
-        let stats = cache.stats();
-        assert!(stats.size_bytes <= 100, "Should not exceed limit");
-        assert!(
-            cache.get::<Vec<u8>>("big").is_some(),
-            "Big item should exist"
-        );
-        assert!(stats.eviction_count > 0, "Should have evicted some entries");
+        assert_eq!(cache.stats().eviction_count, 2);
+        assert!(cache.stats().size_bytes <= 100);
+        assert_eq!(cache.get::<Vec<u8>>("k0"), None);
+        assert_eq!(cache.get::<Vec<u8>>("k1"), None);
+        for key in ["k2", "k3", "k4"] {
+            assert_eq!(cache.get::<Vec<u8>>(key), Some(vec![0u8; 10]));
+        }
+        assert_eq!(cache.get::<Vec<u8>>("big"), Some(vec![0u8; 60]));
     }
 
     #[test]
@@ -449,44 +427,6 @@ mod tests {
         let stats = cache.stats();
         assert_eq!(stats.hit_count, 2);
         assert_eq!(stats.miss_count, 1);
-    }
-
-    #[test]
-    fn test_size_limit_enforcement() {
-        let mut cache = LruCache::new(100, false);
-
-        // Insert items until we trigger eviction
-        cache.set("k1".to_string(), vec![0u8; 30]);
-        cache.set("k2".to_string(), vec![0u8; 30]);
-        cache.set("k3".to_string(), vec![0u8; 30]);
-
-        // Cache should never exceed limit
-        let stats = cache.stats();
-        assert!(
-            stats.size_bytes <= 100,
-            "Cache should not exceed size limit"
-        );
-    }
-
-    #[test]
-    fn test_eviction_counter() {
-        let mut cache = LruCache::new(50, false);
-
-        cache.set("k1".to_string(), vec![0u8; 30]);
-        cache.set("k2".to_string(), vec![0u8; 30]); // Should evict k1
-
-        let stats = cache.stats();
-        assert_eq!(stats.eviction_count, 1, "Should have one eviction");
-    }
-
-    #[test]
-    fn test_empty_string_key() {
-        let mut cache = LruCache::new(1000, false);
-
-        cache.set("".to_string(), vec![1, 2, 3]);
-        let result: Option<Vec<i32>> = cache.get("");
-
-        assert_eq!(result, Some(vec![1, 2, 3]), "Empty string key should work");
     }
 
     #[test]

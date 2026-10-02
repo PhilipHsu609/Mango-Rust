@@ -1,5 +1,5 @@
-import { startServer, waitForServerReady } from '../helpers/server.js';
-import { createTestUser, REGULAR_USER } from '../helpers/auth.js';
+import { startServer } from '../helpers/server.js';
+import { createTestUser, REGULAR_USER } from '../helpers/test-users.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -22,12 +22,11 @@ log_level: info
 
   // Start server
   await startServer();
-  await waitForServerReady();
 
   // Create test users
   const dbPath = path.join(testDataDir, 'mango-test.db');
-  await createTestUser(dbPath);
-  await createTestUser(dbPath, REGULAR_USER, false);
+  createTestUser(dbPath);
+  createTestUser(dbPath, REGULAR_USER, false);
 
   console.log('Smoke tests: Server ready');
 }

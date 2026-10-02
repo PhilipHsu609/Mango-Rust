@@ -1,39 +1,33 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Smoke Tests', () => {
-  test('login page loads', async ({ page }) => {
+test.describe('Smoke tests', () => {
+  test.describe.configure({ mode: 'serial' });
+  test('logs in and opens populated Home and Library pages', async ({ page }) => {
     await page.goto('/login');
     await expect(page.locator('input[name="username"]')).toBeVisible();
     await expect(page.locator('input[name="password"]')).toBeVisible();
-  });
-
-  test('can log in and reach home page', async ({ page }) => {
-    await page.goto('/login');
     await page.fill('input[name="username"]', 'testuser');
     await page.fill('input[name="password"]', 'testpass123');
-    await page.click('button.uk-button-primary');
+    await page.getByRole('button', { name: 'Login' }).click();
 
     await expect(page).toHaveURL('/');
-  });
-
-  test('library page loads after login', async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[name="username"]', 'testuser');
-    await page.fill('input[name="password"]', 'testpass123');
-    await page.click('button.uk-button-primary');
+    await expect(page.getByRole('heading', { name: 'Read your first manga' })).toBeVisible();
 
     await page.goto('/library');
-    await expect(page).toHaveURL('/library');
+    await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible();
+    await expect(page.locator('.uk-card-title').first()).toBeVisible();
   });
 
-  test('logout works', async ({ page }) => {
+  test('logout invalidates access to protected pages', async ({ page }) => {
     await page.goto('/login');
     await page.fill('input[name="username"]', 'testuser');
     await page.fill('input[name="password"]', 'testpass123');
-    await page.click('button.uk-button-primary');
+    await page.getByRole('button', { name: 'Login' }).click();
+    await expect(page).toHaveURL('/');
 
     await page.goto('/logout');
-
+    await expect(page).toHaveURL(/\/login/);
+    await page.goto('/');
     await expect(page).toHaveURL(/\/login/);
   });
 });

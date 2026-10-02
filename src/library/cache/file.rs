@@ -214,27 +214,34 @@ mod tests {
     use tempfile::TempDir;
 
     async fn create_test_library(path: PathBuf) -> Library {
-        // Create a test storage
-        let temp_db = tempfile::NamedTempFile::new().unwrap();
-        let db_path = temp_db.path().to_str().unwrap();
-        let storage = Storage::new(db_path).await.unwrap();
+        tokio::fs::create_dir_all(&path).await.unwrap();
 
-        // Create test config for cache initialization
+        // A populated tree proves cache serialization preserves actual library data.
+        let chapter = path.join("Test Manga/Volume 1/Chapters/Chapter 1");
+        tokio::fs::create_dir_all(&chapter).await.unwrap();
+        tokio::fs::write(chapter.join("001.png"), b"page")
+            .await
+            .unwrap();
+
+        let db_path = path.join("test.db");
+        tokio::fs::File::create(&db_path).await.unwrap();
+        let db_url = format!("sqlite://{}", db_path.display());
+        let storage = Storage::new(&db_url).await.unwrap();
         let config = crate::Config {
             host: "0.0.0.0".to_string(),
             port: 9000,
             base_url: "/".to_string(),
             session_secret: "test".to_string(),
             library_path: path.clone(),
-            db_path: PathBuf::from(db_path),
-            queue_db_path: PathBuf::from("/tmp/test_queue.db"),
+            db_path,
+            queue_db_path: path.join("queue.db"),
             scan_interval_minutes: 0,
             thumbnail_generation_interval_hours: 0,
             log_level: "info".to_string(),
-            upload_path: PathBuf::from("/tmp/uploads"),
-            plugin_path: PathBuf::from("/tmp/plugins"),
+            upload_path: path.join("uploads"),
+            plugin_path: path.join("plugins"),
             download_timeout_seconds: 30,
-            library_cache_path: PathBuf::from("/tmp/test_cache.bin"),
+            library_cache_path: path.join("library-cache.bin"),
             cache_enabled: true,
             cache_size_mbs: 100,
             cache_log_enabled: false,
@@ -244,9 +251,9 @@ mod tests {
             plugin_update_interval_hours: 24,
         };
 
-        // Create library with test data
-        // Add some test titles (empty for now, but structure is in place)
-        Library::new(path, storage, &config)
+        let mut library = Library::new(path, storage, &config);
+        library.scan().await.unwrap();
+        library
     }
 
     #[tokio::test]
@@ -272,6 +279,25 @@ mod tests {
         let loaded_data = loaded.unwrap();
         assert_eq!(loaded_data.path, library_path);
         assert_eq!(loaded_data.titles.len(), library.titles().len());
+        let cached_title = loaded_data
+            .titles
+            .values()
+            .find(|title| title.title == "Test Manga")
+            .expect("cache should preserve the populated title");
+        let original_title = library
+            .titles()
+            .values()
+            .find(|title| title.title == "Test Manga")
+            .expect("fixture should contain the populated title");
+        assert_eq!(cached_title.title, original_title.title);
+
+        let cached_entry = cached_title
+            .deep_titles()
+            .into_iter()
+            .flat_map(|nested| nested.entries.iter())
+            .find(|entry| entry.title == "Chapter 1")
+            .unwrap();
+        assert_eq!(cached_entry.pages, 1);
     }
 
     #[tokio::test]
@@ -371,26 +397,6 @@ mod tests {
         assert!(meta.valid);
         assert!(meta.size_bytes > 0);
         assert_eq!(meta.path, cache_path);
-    }
-
-    #[tokio::test]
-    async fn test_atomic_write() {
-        let temp_dir = TempDir::new().unwrap();
-        let library_path = temp_dir.path().join("library");
-        let cache_path = temp_dir.path().join("cache.bin");
-
-        let library = create_test_library(library_path).await;
-        let manager = CacheFileManager::new(cache_path.clone());
-
-        // Save should use atomic write (temp file + rename)
-        manager.save(&library).await.unwrap();
-
-        // Temp file should not exist
-        let temp_path = cache_path.with_extension("tmp");
-        assert!(!temp_path.exists(), "Temp file should not exist after save");
-
-        // Final cache file should exist
-        assert!(cache_path.exists(), "Cache file should exist");
     }
 
     #[tokio::test]

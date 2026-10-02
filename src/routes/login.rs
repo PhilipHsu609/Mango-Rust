@@ -1,6 +1,9 @@
 use askama::Template;
 use axum::{
-    extract::{rejection::JsonRejection, State},
+    extract::{
+        rejection::{FormRejection, JsonRejection},
+        State,
+    },
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     Form, Json,
@@ -19,9 +22,7 @@ use crate::{
 /// Login page template
 #[derive(Template)]
 #[template(path = "login.html")]
-struct LoginTemplate {
-    error: Option<String>,
-}
+struct LoginTemplate;
 
 /// Login form data
 #[derive(Deserialize)]
@@ -32,24 +33,26 @@ pub struct LoginForm {
 
 /// GET /login - Show login page
 pub async fn get_login() -> Result<Html<String>> {
-    let template = LoginTemplate { error: None };
-    Ok(Html(template.render().map_err(render_error)?))
+    Ok(Html(LoginTemplate.render().map_err(render_error)?))
 }
 
 /// POST /login - Process login
 pub async fn post_login(
     State(state): State<AppState>,
     session: Session,
-    Form(form): Form<LoginForm>,
+    form: std::result::Result<Form<LoginForm>, FormRejection>,
 ) -> Result<impl IntoResponse> {
-    // Verify credentials
+    let Form(form) = match form {
+        Ok(form) => form,
+        Err(_) => return Ok(Redirect::to("/login").into_response()),
+    };
+
     match state
         .storage
         .verify_user(&form.username, &form.password)
         .await?
     {
         Some(token) => {
-            // Store token and username in session
             session
                 .insert(SESSION_TOKEN_KEY, token)
                 .await
@@ -63,12 +66,8 @@ pub async fn post_login(
             Ok(Redirect::to("/").into_response())
         }
         None => {
-            // Invalid credentials, show error
             tracing::warn!("Failed login attempt for username: {}", form.username);
-            let template = LoginTemplate {
-                error: Some("Invalid username or password".to_string()),
-            };
-            Ok(Html(template.render().map_err(render_error)?).into_response())
+            Ok(Redirect::to("/login").into_response())
         }
     }
 }

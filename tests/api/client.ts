@@ -7,8 +7,6 @@ export interface ApiClient {
   get: (path: string) => Promise<Response>;
   post: (path: string, body?: unknown) => Promise<Response>;
   put: (path: string, body?: unknown) => Promise<Response>;
-  patch: (path: string, body?: unknown) => Promise<Response>;
-  delete: (path: string) => Promise<Response>;
 }
 
 let sessionCookie: string | null = null;
@@ -61,16 +59,6 @@ export const api: ApiClient = {
     body: body ? JSON.stringify(body) : undefined,
   }),
 
-  patch: (path: string, body?: unknown) => fetch(`${BASE_URL}${path}`, {
-    method: 'PATCH',
-    headers: getHeaders(),
-    body: body ? JSON.stringify(body) : undefined,
-  }),
-
-  delete: (path: string) => fetch(`${BASE_URL}${path}`, {
-    method: 'DELETE',
-    headers: getHeaders(),
-  }),
 };
 
 export { BASE_URL };

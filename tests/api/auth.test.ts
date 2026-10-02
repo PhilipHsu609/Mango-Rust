@@ -20,34 +20,22 @@ describe('Auth API', () => {
       expect(response.headers.get('location')).toBe('/');
     });
 
-    it('invalid credentials returns error and sets no session', async () => {
-      const response = await fetch(`${BASE_URL}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ username: 'testuser', password: 'wrongpassword' }),
-        redirect: 'manual',
-      });
+    it('invalid and missing credentials redirect to login without a session', async () => {
+      for (const body of [
+        new URLSearchParams({ username: 'testuser', password: 'wrongpassword' }),
+        new URLSearchParams({}),
+      ]) {
+        const response = await fetch(`${BASE_URL}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body,
+          redirect: 'manual',
+        });
 
-      // Server returns 200 with error message in HTML
-      expect(response.status).toBe(200);
-      const body = await response.text();
-      expect(body).toContain('Invalid username or password');
-      // Critical: no session cookie should be set on failed login
-      expect(response.headers.get('set-cookie')).toBeNull();
-    });
-
-    it('missing credentials returns error and sets no session', async () => {
-      const response = await fetch(`${BASE_URL}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({}),
-        redirect: 'manual',
-      });
-
-      // Should return error (200 with HTML error or 422 validation error)
-      expect([200, 422]).toContain(response.status);
-      // Critical: no session cookie should be set
-      expect(response.headers.get('set-cookie')).toBeNull();
+        expect(response.status).toBe(303);
+        expect(response.headers.get('location')).toBe('/login');
+        expect(response.headers.get('set-cookie')).toBeNull();
+      }
     });
   });
 
