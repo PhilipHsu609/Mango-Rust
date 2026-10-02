@@ -13,20 +13,16 @@ impl Decimal {
             .chain(fraction.bytes())
             .map(|digit| digit - b'0')
             .collect();
-        let first_nonzero = digits.iter().position(|digit| *digit != 0);
-        if let Some(first_nonzero) = first_nonzero {
+        let mut scale = fraction.len();
+        if let Some(first_nonzero) = digits.iter().position(|digit| *digit != 0) {
             digits.drain(..first_nonzero);
+            while scale > 0 && digits.last() == Some(&0) {
+                digits.pop();
+                scale -= 1;
+            }
         } else {
             digits.clear();
-            digits.push(0);
-        }
-        let mut scale = fraction.len();
-        while scale > 0 && digits.last() == Some(&0) {
-            digits.pop();
-            scale -= 1;
-        }
-        if digits.is_empty() {
-            digits.push(0);
+            scale = 0;
         }
         Some(Self { digits, scale })
     }
@@ -66,20 +62,16 @@ impl Decimal {
             let index = result.len() - offset - 1;
             result[index] = digit as u8;
         }
-        let first_nonzero = result.iter().position(|digit| *digit != 0);
-        if let Some(first_nonzero) = first_nonzero {
+        let mut result_scale = scale;
+        if let Some(first_nonzero) = result.iter().position(|digit| *digit != 0) {
             result.drain(..first_nonzero);
         } else {
             result.clear();
-            result.push(0);
+            result_scale = 0;
         }
-        let mut result_scale = scale;
         while result_scale > 0 && result.last() == Some(&0) {
             result.pop();
             result_scale -= 1;
-        }
-        if result.is_empty() {
-            result.push(0);
         }
         Self {
             digits: result,
@@ -113,8 +105,18 @@ impl Ord for Decimal {
         let scale = self.scale.max(other.scale);
         let width = left_integer + scale;
         for index in 0..width {
-            let left_digit = self.digits.get(index).copied().unwrap_or(0);
-            let right_digit = other.digits.get(index).copied().unwrap_or(0);
+            let left_offset = width - (self.digits.len() + scale - self.scale);
+            let right_offset = width - (other.digits.len() + scale - other.scale);
+            let left_digit = index
+                .checked_sub(left_offset)
+                .and_then(|digit_index| self.digits.get(digit_index))
+                .copied()
+                .unwrap_or(0);
+            let right_digit = index
+                .checked_sub(right_offset)
+                .and_then(|digit_index| other.digits.get(digit_index))
+                .copied()
+                .unwrap_or(0);
             match left_digit.cmp(&right_digit) {
                 Ordering::Equal => {}
                 order => return order,
@@ -291,7 +293,7 @@ fn compare_integer_strings(left: &str, right: &str) -> Ordering {
 
 #[cfg(test)]
 mod numeric_sort_tests {
-    use super::compare_numerically;
+    use super::{compare_numerically, Decimal};
     use std::cmp::Ordering;
 
     #[test]
@@ -316,6 +318,14 @@ mod numeric_sort_tests {
             ),
             Ordering::Less
         );
+    }
+    #[test]
+    fn decimal_comparison_preserves_leading_fractional_zeros() {
+        let hundredth = Decimal::parse("0", "01").unwrap();
+        let tenth = Decimal::parse("0", "1").unwrap();
+        let zero = Decimal::parse("0", "").unwrap();
+        assert!(zero < hundredth);
+        assert!(hundredth < tenth);
     }
 }
 
