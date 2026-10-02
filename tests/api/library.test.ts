@@ -55,6 +55,46 @@ describe('Library API', () => {
       expect(await response.text()).toContain('not found');
     });
   });
+  it('returns Crystal-compatible JSON errors for missing sort and progress targets', async () => {
+    const sortResponse = await api.get('/api/sort_opt?tid=nonexistent-title');
+    expect(sortResponse.status).toBe(200);
+    expect(await sortResponse.json()).toEqual({
+      success: false,
+      error: 'Nil assertion failed',
+    });
+
+    const sortUpdateResponse = await api.put('/api/sort_opt', {
+      tid: 'nonexistent-title',
+      sort: 'name',
+      ascend: true,
+    });
+    expect(sortUpdateResponse.status).toBe(200);
+    expect(await sortUpdateResponse.json()).toEqual({
+      success: false,
+      error: 'Nil assertion failed',
+    });
+
+    const progressResponse = await api.put('/api/progress/nonexistent-title/1');
+    expect(progressResponse.status).toBe(200);
+    expect(await progressResponse.json()).toEqual({
+      success: false,
+      error: 'Nil assertion failed',
+    });
+
+    const tagsResponse = await api.get('/api/tags/nonexistent-title');
+    expect(tagsResponse.status).toBe(200);
+    expect(await tagsResponse.json()).toEqual({
+      success: false,
+      error: 'Nil assertion failed',
+    });
+  });
+
+  it('returns Mango plain-text 404 for a missing download entry', async () => {
+    const response = await api.get('/api/download/nonexistent-title/nonexistent-entry');
+    expect(response.status).toBe(404);
+    expect(response.headers.get('content-type')).toContain('text/plain');
+    expect(await response.text()).toBe('Nil assertion failed');
+  });
 
 
   it('rejects page zero instead of serving the first page', async () => {

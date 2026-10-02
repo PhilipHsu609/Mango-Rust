@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::recently_added::{group_recent_entries, RecentEntry, RECENT_ITEMS_LIMIT};
 
 use crate::{
-    error::{Error, Result},
+    error::Result,
     library::{Entry, SortMethod},
     AppState,
 };
@@ -175,7 +175,7 @@ pub async fn get_sort_opt(
         let Some(title) = lib.get_title(&title_id) else {
             return Json(serde_json::json!({
                 "success": false,
-                "error": format!("Title not found: {title_id}")
+                "error": "Nil assertion failed"
             }));
         };
         title.path.clone()
@@ -216,7 +216,7 @@ pub async fn update_sort_opt(
         let Some(title) = lib.get_title(title_id) else {
             return Json(serde_json::json!({
                 "success": false,
-                "error": format!("Title not found: {title_id}")
+                "error": "Nil assertion failed"
             }));
         };
         title.path.clone()
@@ -1021,7 +1021,7 @@ pub async fn get_title_tags(
 ) -> Json<serde_json::Value> {
     let lib = state.library.load();
     if lib.get_title(&title_id).is_none() {
-        return api_failure(format!("Title not found: {title_id}"));
+        return api_failure("Nil assertion failed".to_string());
     }
     match state.storage.get_title_tags(&title_id).await {
         Ok(tags) => Json(serde_json::json!({"success": true, "tags": tags})),
@@ -1044,7 +1044,7 @@ pub async fn add_tag(
     _admin: crate::auth::AdminOnly,
 ) -> Json<serde_json::Value> {
     if state.library.load().get_title(&title_id).is_none() {
-        return api_failure(format!("Title not found: {title_id}"));
+        return api_failure("Nil assertion failed".to_string());
     }
     match state.storage.add_tag(&title_id, &tag).await {
         Ok(()) => Json(serde_json::json!({"success": true, "error": null})),
@@ -1060,7 +1060,7 @@ pub async fn delete_tag(
     _admin: crate::auth::AdminOnly,
 ) -> Json<serde_json::Value> {
     if state.library.load().get_title(&title_id).is_none() {
-        return api_failure(format!("Title not found: {title_id}"));
+        return api_failure("Nil assertion failed".to_string());
     }
     match state.storage.delete_tag(&title_id, &tag).await {
         Ok(()) => Json(serde_json::json!({"success": true, "error": null})),
@@ -1075,48 +1075,36 @@ pub async fn download_entry(
     State(state): State<AppState>,
     Path((title_id, entry_id)): Path<(String, String)>,
     _username: crate::auth::Username,
-) -> Result<impl IntoResponse> {
+) -> axum::response::Response {
     let lib = state.library.load();
+    let Some(entry) = lib.get_entry(&title_id, &entry_id) else {
+        return (StatusCode::NOT_FOUND, "Nil assertion failed").into_response();
+    };
+    let file_data = match tokio::fs::read(&entry.path).await {
+        Ok(data) => data,
+        Err(error) => return (StatusCode::NOT_FOUND, error.to_string()).into_response(),
+    };
 
-    // Get entry
-    let entry = lib
-        .get_entry(&title_id, &entry_id)
-        .ok_or_else(|| Error::NotFound(format!("Entry not found: {}/{}", title_id, entry_id)))?;
-
-    // Read the archive file
-    let file_data = tokio::fs::read(&entry.path).await.map_err(|e| {
-        Error::Internal(format!(
-            "Failed to read file {}: {}",
-            entry.path.display(),
-            e
-        ))
-    })?;
-
-    // Determine MIME type from file extension
     let mime_type = match entry.path.extension().and_then(|e| e.to_str()) {
         Some("cbz") | Some("zip") => "application/zip",
         Some("cbr") | Some("rar") => "application/x-rar-compressed",
         _ => "application/octet-stream",
     };
-
-    // Get filename
     let filename = entry
         .path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("download");
-
-    // Set headers for file download
     let content_disposition = format!("attachment; filename=\"{}\"", filename);
 
-    Ok((
+    (
         [
             (header::CONTENT_TYPE, mime_type),
             (header::CONTENT_DISPOSITION, content_disposition.as_str()),
         ],
         file_data,
     )
-        .into_response())
+        .into_response()
 }
 
 /// Guess MIME type from image data magic bytes
@@ -1364,7 +1352,7 @@ pub async fn update_progress(
     let Some(title) = lib.get_title(&title_id) else {
         return Json(serde_json::json!({
             "success": false,
-            "error": format!("Title not found: {title_id}")
+            "error": "Nil assertion failed"
         }));
     };
 
@@ -1372,7 +1360,7 @@ pub async fn update_progress(
         let Some(entry) = lib.get_entry(&title_id, &entry_id) else {
             return Json(serde_json::json!({
                 "success": false,
-                "error": format!("Entry not found: {entry_id}")
+                "error": "Nil assertion failed"
             }));
         };
         if page < 0 || page > entry.pages as i32 {

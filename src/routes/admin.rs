@@ -1,10 +1,11 @@
 use askama::Template;
 use axum::{
-    extract::{Path, State},
+    extract::{rejection::FormRejection, Path, State},
     http::StatusCode,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Redirect},
     Json,
 };
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -635,43 +636,55 @@ pub async fn update_display_name(
     AdminOnly(_username): AdminOnly,
     Path((title_id, name)): Path<(String, String)>,
     axum::extract::Query(query): axum::extract::Query<DisplayNameQuery>,
-) -> Result<Json<serde_json::Value>> {
-    let (title_path, entry_title) = {
-        let lib = state.library.load();
-        let title = lib
-            .get_title(&title_id)
-            .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {title_id}")))?;
-        let entry_title = if let Some(entry_id) = query.eid.as_deref() {
-            Some(
-                lib.get_entry(&title_id, entry_id)
-                    .ok_or_else(|| {
-                        crate::error::Error::NotFound(format!("Entry not found: {entry_id}"))
-                    })?
-                    .title
-                    .clone(),
-            )
-        } else {
-            None
+) -> Json<serde_json::Value> {
+    let result: Result<()> = async {
+        let (title_path, entry_title) = {
+            let lib = state.library.load();
+            let title = lib.get_title(&title_id).ok_or_else(|| {
+                crate::error::Error::BadRequest("Nil assertion failed".to_string())
+            })?;
+            let entry_title = if let Some(entry_id) = query.eid.as_deref() {
+                Some(
+                    lib.get_entry(&title_id, entry_id)
+                        .ok_or_else(|| {
+                            crate::error::Error::BadRequest("Nil assertion failed".to_string())
+                        })?
+                        .title
+                        .clone(),
+                )
+            } else {
+                None
+            };
+            (title.path.clone(), entry_title)
         };
-        (title.path.clone(), entry_title)
-    };
 
-    let mut info = crate::library::progress::TitleInfo::load(&title_path).await?;
-    if let Some(entry_title) = entry_title {
-        info.entry_display_name.insert(entry_title, name);
-    } else {
-        info.display_name = name;
+        let mut info = crate::library::progress::TitleInfo::load(&title_path).await?;
+        if let Some(entry_title) = entry_title {
+            info.entry_display_name.insert(entry_title, name);
+        } else {
+            info.display_name = name;
+        }
+        info.save(&title_path).await?;
+        state
+            .library
+            .load()
+            .progress_cache()
+            .load_title(&title_id, &title_path)
+            .await?;
+        Ok(())
     }
-    info.save(&title_path).await?;
-    state
-        .library
-        .load()
-        .progress_cache()
-        .load_title(&title_id, &title_path)
-        .await?;
+    .await;
 
-    tracing::info!("Updated display name for title {}", title_id);
-    Ok(Json(serde_json::json!({ "success": true })))
+    match result {
+        Ok(()) => {
+            tracing::info!("Updated display name for title {}", title_id);
+            Json(serde_json::json!({ "success": true }))
+        }
+        Err(error) => Json(serde_json::json!({
+            "success": false,
+            "error": error.to_string()
+        })),
+    }
 }
 
 #[derive(Deserialize)]
@@ -687,24 +700,39 @@ pub async fn update_sort_title(
     AdminOnly(_username): AdminOnly,
     Path(title_id): Path<String>,
     axum::extract::Query(query): axum::extract::Query<SortTitleQuery>,
-) -> Result<Json<serde_json::Value>> {
-    let sort_title = query.name.as_deref();
+) -> Json<serde_json::Value> {
+    let result: Result<()> = async {
+        if state.library.load().get_title(&title_id).is_none() {
+            return Err(crate::error::Error::BadRequest(
+                "Nil assertion failed".to_string(),
+            ));
+        }
+        let sort_title = query.name.as_deref();
 
-    if let Some(entry_id) = &query.eid {
-        state
-            .storage
-            .update_entry_sort_title(entry_id, sort_title)
-            .await?;
-        tracing::info!("Updated entry {} sort title to {:?}", entry_id, sort_title);
-    } else {
-        state
-            .storage
-            .update_title_sort_title(&title_id, sort_title)
-            .await?;
-        tracing::info!("Updated title {} sort title to {:?}", title_id, sort_title);
+        if let Some(entry_id) = &query.eid {
+            state
+                .storage
+                .update_entry_sort_title(entry_id, sort_title)
+                .await?;
+            tracing::info!("Updated entry {} sort title to {:?}", entry_id, sort_title);
+        } else {
+            state
+                .storage
+                .update_title_sort_title(&title_id, sort_title)
+                .await?;
+            tracing::info!("Updated title {} sort title to {:?}", title_id, sort_title);
+        }
+        Ok(())
     }
+    .await;
 
-    Ok(Json(serde_json::json!({ "success": true })))
+    match result {
+        Ok(()) => Json(serde_json::json!({ "success": true })),
+        Err(error) => Json(serde_json::json!({
+            "success": false,
+            "error": error.to_string()
+        })),
+    }
 }
 
 // ========== Bulk Progress API ==========
@@ -728,14 +756,14 @@ pub async fn bulk_progress(
     let Some(title) = lib.get_title(&title_id) else {
         return Ok(Json(serde_json::json!({
             "success": false,
-            "error": format!("Title not found: {}", title_id)
+            "error": "Nil assertion failed"
         })));
     };
 
     if action != "read" && action != "unread" {
         return Ok(Json(serde_json::json!({
             "success": false,
-            "error": format!("Unknown action {}", action)
+            "error": format!("Unknow action {}", action)
         })));
     }
 
@@ -992,6 +1020,7 @@ pub async fn upload_cover(
 pub struct UserEditQuery {
     pub username: Option<String>,
     pub admin: Option<bool>,
+    pub error: Option<String>,
 }
 
 /// GET /admin/user/edit - User edit page
@@ -1004,7 +1033,7 @@ pub async fn user_edit_page(
         new_user: query.username.is_none(),
         edit_username: query.username.unwrap_or_default(),
         is_admin: query.admin.unwrap_or(false),
-        error: String::new(),
+        error: query.error.unwrap_or_default(),
     };
 
     Ok(Html(template.render().map_err(render_error)?))
@@ -1019,62 +1048,86 @@ pub struct UserEditForm {
     pub admin: Option<String>,
 }
 
-/// POST /admin/user/edit - Create new user
 pub async fn user_edit_post(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
-    axum::extract::Form(form): axum::extract::Form<UserEditForm>,
-) -> Result<axum::response::Redirect> {
+    form: std::result::Result<axum::extract::Form<UserEditForm>, FormRejection>,
+) -> axum::response::Response {
+    let axum::extract::Form(form) = match form {
+        Ok(form) => form,
+        Err(error) => return user_edit_error_redirect(None, false, error.body_text()),
+    };
     let is_admin = form.admin.is_some();
     let password = form.password.unwrap_or_default();
 
-    if password.is_empty() {
-        return Err(crate::error::Error::BadRequest(
+    let result = if password.is_empty() {
+        Err(crate::error::Error::BadRequest(
             "Password is required for new users".to_string(),
-        ));
+        ))
+    } else {
+        state
+            .storage
+            .create_user(&form.username, &password, is_admin)
+            .await
+    };
+    match result {
+        Ok(()) => {
+            tracing::info!("Created user '{}' (admin: {})", form.username, is_admin);
+            Redirect::to("/admin/user").into_response()
+        }
+        Err(error) => user_edit_error_redirect(None, false, error.to_string()),
     }
-
-    state
-        .storage
-        .create_user(&form.username, &password, is_admin)
-        .await?;
-
-    tracing::info!("Created user '{}' (admin: {})", form.username, is_admin);
-
-    Ok(axum::response::Redirect::to("/admin/user"))
 }
 
-/// POST /admin/user/edit/:username - Update existing user
+fn user_edit_error_redirect(
+    username: Option<&str>,
+    admin: bool,
+    error: String,
+) -> axum::response::Response {
+    let encode = |value: &str| utf8_percent_encode(value, NON_ALPHANUMERIC).to_string();
+    let mut query = Vec::new();
+    if let Some(username) = username {
+        query.push(format!("username={}", encode(username)));
+        query.push(format!("admin={admin}"));
+    }
+    query.push(format!("error={}", encode(&error)));
+    Redirect::to(&format!("/admin/user/edit?{}", query.join("&"))).into_response()
+}
+
 pub async fn user_edit_post_existing(
     State(state): State<AppState>,
     AdminOnly(current_username): AdminOnly,
     Path(username): Path<String>,
-    axum::extract::Form(form): axum::extract::Form<UserEditForm>,
-) -> Result<axum::response::Redirect> {
+    form: std::result::Result<axum::extract::Form<UserEditForm>, FormRejection>,
+) -> axum::response::Response {
+    let axum::extract::Form(form) = match form {
+        Ok(form) => form,
+        Err(error) => return user_edit_error_redirect(Some(&username), false, error.body_text()),
+    };
     let is_admin = form.admin.is_some();
-
-    // Prevent users from demoting themselves
-    if username == current_username && !is_admin {
-        return Err(crate::error::Error::Forbidden(
-            "Cannot demote yourself from admin".to_string(),
-        ));
-    }
-
     let password = form.password.filter(|p| !p.is_empty());
-
-    state
-        .storage
-        .update_user(&username, &form.username, password.as_deref(), is_admin)
-        .await?;
-
-    tracing::info!(
-        "Updated user '{}' (admin: {}, password changed: {})",
-        username,
-        is_admin,
-        password.is_some()
-    );
-
-    Ok(axum::response::Redirect::to("/admin/user"))
+    let result = if username == current_username && !is_admin {
+        Err(crate::error::Error::Forbidden(
+            "Cannot demote yourself from admin".to_string(),
+        ))
+    } else {
+        state
+            .storage
+            .update_user(&username, &form.username, password.as_deref(), is_admin)
+            .await
+    };
+    match result {
+        Ok(()) => {
+            tracing::info!(
+                "Updated user '{}' (admin: {}, password changed: {})",
+                username,
+                is_admin,
+                password.is_some()
+            );
+            Redirect::to("/admin/user").into_response()
+        }
+        Err(error) => user_edit_error_redirect(Some(&username), is_admin, error.to_string()),
+    }
 }
 
 /// DELETE /api/admin/user/delete/:username - Delete user
@@ -1092,22 +1145,35 @@ pub async fn delete_user_api(
         })));
     }
 
-    // Check if user exists
-    if !state.storage.username_exists(&username).await? {
-        return Ok(Json(serde_json::json!({
-            "success": false,
-            "error": format!("User '{}' not found", username)
-        })));
+    match state.storage.username_exists(&username).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return Ok(Json(serde_json::json!({
+                "success": false,
+                "error": format!("User '{}' not found", username)
+            })));
+        }
+        Err(error) => {
+            return Ok(Json(serde_json::json!({
+                "success": false,
+                "error": error.to_string()
+            })));
+        }
     }
 
-    state.storage.delete_user(&username).await?;
-
-    tracing::info!("Deleted user '{}'", username);
-
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "error": null
-    })))
+    match state.storage.delete_user(&username).await {
+        Ok(()) => {
+            tracing::info!("Deleted user '{}'", username);
+            Ok(Json(serde_json::json!({
+                "success": true,
+                "error": null
+            })))
+        }
+        Err(error) => Ok(Json(serde_json::json!({
+            "success": false,
+            "error": error.to_string()
+        }))),
+    }
 }
 
 #[cfg(test)]

@@ -32,6 +32,23 @@ describe('Admin API', () => {
       ]));
     });
   });
+
+  it('returns a Mango-style JSON error for an invalid display-name target', async () => {
+    const response = await api.put('/api/admin/display_name/nonexistent-title/name');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: false,
+      error: 'Nil assertion failed',
+    });
+  });
+  it('returns a Mango-style JSON error for a missing sort-title target', async () => {
+    const response = await api.put('/api/admin/sort_title/nonexistent-title?name=ignored');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: false,
+      error: 'Nil assertion failed',
+    });
+  });
   describe('POST /admin/user/edit/:original_username', () => {
     it('renames an existing user without changing its role or password', async () => {
       const suffix = Date.now().toString();
@@ -146,6 +163,27 @@ describe('Admin API', () => {
         });
         expect(sourceCreate.status).toBe(201);
 
+        const invalidCreate = await fetch(`${BASE_URL}/admin/user/edit`, {
+          method: 'POST',
+          headers: {
+            Cookie: cookie,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({ username: 'ab', password: 'valid-password' }),
+          redirect: 'manual',
+        });
+        expect(invalidCreate.status).toBe(303);
+        const createEditUrl = new URL(invalidCreate.headers.get('location')!, BASE_URL);
+        expect(createEditUrl.pathname).toBe('/admin/user/edit');
+        expect(createEditUrl.searchParams.get('error')).toBe(
+          'Username should contain at least 3 characters',
+        );
+        const editPage = await fetch(createEditUrl, {
+          headers: { Cookie: cookie },
+        });
+        expect(editPage.status).toBe(200);
+        expect(await editPage.text()).toContain('Username should contain at least 3 characters');
+
         const invalidRename = await fetch(
           `${BASE_URL}/admin/user/edit/${encodeURIComponent(sourceUsername)}`,
           {
@@ -155,10 +193,15 @@ describe('Admin API', () => {
               'Content-Type': 'application/x-www-form-urlencoded',
             },
             body: new URLSearchParams({ username: 'invalid!' }),
+            redirect: 'manual',
           },
         );
-        expect(invalidRename.status).toBe(400);
-        expect(await invalidRename.text()).toBe(
+        expect(invalidRename.status).toBe(303);
+        const editUrl = new URL(invalidRename.headers.get('location')!, BASE_URL);
+        expect(editUrl.pathname).toBe('/admin/user/edit');
+        expect(editUrl.searchParams.get('username')).toBe(sourceUsername);
+        expect(editUrl.searchParams.get('admin')).toBe('false');
+        expect(editUrl.searchParams.get('error')).toBe(
           'Username can only contain alphanumeric characters, underscores, and hyphens',
         );
 

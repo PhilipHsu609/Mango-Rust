@@ -6,7 +6,7 @@
 
 ## Open in-scope behavior gaps
 
-1. **Route response contracts.** Reconcile remaining method/path-specific status codes, bodies, and failure responses in the route matrix below, including admin form feedback and JSON API errors.
+1. **Route response contracts.** Reconcile remaining method/path-specific status codes, bodies, and failure responses in the route matrix below, including JSON API error wording; HTML admin form feedback now matches Mango's redirects and query parameters.
 2. **Image cache responses.** Match Mango's ETags, conditional responses, and cache headers for page images and dimensions.
 3. **Scan timing.** Match the synchronous result and state visibility of Mango's admin scan endpoint instead of Rust's background scan.
 4. **Cover uploads.** Match Mango's image validation, storage paths, generated URLs, and upload error behavior.
@@ -25,6 +25,7 @@
 - **HTML error pages.** Browser-route 4xx and 5xx responses now render the shared Mango-style page layout with the route's error message; API, OPDS, upload, image, and static responses retain their non-HTML contracts.
 - **Reader error branch.** Invalid archives remain indexed as error entries with stable IDs and `err_msg`. Reader continuation shows the archive path and error in a modal, with next-entry and return-to-title actions. Error cards and entry API responses expose the failure; archive covers use the default icon.
 - **Existing-user rename.** `user_edit_post_existing` passes the URL username as the existing account key and the submitted form username as the new key. Its integration test checks the renamed listing, retained role, and unchanged password.
+- **Admin and API response contracts.** User-management form failures redirect to the edit page with Mango-compatible error feedback. Display-name/sort-title failures retain Mango's HTTP-200 JSON failure envelope, and missing archive downloads return plain-text 404 responses.
 - **Authentication modes.** Rust now accepts Basic credentials on every protected path, Bearer session IDs backed by the shared session store, `disable_login` with a validated `default_username`, and `auth_proxy_header_name` usernames after checking that the user exists. Focused HTTP tests cover these identities and admin role selection.
 - **Configuration contracts.** Rust uses `-c/--config`, `CONFIG_PATH`, all same-named environment settings, YAML > environment > defaults precedence, Mango's `~/mango.db` default, and stored trailing-slash normalization for `base_url`. The config crate supplies builder defaults and layered YAML/environment loading; Serde deserializes the merged settings into `Config`.
 
@@ -47,12 +48,11 @@
 
 | Crystal method/path | Rust method/path and implementation | Status |
 |---|---|---|
-| `GET /login`, `POST /login`, `GET /logout` | Same paths; `src/routes/login.rs` | Different: Mango consumes saved callback after login; Rust always redirects to `/`. |
+| `GET /login`, `POST /login`, `GET /logout` | Same paths; `src/routes/login.rs` | Matched: successful form login consumes the saved callback and redirects there; without one it redirects to `/`. |
 | `GET /`, `GET /library`, `GET /book/:title` | Same page shapes (`/book/:id`); `src/routes/main.rs`, `book.rs` | Matched route/page purposes; home/title data selection and template contracts have specific differences below. |
 | `GET /tags`, `GET /tags/:tag` | Same paths; `src/routes/main.rs` | Matched route/page purposes; sort-query parsing and error behavior differ. |
-| `GET /admin`, `/admin/user`, `/admin/user/edit`, `/admin/missing` | Same paths; `src/routes/admin.rs` | Matched route/page purposes; edit-error feedback differs. |
-| `POST /admin/user/edit`, `POST /admin/user/edit/:original_username` | Same create/edit paths (`:username`); `src/routes/admin.rs` | Rename and Mango input validation rules are implemented; Mango's error-query redirect behavior remains different. |
-| `GET /reader/:title/:entry`, `GET /reader/:title/:entry/:page` | Same route shapes (`:tid/:eid[/page]`); `src/routes/reader.rs` | Matched error branch: errored entries show the dedicated modal with next-entry and title actions; ordinary entries continue from progress. |
+| `GET /admin`, `/admin/user`, `/admin/user/edit`, `/admin/missing` | Same paths; `src/routes/admin.rs` | Matched route/page purposes; edit feedback is described on the form POST row. |
+| `POST /admin/user/edit`, `POST /admin/user/edit/:original_username` | Same create/edit paths (`:username`); `src/routes/admin.rs` | Matched: failures redirect to `/admin/user/edit` with Mango-compatible error/query feedback; success redirects to `/admin/user`. |
 | `GET /opds`, `GET /opds/book/:title_id` | Same paths; `src/routes/opds.rs` | Matched route/page purposes; Crystal omits error entries in title feed; exact rendered-field and error parity is not established. |
 | `GET /api` | `GET /api`; `routes/reference.rs`, `templates/api.html` | Matched documentation page; ReDoc reads the generated `/openapi.json` spec. |
 | `GET /download/plugins`, `GET /admin/downloads`, `GET /admin/subscriptions` | No Rust route/template | Explicitly excluded download/plugin UI. |
@@ -63,23 +63,23 @@ Every declaration in `Mango/src/routes/api.cr` was compared to the complete Rust
 
 | Crystal API route(s) | Rust counterpart | Status and source-level difference |
 |---|---|---|
-| `POST /api/login` | `POST /api/login`; `login.rs::api_login` | Matched route; malformed JSON/session errors and failure payloads differ. |
-| `GET /api/page/:tid/:eid/:page` | Same; `api.rs::get_page` | Different: ETag/cache headers and error contracts diverge. |
-| `GET /api/cover/:tid/:eid` | Same; `api.rs::get_cover` | Different: thumbnail lookup/generation and page-1 fallback paths differ. |
+| `POST /api/login` | `POST /api/login`; `login.rs::api_login` | Matched success/failure status and JSON envelope; malformed JSON and internal-failure error text can differ. |
+| `GET /api/page/:tid/:eid/:page` | Same; `api.rs::get_page` | Different: ETag/cache headers differ; page read errors return 500 plain text. |
+| `GET /api/cover/:tid/:eid` | Same; `api.rs::get_cover` | Different: thumbnail lookup/generation and page-1 fallback paths differ; failures return 500 plain text. |
 | `GET /api/book/:tid`, `GET /api/library` | Same; `api.rs::{get_title,get_library}` | Matched routes; title/parent fields exist on both sides, but exact field/order and percentage parity is not globally verified. |
-| `GET /api/sort_opt`, `PUT /api/sort_opt` | Same; `api.rs::{get_sort_opt,update_sort_opt}` | Matched routes; request fields match Crystal implementation (`sort`, `ascend`); error messages differ. |
+| `GET /api/sort_opt`, `PUT /api/sort_opt` | Same; `api.rs::{get_sort_opt,update_sort_opt}` | Matched status and JSON envelope; missing-title errors use Mango's `Nil assertion failed`; filesystem error wording may differ. |
 | `GET /api/library/continue_reading`, `/start_reading`, `/recently_added` | Same; `api.rs::{continue_reading,start_reading,recently_added}` | Matched routes; both limit/group home sections, but selection, timestamp tie ordering, and grouping boundaries need external comparison. |
 | `POST /api/admin/scan` | Same; `admin.rs::scan_library` | Different: Crystal scans the current library synchronously; Rust scans in background and atomically swaps a new library. |
 | `GET /api/admin/thumbnail_progress`, `POST /api/admin/generate_thumbnails` | Same; `admin.rs` | Matched routes, different generation/concurrency/progress state handling. |
-| `DELETE /api/admin/user/delete/:username` | Same method/path; `admin.rs::delete_user_api` | Matched route, different: Rust prevents self-deletion and checks existence; Crystal directly deletes. |
-| `PUT /api/progress/:tid/:page`, `PUT /api/bulk_progress/:action/:tid` | Same; `api.rs::update_progress`, `admin.rs::bulk_progress` | Matched routes; response/error behavior differs; Rust invalidates progress cache after writes. |
-| `PUT /api/admin/display_name/:tid/:name` | Same; `admin.rs::update_display_name` | Matched route; Rust propagates typed errors where Crystal returns `{success:false,error}` JSON. |
-| `PUT /api/admin/sort_title/:tid` | Same; `admin.rs::update_sort_title` | Global sort-title persistence is matched: Crystal's username argument is unused. Invalid title/entry scoping and error behavior differ. |
+| `DELETE /api/admin/user/delete/:username` | Same method/path; `admin.rs::delete_user_api` | Different: Rust prevents self-deletion and checks existence; Crystal directly deletes. |
+| `PUT /api/progress/:tid/:page`, `PUT /api/bulk_progress/:action/:tid` | Same; `api.rs::update_progress`, `admin.rs::bulk_progress` | Both return JSON `{success,error}` at HTTP 200 for operation failures; missing-title/entry messages match Crystal, while storage failures may differ. Rust invalidates its progress cache after writes. |
+| `PUT /api/admin/display_name/:tid/:name` | Same; `admin.rs::update_display_name` | Both return JSON `{success,error}` at HTTP 200 for operation failures; missing-target messages match Crystal, while storage failures may differ. |
+| `PUT /api/admin/sort_title/:tid` | Same; `admin.rs::update_sort_title` | Both return JSON `{success,error}` at HTTP 200 for operation failures. Missing-title failures match Crystal; entry scoping and storage error wording differ. |
 | `POST /api/admin/upload/:target` (currently `cover`) | Fixed Rust `POST /api/admin/upload/cover`; `admin.rs::upload_cover` | Different: Rust only registers the cover path and accepts a different image-extension set; URL generation/storage/error paths differ. |
 | `GET /api/dimensions/:tid/:eid` | Same; `api.rs::get_dimensions` | Different: Rust persists dimensions in SQLite and estimates unknown dimensions; ETag construction and cache semantics differ. |
-| `GET /api/download/:tid/:eid` | Same; `api.rs::download_entry` | Matched route: serves an indexed archive for clients; Rust maps file-read and missing-entry errors differently from Crystal. Not the excluded plugin chapter queue. |
+| `GET /api/download/:tid/:eid` | Same; `api.rs::download_entry` | Missing-entry failures return plain text 404, matching Mango; file-read failures also map to plain-text 404. Not the excluded plugin chapter queue. |
 | `GET /api/tags`, `GET /api/tags/:tid`, `PUT/DELETE /api/admin/tags/:tid/:tag` | Same; `api.rs` tag handlers | Matched routes; Crystal uses title methods while Rust reads/writes storage directly; response parity not runtime-verified. |
-| `GET /api/admin/titles/missing`, `GET /api/admin/entries/missing` | Same; `admin.rs` | Matched routes; Rust success JSON includes nullable `error`; exact serialization differs. |
+| `GET /api/admin/titles/missing`, `GET /api/admin/entries/missing` | Same; `admin.rs` | Matched response shape; both include `error: null` on success and an error string on failure. |
 | `DELETE /api/admin/titles/missing`, `/api/admin/entries/missing`, and `/:tid` or `/:eid` forms | Same semantic operations using `:id`; `admin.rs` | Matched routes; item deletion is a no-op when the record is absent/not unavailable in the observed implementations. |
 | `GET /openapi.json` | Same path; `routes/reference.rs` | Matched API-reference endpoint; Utoipa generates the document from Rust handler annotations. |
 | `WS /api/admin/mangadex/queue`, `GET /api/admin/mangadex/queue`, `POST /api/admin/mangadex/queue/:action` | No Rust route | Explicitly excluded MangaDex/download queue. Actions include delete/retry/pause/resume. |
