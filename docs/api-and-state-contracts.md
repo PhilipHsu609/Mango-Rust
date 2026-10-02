@@ -6,12 +6,11 @@
 
 ## Open in-scope behavior gaps
 
-1. **HTML error pages.** Render Mango-style error pages for browser routes instead of Rust's plain-text errors.
-2. **Route response contracts.** Reconcile remaining method/path-specific status codes, bodies, and failure responses in the route matrix below, including admin form feedback and JSON API errors.
-3. **Image cache responses.** Match Mango's ETags, conditional responses, and cache headers for page images and dimensions.
-4. **Scan timing.** Match the synchronous result and state visibility of Mango's admin scan endpoint instead of Rust's background scan.
-5. **Cover uploads.** Match Mango's image validation, storage paths, generated URLs, and upload error behavior.
-6. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
+1. **Route response contracts.** Reconcile remaining method/path-specific status codes, bodies, and failure responses in the route matrix below, including admin form feedback and JSON API errors.
+2. **Image cache responses.** Match Mango's ETags, conditional responses, and cache headers for page images and dimensions.
+3. **Scan timing.** Match the synchronous result and state visibility of Mango's admin scan endpoint instead of Rust's background scan.
+4. **Cover uploads.** Match Mango's image validation, storage paths, generated URLs, and upload error behavior.
+5. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
 
 ## Accepted divergences
 
@@ -23,6 +22,7 @@
 - **Login callback redirects.** When an unauthenticated browser request reaches a protected path, Rust stores the path (not the query string) in the session and redirects to `/login`. Successful form login consumes that callback and redirects there; without a callback it redirects to `/`. API and OPDS authentication failures keep their existing non-redirect behavior.
 - **Session lifetime.** Rust now issues a year-long session cookie and renews both the server-side expiry and cookie on active requests, matching Mango's 365-day rolling behavior. The pinned tower-sessions version saves modified sessions only, so a session middleware marks existing nonempty sessions modified before request handling.
 - **Reverse-proxy cookie scope.** Session cookies now use the normalized `base_url` as their `Path`, as Mango does; both `/` and a non-root proxy prefix are covered by HTTP tests.
+- **HTML error pages.** Browser-route 4xx and 5xx responses now render the shared Mango-style page layout with the route's error message; API, OPDS, upload, image, and static responses retain their non-HTML contracts.
 - **Reader error branch.** Invalid archives remain indexed as error entries with stable IDs and `err_msg`. Reader continuation shows the archive path and error in a modal, with next-entry and return-to-title actions. Error cards and entry API responses expose the failure; archive covers use the default icon.
 - **Existing-user rename.** `user_edit_post_existing` passes the URL username as the existing account key and the submitted form username as the new key. Its integration test checks the renamed listing, retained role, and unchanged password.
 - **Authentication modes.** Rust now accepts Basic credentials on every protected path, Bearer session IDs backed by the shared session store, `disable_login` with a validated `default_username`, and `auth_proxy_header_name` usernames after checking that the user exists. Focused HTTP tests cover these identities and admin role selection.

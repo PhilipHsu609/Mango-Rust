@@ -1,6 +1,8 @@
 use arc_swap::ArcSwap;
+use askama::Template;
 use axum::{
-    body::Body,
+    body::{to_bytes, Body},
+    extract::State,
     http::{header, HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -14,7 +16,7 @@ use tower_sessions_sqlx_store::SqliteStore;
 use utoipa::OpenApi;
 
 use crate::{
-    auth::require_auth,
+    auth::{require_auth, SESSION_TOKEN_KEY},
     config::Config,
     error::Result,
     library::{spawn_periodic_scanner, Library},
@@ -33,6 +35,7 @@ use crate::{
         upload_cover, user_edit_page, user_edit_post, user_edit_post_existing, users_page,
         view_tag_page, ApiDoc,
     },
+    util::NavigationState,
     Storage,
 };
 
@@ -94,6 +97,76 @@ async fn refresh_active_session(session: Session, request: Request<Body>, next: 
         session.set_expiry(Some(Expiry::OnInactivity(time::Duration::days(365))));
     }
     next.run(request).await
+}
+
+#[derive(Template)]
+#[template(path = "error.html")]
+struct ErrorPageTemplate {
+    nav: NavigationState,
+    message: String,
+}
+
+fn is_non_browser_error_path(path: &str) -> bool {
+    [
+        "/api", "/uploads", "/img", "/static", "/css", "/js", "/opds",
+    ]
+    .iter()
+    .any(|prefix| {
+        path.strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('/'))
+    })
+}
+
+async fn browser_error_pages(
+    State(state): State<AppState>,
+    session: Session,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let path = request.uri().path().to_owned();
+    let response = next.run(request).await;
+    if is_non_browser_error_path(&path)
+        || !(response.status().is_client_error() || response.status().is_server_error())
+    {
+        return response;
+    }
+
+    let (mut parts, body) = response.into_parts();
+    let body = to_bytes(body, 16 * 1024).await.unwrap_or_default();
+    let message = std::str::from_utf8(&body)
+        .ok()
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            format!(
+                "HTTP {}: {}",
+                parts.status.as_u16(),
+                parts.status.canonical_reason().unwrap_or("Error")
+            )
+        });
+    let is_admin = match session.get::<String>(SESSION_TOKEN_KEY).await {
+        Ok(Some(token)) => state.storage.verify_admin(&token).await.unwrap_or(false),
+        _ => false,
+    };
+    let nav = NavigationState {
+        home_active: false,
+        library_active: false,
+        tags_active: false,
+        admin_active: false,
+        is_admin,
+    };
+    let html = ErrorPageTemplate { nav, message }
+        .render()
+        .unwrap_or_else(|_| "<!DOCTYPE html><html><body><p>Error</p></body></html>".to_owned());
+
+    parts.headers.remove(header::CONTENT_LENGTH);
+    parts.headers.remove(header::CONTENT_ENCODING);
+    parts.headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    Response::from_parts(parts, Body::from(html))
 }
 
 /// Build and run the Axum server
@@ -299,6 +372,10 @@ pub async fn run(config: Config) -> Result<()> {
         .layer(middleware::from_fn_with_state(
             app_state.clone(),
             require_auth,
+        ))
+        .layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            browser_error_pages,
         ))
         .layer(middleware::from_fn(refresh_active_session))
         .layer(session_layer)

@@ -48,9 +48,11 @@ describe('Library API', () => {
       expect(detail.entries.length).toBeGreaterThan(0);
     });
 
-    it('returns 404 for invalid title ID', async () => {
+    it('returns 404 for invalid title ID without changing the API body format', async () => {
       const response = await api.get('/api/book/nonexistent-id');
       expect(response.status).toBe(404);
+      expect(response.headers.get('content-type')).toContain('text/plain');
+      expect(await response.text()).toContain('not found');
     });
   });
 

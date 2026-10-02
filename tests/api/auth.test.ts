@@ -265,12 +265,39 @@ describe('Auth API', () => {
     });
   });
 
+  describe('Browser error pages', () => {
+    it('renders Mango-style HTML for a missing browser title', async () => {
+      await login();
+      const response = await fetch(`${BASE_URL}/book/nonexistent-id`, {
+        headers: { Cookie: getSessionCookie() ?? '' },
+      });
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get('content-type')).toContain('text/html');
+      expect(await response.text()).toContain('Title not found: nonexistent-id');
+    });
+    it('escapes error details before rendering them as HTML', async () => {
+      await login();
+      const response = await fetch(`${BASE_URL}/book/%3Cscript%3E`, {
+        headers: { Cookie: getSessionCookie() ?? '' },
+      });
+      const html = await response.text();
+
+      expect(response.status).toBe(404);
+      expect(html).toContain('&lt;script&gt;');
+      expect(html).not.toContain('Title not found: <script>');
+    });
+
+  });
+
   describe('Admin routes', () => {
     it('non-admin user gets 403 on /admin', async () => {
       await login('testuser2', 'testpass123'); // non-admin user
       const response = await api.get('/admin');
 
       expect(response.status).toBe(403);
+      expect(response.headers.get('content-type')).toContain('text/html');
+      expect(await response.text()).toContain('Admin access required');
     });
 
     it('admin user accesses /admin successfully', async () => {
