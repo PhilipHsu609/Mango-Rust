@@ -254,7 +254,7 @@ fn page_index(page: i32) -> Option<usize> {
     usize::try_from(page.checked_sub(1)?).ok()
 }
 
-fn order_continue_candidates<T>(entries: &mut Vec<(Option<i64>, T, f32)>) {
+fn order_continue_candidates<T>(entries: &mut Vec<(Option<i64>, T, f64)>) {
     entries.truncate(8);
     entries.sort_by(|a, b| b.0.cmp(&a.0));
 }
@@ -602,7 +602,7 @@ pub async fn recently_added(
 #[derive(Serialize)]
 struct ContinueReadingResponse {
     entries: Vec<MangoEntry>,
-    entry_percentages: Vec<f32>,
+    entry_percentages: Vec<f64>,
 }
 
 #[derive(Serialize)]
@@ -651,9 +651,9 @@ struct MangoTitleResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     entries: Option<Vec<MangoEntry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    title_percentages: Option<Vec<f32>>,
+    title_percentages: Option<Vec<f64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    entry_percentages: Option<Vec<f32>>,
+    entry_percentages: Option<Vec<f64>>,
 }
 
 #[derive(Serialize)]
@@ -661,7 +661,7 @@ struct MangoLibraryResponse {
     dir: String,
     titles: Vec<MangoTitleResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    title_percentages: Option<Vec<f32>>,
+    title_percentages: Option<Vec<f64>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -680,7 +680,7 @@ enum RecentItem {
 #[derive(Serialize)]
 struct RecentlyAddedItem {
     item: RecentItem,
-    percentage: f32,
+    percentage: f64,
     count: usize,
 }
 
@@ -971,7 +971,7 @@ fn title_progress_percentage(
     title: &crate::library::Title,
     cache: &crate::library::ProgressCache,
     username: &str,
-) -> f32 {
+) -> f64 {
     let mut total_pages = 0usize;
     let mut read_pages = 0f64;
     for nested in std::iter::once(title).chain(title.deep_titles()) {
@@ -987,15 +987,15 @@ fn title_progress_percentage(
     if total_pages == 0 {
         0.0
     } else {
-        (read_pages / total_pages as f64) as f32
+        read_pages / total_pages as f64
     }
 }
 
-fn entry_progress_percentage(progress: i32, pages: usize) -> f32 {
+fn entry_progress_percentage(progress: i32, pages: usize) -> f64 {
     if pages == 0 {
         return 0.0;
     }
-    progress.clamp(0, pages as i32) as f32 / pages as f32
+    progress.clamp(0, pages as i32) as f64 / pages as f64
 }
 
 pub(super) fn join_base_url(base_url: &str, path: &str) -> String {
@@ -1428,7 +1428,7 @@ pub async fn update_progress(
 }
 #[cfg(test)]
 mod parity_contract_tests {
-    use super::{order_continue_candidates, page_index};
+    use super::{entry_progress_percentage, order_continue_candidates, page_index};
 
     #[test]
     fn reader_pages_are_one_based() {
@@ -1439,7 +1439,7 @@ mod parity_contract_tests {
 
     #[test]
     fn continue_reading_limits_candidates_before_sorting() {
-        let mut candidates: Vec<(Option<i64>, usize, f32)> = (0..10)
+        let mut candidates: Vec<(Option<i64>, usize, f64)> = (0..10)
             .map(|timestamp| (Some(timestamp), timestamp as usize, 0.0))
             .collect();
 
@@ -1452,5 +1452,10 @@ mod parity_contract_tests {
                 .collect::<Vec<_>>(),
             (0..8).rev().map(|id| id as usize).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn progress_percentage_preserves_float64_precision() {
+        assert_eq!(entry_progress_percentage(1, 3), 1.0_f64 / 3.0);
     }
 }

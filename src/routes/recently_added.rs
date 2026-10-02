@@ -6,14 +6,14 @@ const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 pub(super) struct RecentEntry<T> {
     pub title_id: String,
     pub date_added: i64,
-    pub percentage: f32,
+    pub percentage: f64,
     pub item: T,
 }
 
 pub(super) struct GroupedRecentEntry<T> {
     pub title_id: String,
     pub date_added: i64,
-    pub percentage: f32,
+    pub percentage: f64,
     pub grouped_count: usize,
     pub item: T,
 }
@@ -82,7 +82,7 @@ mod tests {
         title_id: &str,
         date_added: i64,
         item: &'static str,
-        percentage: f32,
+        percentage: f64,
     ) -> RecentEntry<&'static str> {
         RecentEntry {
             title_id: title_id.to_string(),

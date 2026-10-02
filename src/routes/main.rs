@@ -229,7 +229,7 @@ struct ContinueReadingItem {
 struct RecentlyAddedItem {
     #[serde(flatten)]
     item: HomeCardItem,
-    percentage: f32,
+    percentage: f64,
     grouped_count: Option<usize>,
 }
 
@@ -352,7 +352,7 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                     if date_added > one_month_ago {
                         let progress = info.get_progress(&user.username, &entry.title).unwrap_or(0);
                         let percentage = if entry.pages > 0 {
-                            (progress as f32 / entry.pages as f32) * 100.0
+                            (progress as f64 / entry.pages as f64) * 100.0
                         } else {
                             0.0
                         };
