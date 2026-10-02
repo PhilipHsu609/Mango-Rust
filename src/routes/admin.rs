@@ -1164,10 +1164,7 @@ pub async fn delete_user_api(
     match state.storage.delete_user(&username).await {
         Ok(()) => {
             tracing::info!("Deleted user '{}'", username);
-            Ok(Json(serde_json::json!({
-                "success": true,
-                "error": null
-            })))
+            Ok(Json(serde_json::json!({ "success": true })))
         }
         Err(error) => Ok(Json(serde_json::json!({
             "success": false,

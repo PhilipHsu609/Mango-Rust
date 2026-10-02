@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { api, login } from './client';
+import { api, login, BASE_URL, getSessionCookie } from './client';
 
 describe('Library API', () => {
   beforeAll(async () => {
@@ -87,6 +87,48 @@ describe('Library API', () => {
       success: false,
       error: 'Nil assertion failed',
     });
+  });
+  it('returns Mango success bodies while adding and deleting title tags', async () => {
+    const libraryResponse = await api.get('/api/library');
+    const library = await libraryResponse.json();
+    const title = library.titles.find(
+      (item: { entries?: unknown[] }) => item.entries?.length,
+    );
+    expect(title).toBeDefined();
+    if (!title) throw new Error('The test library must contain a title with entries');
+
+    const tag = `response-contract-${Date.now()}`;
+    const tagPath = `/api/admin/tags/${encodeURIComponent(title.id)}/${encodeURIComponent(tag)}`;
+    const cookie = getSessionCookie()!;
+    const initialTagsResponse = await api.get(`/api/tags/${encodeURIComponent(title.id)}`);
+    const initialTags = (await initialTagsResponse.json()).tags;
+    expect(initialTagsResponse.status).toBe(200);
+    try {
+      const addResponse = await api.put(tagPath);
+      expect(addResponse.status).toBe(200);
+      expect(await addResponse.json()).toEqual({ success: true, error: null });
+
+      const tagsResponse = await api.get(`/api/tags/${encodeURIComponent(title.id)}`);
+      expect(await tagsResponse.json()).toEqual({
+        success: true,
+        tags: expect.arrayContaining([...initialTags, tag]),
+      });
+
+      const deleteResponse = await fetch(`${BASE_URL}${tagPath}`, {
+        method: 'DELETE',
+        headers: { Cookie: cookie },
+      });
+      expect(deleteResponse.status).toBe(200);
+      expect(await deleteResponse.json()).toEqual({ success: true, error: null });
+
+      const afterDelete = await api.get(`/api/tags/${encodeURIComponent(title.id)}`);
+      expect(await afterDelete.json()).toEqual({ success: true, tags: initialTags });
+    } finally {
+      await fetch(`${BASE_URL}${tagPath}`, {
+        method: 'DELETE',
+        headers: { Cookie: cookie },
+      });
+    }
   });
 
   it('returns Mango plain-text 404 for a missing download entry', async () => {

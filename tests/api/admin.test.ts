@@ -32,6 +32,30 @@ describe('Admin API', () => {
       ]));
     });
   });
+  it('returns the exact Mango success body when deleting a user', async () => {
+    const username = `delete-response-${Date.now()}`;
+    const cookie = getSessionCookie()!;
+    const createResponse = await api.post('/api/admin/users', {
+      username,
+      password: 'delete-test-password',
+      is_admin: false,
+    });
+    expect(createResponse.status).toBe(201);
+
+    try {
+      const response = await fetch(
+        `${BASE_URL}/api/admin/user/delete/${encodeURIComponent(username)}`,
+        { method: 'DELETE', headers: { Cookie: cookie } },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true });
+    } finally {
+      await fetch(`${BASE_URL}/api/admin/users/${encodeURIComponent(username)}`, {
+        method: 'DELETE',
+        headers: { Cookie: cookie },
+      });
+    }
+  });
 
   it('returns a Mango-style JSON error for an invalid display-name target', async () => {
     const response = await api.put('/api/admin/display_name/nonexistent-title/name');
