@@ -13,7 +13,7 @@ use serde_json::json;
 use tower_sessions::Session;
 
 use crate::{
-    auth::{SESSION_TOKEN_KEY, SESSION_USERNAME_KEY},
+    auth::{SESSION_CALLBACK_KEY, SESSION_TOKEN_KEY, SESSION_USERNAME_KEY},
     error::{Error, Result},
     util::render_error,
     AppState,
@@ -62,8 +62,15 @@ pub async fn post_login(
                 .await
                 .map_err(|e| Error::Internal(format!("Failed to save session: {}", e)))?;
 
+            let callback = session
+                .remove::<String>(SESSION_CALLBACK_KEY)
+                .await
+                .map_err(|e| Error::Internal(format!("Failed to consume login callback: {}", e)))?;
+            let destination = callback
+                .filter(|path| path.starts_with('/') && !path.starts_with("//"))
+                .unwrap_or_else(|| "/".to_owned());
             tracing::info!("User {} logged in successfully", form.username);
-            Ok(Redirect::to("/").into_response())
+            Ok(Redirect::to(&destination).into_response())
         }
         None => {
             tracing::warn!("Failed login attempt for username: {}", form.username);

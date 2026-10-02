@@ -9,7 +9,7 @@ use axum::{
 };
 use std::sync::Arc;
 use tower_http::{services::ServeDir, trace::TraceLayer};
-use tower_sessions::{Expiry, SessionManagerLayer};
+use tower_sessions::{Expiry, Session, SessionManagerLayer};
 use tower_sessions_sqlx_store::SqliteStore;
 use utoipa::OpenApi;
 
@@ -85,6 +85,15 @@ async fn mango_cors(request: Request<Body>, next: Next) -> Response {
         );
     }
     response
+}
+
+// tower-sessions 0.11 only persists modified sessions. Renew an existing session
+// on reads too, so its stored expiry and browser cookie roll together.
+async fn refresh_active_session(session: Session, request: Request<Body>, next: Next) -> Response {
+    if session.id().is_some() && !session.is_empty().await {
+        session.set_expiry(Some(Expiry::OnInactivity(time::Duration::days(365))));
+    }
+    next.run(request).await
 }
 
 /// Build and run the Axum server
@@ -182,8 +191,10 @@ pub async fn run(config: Config) -> Result<()> {
 
     let session_layer = SessionManagerLayer::new(session_store)
         .with_name(format!("mango-sessid-{}", config.port))
+        .with_path(config.base_url.clone())
         .with_secure(false) // Set to true in production with HTTPS
-        .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
+        .with_expiry(Expiry::OnInactivity(time::Duration::days(365)));
+
     // Build router
     let api_document = axum::body::Bytes::from(ApiDoc::openapi().to_json()?);
     let app = Router::new()
@@ -289,6 +300,7 @@ pub async fn run(config: Config) -> Result<()> {
             app_state.clone(),
             require_auth,
         ))
+        .layer(middleware::from_fn(refresh_active_session))
         .layer(session_layer)
         .layer(TraceLayer::new_for_http())
         .layer(middleware::from_fn(mango_cors))

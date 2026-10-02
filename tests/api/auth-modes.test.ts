@@ -68,4 +68,17 @@ describe('configured authentication modes', () => {
     expect(adminIdentity.status).toBe(200);
     expect(regularIdentity.status).toBe(403);
   });
+
+  it('scopes login cookies to the configured reverse-proxy base URL', async () => {
+    await startWithConfig('base_url: /mango\n');
+
+    const response = await fetch(`${BASE_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'testuser', password: 'testpass123' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('set-cookie')).toMatch(/(?:^|;\s*)Path=\/mango\/(?:;|$)/);
+  });
 });

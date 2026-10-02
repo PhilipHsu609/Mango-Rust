@@ -17,8 +17,45 @@ describe('Auth API', () => {
 
       expect(response.status).toBe(303);
       expect(response.headers.get('set-cookie')).toContain('mango-sessid-');
+      expect(response.headers.get('set-cookie')).toMatch(/(?:^|;\s*)Path=\/(?:;|$)/);
       expect(response.headers.get('location')).toBe('/');
     });
+
+    it('returns a browser user to the protected path after login', async () => {
+      const protectedResponse = await fetch(`${BASE_URL}/library?sort=title`, {
+        redirect: 'manual',
+      });
+      expect(protectedResponse.status).toBe(303);
+      expect(protectedResponse.headers.get('location')).toBe('/login');
+      const sessionCookie = protectedResponse.headers.get('set-cookie')?.split(';')[0];
+      expect(sessionCookie).toBeTruthy();
+
+      const loginResponse = await fetch(`${BASE_URL}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Cookie: sessionCookie ?? '',
+        },
+        body: new URLSearchParams({ username: 'testuser', password: 'testpass123' }),
+        redirect: 'manual',
+      });
+
+      expect(loginResponse.status).toBe(303);
+      expect(loginResponse.headers.get('location')).toBe('/library');
+
+      const renewedCookie = loginResponse.headers.get('set-cookie')?.split(';')[0];
+      const secondLoginResponse = await fetch(`${BASE_URL}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Cookie: renewedCookie ?? '',
+        },
+        body: new URLSearchParams({ username: 'testuser', password: 'testpass123' }),
+        redirect: 'manual',
+      });
+      expect(secondLoginResponse.headers.get('location')).toBe('/');
+    });
+
 
     it('invalid and missing credentials redirect to login without a session', async () => {
       for (const body of [
@@ -54,6 +91,31 @@ describe('Auth API', () => {
         is_admin: true,
       });
       expect(response.headers.get('set-cookie')).toContain('mango-sessid-');
+    });
+
+    it('renews a year-long session when an authenticated user reads the API', async () => {
+      const loginResponse = await fetch(`${BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'testuser', password: 'testpass123' }),
+      });
+      expect(loginResponse.status).toBe(200);
+      const loginCookie = loginResponse.headers.get('set-cookie');
+      const sessionCookie = loginCookie?.split(';')[0];
+
+      const readResponse = await fetch(`${BASE_URL}/api/library`, {
+        headers: { Cookie: sessionCookie ?? '' },
+      });
+      expect(readResponse.status).toBe(200);
+      const renewedCookie = readResponse.headers.get('set-cookie');
+      expect(renewedCookie).not.toBeNull();
+      expect(renewedCookie?.split(';')[0]).toBe(sessionCookie);
+
+      for (const cookie of [loginCookie, renewedCookie]) {
+        const maxAge = Number(cookie?.match(/(?:^|;\s*)Max-Age=(\d+)/)?.[1]);
+        expect(maxAge).toBeGreaterThan(365 * 24 * 60 * 60 - 60);
+        expect(maxAge).toBeLessThanOrEqual(365 * 24 * 60 * 60);
+      }
     });
 
     it('returns Mango login errors for invalid credentials', async () => {

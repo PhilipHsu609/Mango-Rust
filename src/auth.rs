@@ -10,11 +10,14 @@ use tower_sessions::{session::Id, Session, SessionStore};
 
 use crate::AppState;
 
-/// Session key for storing username
+/// Session key for storing username.
 pub const SESSION_USERNAME_KEY: &str = "username";
 
-/// Session key for storing user token
+/// Session key for storing user token.
 pub const SESSION_TOKEN_KEY: &str = "token";
+
+/// Session key for the protected browser path requested before login.
+pub const SESSION_CALLBACK_KEY: &str = "callback";
 
 /// Authentication middleware that checks if user is logged in
 /// Matches original Mango's AuthHandler
@@ -29,7 +32,9 @@ pub async fn require_auth(
         return next.run(request).await;
     }
 
+    let callback_path = path.to_owned();
     let is_opds_path = path.starts_with("/opds") || path.starts_with("/api/download");
+
     let authorization = request
         .headers()
         .get(axum::http::header::AUTHORIZATION)
@@ -130,6 +135,11 @@ pub async fn require_auth(
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
 
+    if !callback_path.starts_with("//") {
+        if let Err(error) = session.insert(SESSION_CALLBACK_KEY, callback_path).await {
+            tracing::error!("Error saving login callback path: {}", error);
+        }
+    }
     Redirect::to("/login").into_response()
 }
 
