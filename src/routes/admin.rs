@@ -127,6 +127,7 @@ pub struct ScanResponse {
 /// POST /api/admin/scan - Trigger library rescan
 /// Returns number of titles found and time taken in milliseconds
 /// Uses double-buffer approach: builds new library in background, then atomically swaps
+#[utoipa::path(post, path = "/api/admin/scan", tag = "admin", summary = "Scan library", responses((status = 200, description = "Library scan completed")))]
 pub async fn scan_library(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -178,6 +179,7 @@ pub struct MissingItemsMutationResponse {
 }
 
 /// GET /api/admin/titles/missing - Get unavailable titles.
+#[utoipa::path(get, path = "/api/admin/titles/missing", tag = "admin", summary = "Get missing titles", responses((status = 200, description = "Missing titles returned")))]
 pub async fn get_missing_titles(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -197,6 +199,7 @@ pub async fn get_missing_titles(
 }
 
 /// GET /api/admin/entries/missing - Get unavailable entries.
+#[utoipa::path(get, path = "/api/admin/entries/missing", tag = "admin", summary = "Get missing entries", responses((status = 200, description = "Missing entries returned")))]
 pub async fn get_missing_entries(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -216,6 +219,7 @@ pub async fn get_missing_entries(
 }
 
 /// DELETE /api/admin/titles/missing/:id - Delete an unavailable title.
+#[utoipa::path(delete, path = "/api/admin/titles/missing/{id}", tag = "admin", summary = "Delete missing title", params(("id" = String, Path, description = "Missing title identifier")), responses((status = 200, description = "Missing title deleted")))]
 pub async fn delete_missing_title(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -234,6 +238,7 @@ pub async fn delete_missing_title(
 }
 
 /// DELETE /api/admin/entries/missing/:id - Delete an unavailable entry.
+#[utoipa::path(delete, path = "/api/admin/entries/missing/{id}", tag = "admin", summary = "Delete missing entry", params(("id" = String, Path, description = "Missing entry identifier")), responses((status = 200, description = "Missing entry deleted")))]
 pub async fn delete_missing_entry(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -252,6 +257,7 @@ pub async fn delete_missing_entry(
 }
 
 /// DELETE /api/admin/titles/missing - Delete all unavailable titles.
+#[utoipa::path(delete, path = "/api/admin/titles/missing", tag = "admin", summary = "Delete all missing titles", responses((status = 200, description = "Missing titles deleted")))]
 pub async fn delete_all_missing_titles(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -269,6 +275,7 @@ pub async fn delete_all_missing_titles(
 }
 
 /// DELETE /api/admin/entries/missing - Delete all unavailable entries.
+#[utoipa::path(delete, path = "/api/admin/entries/missing", tag = "admin", summary = "Delete all missing entries", responses((status = 200, description = "Missing entries deleted")))]
 pub async fn delete_all_missing_entries(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -351,6 +358,7 @@ pub struct UserResponse {
 
 /// GET /api/admin/user - Get all users
 /// Returns list of all users with their admin status
+#[utoipa::path(get, path = "/api/admin/users", tag = "users", summary = "Get users", responses((status = 200, description = "Users returned")))]
 pub async fn get_users(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -364,7 +372,7 @@ pub async fn get_users(
 }
 
 /// Request body for creating a new user
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
@@ -373,6 +381,7 @@ pub struct CreateUserRequest {
 
 /// POST /api/admin/user - Create a new user
 /// Creates a new user with the given credentials and admin status
+#[utoipa::path(post, path = "/api/admin/users", tag = "users", summary = "Create user", request_body = CreateUserRequest, responses((status = 201, description = "User created")))]
 pub async fn create_user(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -401,7 +410,7 @@ pub async fn create_user(
 }
 
 /// Request body for updating a user
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct UpdateUserRequest {
     pub is_admin: bool,
     pub password: Option<String>,
@@ -409,6 +418,7 @@ pub struct UpdateUserRequest {
 
 /// PATCH /api/admin/user/:username - Update user's admin status
 /// Changes whether a user is an administrator
+#[utoipa::path(patch, path = "/api/admin/users/{username}", tag = "users", summary = "Update user", params(("username" = String, Path, description = "Username")), request_body = UpdateUserRequest, responses((status = 204, description = "User updated")))]
 pub async fn update_user(
     State(state): State<AppState>,
     AdminOnly(current_username): AdminOnly,
@@ -453,6 +463,7 @@ pub async fn update_user(
 
 /// DELETE /api/admin/user/:username - Delete a user
 /// Removes a user from the system (cannot be undone)
+#[utoipa::path(delete, path = "/api/admin/users/{username}", tag = "users", summary = "Delete user", params(("username" = String, Path, description = "Username")), responses((status = 204, description = "User deleted")))]
 pub async fn delete_user(
     State(state): State<AppState>,
     AdminOnly(current_username): AdminOnly,
@@ -474,6 +485,7 @@ pub async fn delete_user(
 
 /// POST /api/cache/clear - Clear all LRU cache entries
 /// Removes all cached sorted lists from memory (library cache file remains)
+#[utoipa::path(post, path = "/api/cache/clear", tag = "admin", summary = "Clear cache", responses((status = 200, description = "Cache cleared")))]
 pub async fn cache_clear_api(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -495,6 +507,7 @@ pub async fn cache_clear_api(
 
 /// POST /api/cache/save-library - Save library to cache file
 /// Saves current library state to persistent cache file
+#[utoipa::path(post, path = "/api/cache/save-library", tag = "admin", summary = "Save library cache", responses((status = 200, description = "Library cache saved")))]
 pub async fn cache_save_library_api(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -523,6 +536,7 @@ pub async fn cache_save_library_api(
 /// POST /api/cache/load-library - Load library from cache file
 /// Reloads library from persistent cache file
 /// Uses double-buffer approach: creates new library, loads from cache, swaps
+#[utoipa::path(post, path = "/api/cache/load-library", tag = "admin", summary = "Load library cache", responses((status = 200, description = "Library cache loaded")))]
 pub async fn cache_load_library_api(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -559,7 +573,7 @@ pub async fn cache_load_library_api(
 }
 
 /// Request body for cache invalidation endpoint
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CacheInvalidateRequest {
     /// Pattern to match cache keys (e.g., "sorted_titles:user1:")
     pub pattern: String,
@@ -567,6 +581,7 @@ pub struct CacheInvalidateRequest {
 
 /// POST /api/cache/invalidate - Invalidate cache entries by pattern
 /// Invalidates all cache entries matching the given pattern prefix
+#[utoipa::path(post, path = "/api/cache/invalidate", tag = "admin", summary = "Invalidate cache", request_body = CacheInvalidateRequest, responses((status = 200, description = "Cache invalidated")))]
 pub async fn cache_invalidate_api(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -614,6 +629,7 @@ pub struct DisplayNameQuery {
 }
 
 /// PUT /api/admin/display_name/:tid/:name - Update display name for title or entry
+#[utoipa::path(put, path = "/api/admin/display_name/{tid}/{name}", tag = "admin", summary = "Update display name", params(("tid" = String, Path, description = "Title identifier"), ("name" = String, Path, description = "Display name"), ("eid" = Option<String>, Query, description = "Entry ID; omit to change the title")), responses((status = 200, description = "Display name updated")))]
 pub async fn update_display_name(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -665,6 +681,7 @@ pub struct SortTitleQuery {
 }
 
 /// PUT /api/admin/sort_title/:tid - Update sort title for title or entry
+#[utoipa::path(put, path = "/api/admin/sort_title/{tid}", tag = "admin", summary = "Update sort title", params(("tid" = String, Path, description = "Title identifier"), ("eid" = Option<String>, Query, description = "Entry ID; omit to change the title"), ("name" = Option<String>, Query, description = "Sort title")), responses((status = 200, description = "Sort title updated")))]
 pub async fn update_sort_title(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -692,13 +709,14 @@ pub async fn update_sort_title(
 
 // ========== Bulk Progress API ==========
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct BulkProgressRequest {
     ids: Vec<String>,
 }
 
 /// PUT /api/bulk_progress/:action/:tid - Bulk update progress for multiple entries
 /// action: "read" (100%) or "unread" (0%)
+#[utoipa::path(put, path = "/api/bulk_progress/{action}/{tid}", tag = "progress", summary = "Update bulk progress", params(("action" = String, Path, description = "Progress action"), ("tid" = String, Path, description = "Title identifier")), request_body = BulkProgressRequest, responses((status = 200, description = "Progress updated")))]
 pub async fn bulk_progress(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
@@ -770,6 +788,7 @@ static THUMBNAIL_CURRENT: AtomicUsize = AtomicUsize::new(0);
 static THUMBNAIL_TOTAL: AtomicUsize = AtomicUsize::new(0);
 
 /// GET /api/admin/thumbnail_progress - Get thumbnail generation progress
+#[utoipa::path(get, path = "/api/admin/thumbnail_progress", tag = "admin", summary = "Get thumbnail progress", responses((status = 200, description = "Thumbnail progress returned")))]
 pub async fn thumbnail_progress(
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<serde_json::Value>> {
@@ -787,6 +806,7 @@ pub async fn thumbnail_progress(
 }
 
 /// POST /api/admin/generate_thumbnails - Start thumbnail generation
+#[utoipa::path(post, path = "/api/admin/generate_thumbnails", tag = "admin", summary = "Generate thumbnails", responses((status = 200, description = "Thumbnail generation started")))]
 pub async fn generate_thumbnails(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -849,6 +869,7 @@ pub struct CoverUploadQuery {
 }
 
 /// POST /api/admin/upload/cover - Upload custom cover image
+#[utoipa::path(post, path = "/api/admin/upload/cover", tag = "admin", summary = "Upload cover", params(("tid" = String, Query, description = "Title identifier"), ("eid" = Option<String>, Query, description = "Entry identifier; omit to set the title cover")), responses((status = 200, description = "Cover uploaded")))]
 pub async fn upload_cover(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
@@ -1057,6 +1078,7 @@ pub async fn user_edit_post_existing(
 }
 
 /// DELETE /api/admin/user/delete/:username - Delete user
+#[utoipa::path(delete, path = "/api/admin/user/delete/{username}", tag = "users", summary = "Delete user", params(("username" = String, Path, description = "Username")), responses((status = 200, description = "User deleted")))]
 pub async fn delete_user_api(
     State(state): State<AppState>,
     AdminOnly(current_username): AdminOnly,

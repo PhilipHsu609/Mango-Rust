@@ -6,10 +6,9 @@
 
 ## Open in-scope behavior gaps
 
-1. **API-reference surface.** Mango serves the `/api` page and `/openapi.json`; Rust registers neither. Documentation surface only, not a missing API operation.
-2. **Reader error branch.** Mango renders `reader-error.html.ecr` when an entry has `err_msg`, with next-entry and return-to-title actions. Rust's reader has no equivalent error page/branch.
-3. **HTTP and state differences.** CORS/preflight headers, 365-day versus 7-day sessions, login callback redirects, HTML error pages versus Rust text errors, route status/body behavior, image ETags/cache headers, scan timing, and cover upload validation/path semantics differ in inspected source; details are recorded in the route matrix.
-4. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Invalid archives are retained as error entries by Mango but dropped by the Rust scanner. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
+1. **Reader error branch.** Mango renders `reader-error.html.ecr` when an entry has `err_msg`, with next-entry and return-to-title actions. Rust's reader has no equivalent error page/branch.
+2. **HTTP and state differences.** CORS/preflight headers, 365-day versus 7-day sessions, login callback redirects, HTML error pages versus Rust text errors, route status/body behavior, image ETags/cache headers, scan timing, and cover upload validation/path semantics differ in inspected source; details are recorded in the route matrix.
+3. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Invalid archives are retained as error entries by Mango but dropped by the Rust scanner. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
 
 ## Resolved behavior gaps
 
@@ -20,6 +19,7 @@
 - **User-management CLI.** Clap derive implements `admin user add/delete/update/list` with Mango's username/password/admin options, optional update password, and shared `-c/--config` handling. HTTP-independent integration tests exercise CRUD, list output, help, and global config placement.
 
 - **User-input validation.** `src/storage.rs` enforces Mango's minimum username/password lengths, ASCII password requirement, and username character/first-character rules for create, update, and password-change operations. The storage boundary covers web/API and CLI callers; integration coverage checks invalid inputs and the exact minimum accepted values.
+- **API reference surface.** Rust serves the authenticated `/api` ReDoc page and `/openapi.json`; Utoipa generates OpenAPI from endpoint annotations. The spec describes Rust's registered HTTP API operations.
 
 ## Status vocabulary
 
@@ -42,7 +42,7 @@
 | `POST /admin/user/edit`, `POST /admin/user/edit/:original_username` | Same create/edit paths (`:username`); `src/routes/admin.rs` | Rename and Mango input validation rules are implemented; Mango's error-query redirect behavior remains different. |
 | `GET /reader/:title/:entry`, `GET /reader/:title/:entry/:page` | Same route shapes (`:tid/:eid[/page]`); `src/routes/reader.rs` | Different: Mango continuation detects errored entries and renders a dedicated error page; no Rust equivalent found. |
 | `GET /opds`, `GET /opds/book/:title_id` | Same paths; `src/routes/opds.rs` | Matched route/page purposes; Crystal omits error entries in title feed; exact rendered-field and error parity is not established. |
-| `GET /api` | No Rust route/template | Missing documentation page. |
+| `GET /api` | `GET /api`; `routes/reference.rs`, `templates/api.html` | Matched documentation page; ReDoc reads the generated `/openapi.json` spec. |
 | `GET /download/plugins`, `GET /admin/downloads`, `GET /admin/subscriptions` | No Rust route/template | Explicitly excluded download/plugin UI. |
 
 ### Crystal JSON/WebSocket API routes
@@ -69,7 +69,7 @@ Every declaration in `Mango/src/routes/api.cr` was compared to the complete Rust
 | `GET /api/tags`, `GET /api/tags/:tid`, `PUT/DELETE /api/admin/tags/:tid/:tag` | Same; `api.rs` tag handlers | Matched routes; Crystal uses title methods while Rust reads/writes storage directly; response parity not runtime-verified. |
 | `GET /api/admin/titles/missing`, `GET /api/admin/entries/missing` | Same; `admin.rs` | Matched routes; Rust success JSON includes nullable `error`; exact serialization differs. |
 | `DELETE /api/admin/titles/missing`, `/api/admin/entries/missing`, and `/:tid` or `/:eid` forms | Same semantic operations using `:id`; `admin.rs` | Matched routes; item deletion is a no-op when the record is absent/not unavailable in the observed implementations. |
-| `GET /openapi.json` | No Rust route | Missing API-reference endpoint. |
+| `GET /openapi.json` | Same path; `routes/reference.rs` | Matched API-reference endpoint; Utoipa generates the document from Rust handler annotations. |
 | `WS /api/admin/mangadex/queue`, `GET /api/admin/mangadex/queue`, `POST /api/admin/mangadex/queue/:action` | No Rust route | Explicitly excluded MangaDex/download queue. Actions include delete/retry/pause/resume. |
 | Plugin routes: `GET /api/admin/plugin`, `/plugin/info`, `/plugin/search`, `/plugin/list`; `GET/POST/DELETE /api/admin/plugin/subscriptions`; `POST /api/admin/plugin/subscriptions/update`, `/api/admin/plugin/download` | No Rust route | Explicitly excluded plugin/source discovery, chapter downloads, and subscriptions. |
 
@@ -106,7 +106,7 @@ Every declaration in `Mango/src/routes/api.cr` was compared to the complete Rust
 | `views/layout.html.ecr` | `templates/base.html` | Matched layout purpose; Rust has active-nav state. Crystal and Rust templates reference different static URL roots; both layouts expose links to excluded download/subscription paths. |
 | `views/reader.html.ecr` | `templates/reader.html` | Matched page; both active pages load the corresponding Alpine reader client. |
 | `views/opds/{index,title}.xml.ecr` | `templates/opds_{index,title}.xml` | Matched feeds; title feed omits Crystal error entries and maps MIME/display fields differently or remains unverified. |
-| `views/api.html.ecr` | No Rust template/route | Missing docs page. |
+| `views/api.html.ecr` | `templates/api.html`, `routes/reference.rs` | Matched API documentation page; both render ReDoc and point it at `/openapi.json`. |
 | `views/reader-error.html.ecr` | No Rust template/route | Missing reachable Crystal reader error branch. |
 | `views/message.html.ecr` | Rust `Error::into_response` in `src/lib.rs` returns status plus text; no HTML error page | Different: Mango's 404/500 and utility error helpers render this fragment inside the shared layout. |
 | `views/download-manager.html.ecr`, `plugin-download.html.ecr`, `subscription-manager.html.ecr` | No Rust page counterparts | Explicitly excluded download/plugin UI. |
@@ -135,7 +135,7 @@ Mango's `queue.cr`, `plugin/{plugin,downloader,subscriptions,updater}.cr`, plugi
 
 - Crystal runtime: `Mango/src/{archive,config,logger,main_fiber,mango,queue,rename,server,storage,upload}.cr`; `Mango/src/handlers/{auth_handler,cors_handler,log_handler,static_handler,upload_handler}.cr`; `Mango/src/library/{archive_entry,cache,dir_entry,entry,library,title,types}.cr`; `Mango/src/plugin/{downloader,plugin,subscriptions,updater}.cr`; `Mango/src/routes/{admin,api,main,opds,reader}.cr`; `Mango/src/util/{chapter_sort,numeric_sort,proxy,signature,util,validation,web}.cr`.
 - Crystal presentation/assets: every `Mango/src/views/**/*.ecr`, `Mango/public/js/*.js`, `Mango/public/css/*.less`, `Mango/public/{manifest.json,robots.txt,favicon.ico}`, and `Mango/public/img/**`.
-- Rust implementation: `src/{auth,config,lib,main,server,storage,util}.rs`; `src/library/{cache/{file,key,lru,mod},entry,manager,mod,progress,progress_cache,title}.rs`; `src/routes/{admin,api,book,login,main,mod,opds,reader,recently_added}.rs`; inline `error` module in `src/lib.rs`.
+- Rust implementation: `src/{auth,config,lib,main,server,storage,util}.rs`; `src/library/{cache/{file,key,lru,mod},entry,manager,mod,progress,progress_cache,title}.rs`; `src/routes/{admin,api,book,login,main,mod,opds,reader,recently_added,reference}.rs`; inline `error` module in `src/lib.rs`.
 - Rust presentation/assets: all files under `templates/` and `templates/components/`, `static/js/*.js`, `static/css/*.less`, `static/{manifest.json,robots.txt,favicon.ico}`, and `static/img/**`. `templates/reader.js` is present but no runtime reference was found; it is not the active reader script.
 - Schema/build sources: all 12 Crystal migrations (`users.1`, `ids.2`, `thumbnails.3`, `tags.4`, `titles.5`, `foreign_keys.6`, `ids_signature.7`, `relative_path.8`, `unavailable.9`, `relative_path_fix.10`, `md_account.11`, `sort_title.12`) and Rust `migrations/001_users.sql` through `007_dimensions.sql`; `Mango/gulpfile.js`, `Mango/package.json`, root `package.json`, and `Dockerfile`.
 

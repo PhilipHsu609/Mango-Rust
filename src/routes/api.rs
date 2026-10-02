@@ -16,6 +16,7 @@ use crate::{
 
 /// API route: GET /api/library
 /// Returns Mango's library object with title and entry JSON.
+#[utoipa::path(get, path = "/api/library", tag = "library", summary = "Get the library", params(("depth" = Option<i32>, Query, description = "Maximum nested-title depth"), ("percentage" = Option<String>, Query, description = "Include reading percentages"), ("slim" = Option<String>, Query, description = "Use the slim response format")), responses((status = 200, description = "Library returned")))]
 pub async fn get_library(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
@@ -108,6 +109,7 @@ pub async fn get_library(
 
 /// API route: GET /api/book/:tid
 /// Returns Mango's title JSON contract.
+#[utoipa::path(get, path = "/api/book/{tid}", tag = "library", summary = "Get a title", params(("tid" = String, Path, description = "Title ID"), ("depth" = Option<i32>, Query, description = "Maximum nested-title depth"), ("percentage" = Option<String>, Query, description = "Include reading percentages"), ("slim" = Option<String>, Query, description = "Use the slim response format")), responses((status = 200, description = "Title returned")))]
 pub async fn get_title(
     State(state): State<AppState>,
     Path(title_id): Path<String>,
@@ -155,13 +157,14 @@ pub struct CatalogQuery {
     slim: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct SortOptionUpdate {
     tid: Option<String>,
     sort: String,
     ascend: bool,
 }
 
+#[utoipa::path(get, path = "/api/sort_opt", tag = "library", summary = "Get sort options", params(("tid" = Option<String>, Query, description = "Title ID; omit for library defaults")), responses((status = 200, description = "Sort options returned")))]
 pub async fn get_sort_opt(
     State(state): State<AppState>,
     Query(query): Query<SortOptionQuery>,
@@ -202,6 +205,7 @@ pub struct SortOptionQuery {
     tid: Option<String>,
 }
 
+#[utoipa::path(put, path = "/api/sort_opt", tag = "library", summary = "Update sort options", request_body = SortOptionUpdate, responses((status = 200, description = "Sort options updated")))]
 pub async fn update_sort_opt(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
@@ -249,6 +253,7 @@ fn order_continue_candidates<T>(entries: &mut Vec<(Option<i64>, T, f32)>) {
 
 /// API route: GET /api/page/:tid/:eid/:page
 /// Serves a specific page image from an entry
+#[utoipa::path(get, path = "/api/page/{tid}/{eid}/{page}", tag = "reader", summary = "Get a page image", params(("tid" = String, Path, description = "Title ID"), ("eid" = String, Path, description = "Entry ID"), ("page" = usize, Path, description = "Page number")), responses((status = 200, description = "Page image returned")))]
 pub async fn get_page(
     State(state): State<AppState>,
     Path((title_id, entry_id, page)): Path<(String, String, usize)>,
@@ -298,6 +303,7 @@ pub async fn get_page(
 }
 
 /// GET /api/cover/:tid/:eid - Get manga entry cover/thumbnail
+#[utoipa::path(get, path = "/api/cover/{tid}/{eid}", tag = "reader", summary = "Get an entry cover", params(("tid" = String, Path, description = "Title ID"), ("eid" = String, Path, description = "Entry ID")), responses((status = 200, description = "Cover returned")))]
 pub async fn get_cover(
     State(state): State<AppState>,
     Path((title_id, entry_id)): Path<(String, String)>,
@@ -359,6 +365,7 @@ pub async fn get_cover(
 
 /// API route: GET /api/library/continue_reading
 /// Returns the last 8 entries the user has read, sorted by last_read timestamp
+#[utoipa::path(get, path = "/api/library/continue_reading", tag = "library", summary = "Get continue-reading entries", responses((status = 200, description = "Entries returned")))]
 pub async fn continue_reading(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
@@ -423,6 +430,7 @@ pub async fn continue_reading(
 
 /// API route: GET /api/library/start_reading
 /// Returns unread titles (0% progress) for the user
+#[utoipa::path(get, path = "/api/library/start_reading", tag = "library", summary = "Get unread titles", responses((status = 200, description = "Titles returned")))]
 pub async fn start_reading(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
@@ -477,6 +485,7 @@ struct RecentEntryData {
 
 /// API route: GET /api/library/recently_added
 /// Returns Mango's `{success, items}` response.
+#[utoipa::path(get, path = "/api/library/recently_added", tag = "library", summary = "Get recently added entries", responses((status = 200, description = "Entries returned")))]
 pub async fn recently_added(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
@@ -986,6 +995,7 @@ fn humanize_bytes(bytes: u64) -> String {
 }
 
 /// API route: GET /api/tags
+#[utoipa::path(get, path = "/api/tags", tag = "library", summary = "List tags", responses((status = 200, description = "Tags returned")))]
 pub async fn list_tags(
     State(state): State<AppState>,
     _username: crate::auth::Username,
@@ -997,6 +1007,7 @@ pub async fn list_tags(
 }
 
 /// API route: GET /api/tags/:tid
+#[utoipa::path(get, path = "/api/tags/{tid}", tag = "library", summary = "Get title tags", params(("tid" = String, Path, description = "Title ID")), responses((status = 200, description = "Tags returned")))]
 pub async fn get_title_tags(
     State(state): State<AppState>,
     Path(title_id): Path<String>,
@@ -1020,6 +1031,7 @@ fn api_failure(error: String) -> Json<serde_json::Value> {
 }
 
 /// API route: PUT /api/admin/tags/:tid/:tag
+#[utoipa::path(put, path = "/api/admin/tags/{tid}/{tag}", tag = "library", summary = "Add a tag to a title", params(("tid" = String, Path, description = "Title ID"), ("tag" = String, Path, description = "Tag")), responses((status = 200, description = "Tag added")))]
 pub async fn add_tag(
     State(state): State<AppState>,
     Path((title_id, tag)): Path<(String, String)>,
@@ -1035,6 +1047,7 @@ pub async fn add_tag(
 }
 
 /// API route: DELETE /api/admin/tags/:tid/:tag
+#[utoipa::path(delete, path = "/api/admin/tags/{tid}/{tag}", tag = "library", summary = "Delete a tag from a title", params(("tid" = String, Path, description = "Title ID"), ("tag" = String, Path, description = "Tag")), responses((status = 200, description = "Tag deleted")))]
 pub async fn delete_tag(
     State(state): State<AppState>,
     Path((title_id, tag)): Path<(String, String)>,
@@ -1051,6 +1064,7 @@ pub async fn delete_tag(
 
 /// API route: GET /api/download/:tid/:eid
 /// Download the original archive file for an entry (used by OPDS clients)
+#[utoipa::path(get, path = "/api/download/{tid}/{eid}", tag = "reader", summary = "Download an entry", params(("tid" = String, Path, description = "Title ID"), ("eid" = String, Path, description = "Entry ID")), responses((status = 200, description = "Entry downloaded")))]
 pub async fn download_entry(
     State(state): State<AppState>,
     Path((title_id, entry_id)): Path<(String, String)>,
@@ -1181,6 +1195,7 @@ fn dimensions_response(
 
 /// API route: GET /api/dimensions/:tid/:eid
 /// Returns the image dimensions of all pages in an entry (used by reader for layout)
+#[utoipa::path(get, path = "/api/dimensions/{tid}/{eid}", tag = "reader", summary = "Get entry page dimensions", params(("tid" = String, Path, description = "Title ID"), ("eid" = String, Path, description = "Entry ID")), responses((status = 200, description = "Dimensions returned")))]
 pub async fn get_dimensions(
     State(state): State<AppState>,
     Path((title_id, entry_id)): Path<(String, String)>,
@@ -1332,6 +1347,7 @@ pub struct ProgressQuery {
 
 /// API route: PUT /api/progress/:tid/:page?eid=...
 /// Update one entry or mark all entries in a title read/unread.
+#[utoipa::path(put, path = "/api/progress/{tid}/{page}", tag = "progress", summary = "Update reading progress", params(("tid" = String, Path, description = "Title ID"), ("page" = i32, Path, description = "Page number"), ("eid" = Option<String>, Query, description = "Entry ID; omit to update all entries")), responses((status = 200, description = "Progress updated")))]
 pub async fn update_progress(
     State(state): State<AppState>,
     Path((title_id, page)): Path<(String, i32)>,

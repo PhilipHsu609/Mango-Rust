@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tower_sessions::{Expiry, SessionManagerLayer};
 use tower_sessions_sqlx_store::SqliteStore;
+use utoipa::OpenApi;
 
 use crate::{
     auth::require_auth,
@@ -15,18 +16,19 @@ use crate::{
     error::Result,
     library::{spawn_periodic_scanner, Library},
     routes::{
-        add_tag, admin_dashboard, api_login, bulk_progress, cache_clear_api, cache_debug_page,
-        cache_invalidate_api, cache_load_library_api, cache_save_library_api, change_password_api,
-        change_password_page, continue_reading, create_user, delete_all_missing_entries,
-        delete_all_missing_titles, delete_missing_entry, delete_missing_title, delete_tag,
-        delete_user, delete_user_api, download_entry, generate_thumbnails, get_book, get_cover,
-        get_dimensions, get_library, get_login, get_missing_entries, get_missing_titles, get_page,
-        get_sort_opt, get_title, get_title_tags, get_users, home, library as library_page,
-        list_tags, list_tags_page, logout, missing_items_page, opds_index, opds_title, post_login,
-        reader, reader_continue, recently_added, scan_library, start_reading, thumbnail_progress,
+        add_tag, admin_dashboard, api_login, api_reference, bulk_progress, cache_clear_api,
+        cache_debug_page, cache_invalidate_api, cache_load_library_api, cache_save_library_api,
+        change_password_api, change_password_page, continue_reading, create_user,
+        delete_all_missing_entries, delete_all_missing_titles, delete_missing_entry,
+        delete_missing_title, delete_tag, delete_user, delete_user_api, download_entry,
+        generate_thumbnails, get_book, get_cover, get_dimensions, get_library, get_login,
+        get_missing_entries, get_missing_titles, get_page, get_sort_opt, get_title, get_title_tags,
+        get_users, home, library as library_page, list_tags, list_tags_page, logout,
+        missing_items_page, opds_index, opds_title, openapi_spec, post_login, reader,
+        reader_continue, recently_added, scan_library, start_reading, thumbnail_progress,
         update_display_name, update_progress, update_sort_opt, update_sort_title, update_user,
         upload_cover, user_edit_page, user_edit_post, user_edit_post_existing, users_page,
-        view_tag_page,
+        view_tag_page, ApiDoc,
     },
     Storage,
 };
@@ -138,9 +140,12 @@ pub async fn run(config: Config) -> Result<()> {
         .with_secure(false) // Set to true in production with HTTPS
         .with_expiry(Expiry::OnInactivity(time::Duration::days(7)));
     // Build router
+    let api_document = axum::body::Bytes::from(ApiDoc::openapi().to_json()?);
     let app = Router::new()
         // Public routes (no auth required)
         .route("/login", get(get_login).post(post_login))
+        .route("/api", get(api_reference))
+        .route("/openapi.json", get(openapi_spec))
         .route("/api/login", post(api_login))
         // Static files (no auth required)
         .nest_service("/static", ServeDir::new("static"))
@@ -234,6 +239,7 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/admin/thumbnail_progress", get(thumbnail_progress))
         .route("/api/admin/generate_thumbnails", post(generate_thumbnails))
         // Add state and middleware
+        .layer(axum::Extension(api_document))
         .layer(middleware::from_fn_with_state(
             app_state.clone(),
             require_auth,

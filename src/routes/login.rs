@@ -25,7 +25,7 @@ use crate::{
 struct LoginTemplate;
 
 /// Login form data
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct LoginForm {
     username: String,
     password: String,
@@ -73,6 +73,7 @@ pub async fn post_login(
 }
 
 /// POST /api/login - Authenticate using Mango's JSON API contract.
+#[utoipa::path(post, path = "/api/login", tag = "users", summary = "Log in", request_body = LoginForm, responses((status = 200, description = "Login succeeded"), (status = 403, description = "Login failed")))]
 pub async fn api_login(
     State(state): State<AppState>,
     session: Session,

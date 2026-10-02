@@ -610,13 +610,14 @@ pub async fn change_password_page(user: User) -> Result<Html<String>> {
 }
 
 /// Request body for change password API endpoint
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
 pub struct ChangePasswordRequest {
     pub current_password: String,
     pub new_password: String,
 }
 
 /// POST /api/user/change-password - Change user's password (requires authentication)
+#[utoipa::path(post, path = "/api/user/change-password", tag = "users", summary = "Change password", request_body = ChangePasswordRequest, responses((status = 200, description = "Password changed")))]
 pub async fn change_password_api(
     State(state): State<AppState>,
     user: User,

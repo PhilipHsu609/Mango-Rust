@@ -5,6 +5,7 @@ pub mod login;
 pub mod main;
 pub mod opds;
 pub mod reader;
+pub mod reference;
 
 mod recently_added;
 
@@ -29,6 +30,7 @@ pub use main::{
 pub use opds::{opds_index, opds_title};
 pub use reader::{reader, reader_continue};
 
+pub use reference::{api_reference, openapi_spec, ApiDoc};
 /// Trait for types that have a progress field (as f32 percentage)
 pub trait HasProgress {
     fn progress(&self) -> f32;

@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 # Web server
 axum = { version = "0.7", features = ["multipart"] }
+utoipa = { version = "5", features = ["macros"] }
 tokio = { version = "1.37", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
