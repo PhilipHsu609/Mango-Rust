@@ -6,7 +6,10 @@ RUN apk add --no-cache musl-dev sqlite-dev nodejs npm libarchive-dev pkgconfig
 
 WORKDIR /build
 
-# Copy dependency manifests first (layer caching optimization)
+# Install frontend dependencies before source changes to preserve the npm cache.
+COPY package.json package-lock.json ./
+RUN npm ci
+
 COPY Cargo.toml Cargo.lock ./
 COPY migrations ./migrations
 
@@ -15,16 +18,14 @@ COPY src ./src
 COPY templates ./templates
 COPY static ./static
 
-# Copy sqlx offline data for compile-time query verification
+# Copy SQLx metadata used by compile-time query checks.
 COPY .sqlx ./.sqlx
 
-# Copy package files and build CSS
-COPY package.json package-lock.json ./
-RUN npm ci && npm run build
+# Build frontend assets
+RUN npm run build
 
-# Use dynamic musl linking for runtime libarchive; keep SQLx offline
+# Use dynamic musl linking for runtime libarchive
 ENV RUSTFLAGS='-C target-feature=-crt-static'
-ENV SQLX_OFFLINE=true
 
 # Build binary
 RUN --mount=type=cache,id=mango-rust-registry,target=/usr/local/cargo/registry,sharing=locked \

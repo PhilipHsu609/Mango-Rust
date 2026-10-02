@@ -4,6 +4,8 @@ target/
 .env
 .env.*
 tests/
+node_modules/
+static/dist/
 docs/
 *.md
 !README.md
