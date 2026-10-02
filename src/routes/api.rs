@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{rejection::JsonRejection, Path, Query, State},
     http::{header, StatusCode},
     response::IntoResponse,
     Json,
@@ -34,7 +34,7 @@ pub async fn get_library(
         Some(&library_sort),
         Some(if library_ascending { "1" } else { "0" }),
     );
-    let depth = params.depth.unwrap_or(-1);
+    let depth = catalog_depth(params.depth.as_deref());
     let mut titles = Vec::new();
     let mut ordered_titles = Vec::with_capacity(lib.get_titles().len());
     for title in lib.get_titles() {
@@ -135,7 +135,7 @@ pub async fn get_title(
         lib.progress_cache(),
         &username,
         title_parent_summaries(&lib, title),
-        params.depth.unwrap_or(-1),
+        catalog_depth(params.depth.as_deref()),
         params.percentage.is_some(),
         params.slim.is_some(),
     )
@@ -152,9 +152,13 @@ pub async fn get_title(
 
 #[derive(Deserialize)]
 pub struct CatalogQuery {
-    depth: Option<i32>,
+    depth: Option<String>,
     percentage: Option<String>,
     slim: Option<String>,
+}
+
+fn catalog_depth(depth: Option<&str>) -> i32 {
+    depth.and_then(|value| value.parse().ok()).unwrap_or(-1)
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -209,8 +213,12 @@ pub struct SortOptionQuery {
 pub async fn update_sort_opt(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
-    Json(request): Json<SortOptionUpdate>,
+    request: std::result::Result<Json<SortOptionUpdate>, JsonRejection>,
 ) -> Json<serde_json::Value> {
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(error) => return api_failure(error.body_text()),
+    };
     let dir = if let Some(title_id) = request.tid.as_deref() {
         let lib = state.library.load();
         let Some(title) = lib.get_title(title_id) else {
@@ -242,8 +250,8 @@ pub async fn update_sort_opt(
     }
 }
 
-fn page_index(page: usize) -> Option<usize> {
-    page.checked_sub(1)
+fn page_index(page: i32) -> Option<usize> {
+    usize::try_from(page.checked_sub(1)?).ok()
 }
 
 fn order_continue_candidates<T>(entries: &mut Vec<(Option<i64>, T, f32)>) {
@@ -253,12 +261,22 @@ fn order_continue_candidates<T>(entries: &mut Vec<(Option<i64>, T, f32)>) {
 
 /// API route: GET /api/page/:tid/:eid/:page
 /// Serves a specific page image from an entry
-#[utoipa::path(get, path = "/api/page/{tid}/{eid}/{page}", tag = "reader", summary = "Get a page image", params(("tid" = String, Path, description = "Title ID"), ("eid" = String, Path, description = "Entry ID"), ("page" = usize, Path, description = "Page number")), responses((status = 200, description = "Page image returned")))]
+#[utoipa::path(get, path = "/api/page/{tid}/{eid}/{page}", tag = "reader", summary = "Get a page image", params(("tid" = String, Path, description = "Title ID"), ("eid" = String, Path, description = "Entry ID"), ("page" = i32, Path, description = "Page number")), responses((status = 200, description = "Page image returned")))]
 pub async fn get_page(
     State(state): State<AppState>,
-    Path((title_id, entry_id, page)): Path<(String, String, usize)>,
+    Path((title_id, entry_id, page)): Path<(String, String, String)>,
     headers: axum::http::HeaderMap,
 ) -> Result<axum::response::Response> {
+    let page = match page.parse::<i32>() {
+        Ok(page) => page,
+        Err(_) => {
+            return Ok((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Invalid Int32: {page}"),
+            )
+                .into_response());
+        }
+    };
     let lib = state.library.load();
     let Some(title) = lib.get_title(&title_id) else {
         return Ok((
@@ -278,7 +296,10 @@ pub async fn get_page(
     let Some(page_idx) = page_index(page) else {
         return Ok((
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load page 0 of `{}/{}`", title.title, entry.title),
+            format!(
+                "Failed to load page {page} of `{}/{}`",
+                title.title, entry.title
+            ),
         )
             .into_response());
     };
@@ -1344,7 +1365,7 @@ pub struct ProgressQuery {
 #[utoipa::path(put, path = "/api/progress/{tid}/{page}", tag = "progress", summary = "Update reading progress", params(("tid" = String, Path, description = "Title ID"), ("page" = i32, Path, description = "Page number"), ("eid" = Option<String>, Query, description = "Entry ID; omit to update all entries")), responses((status = 200, description = "Progress updated")))]
 pub async fn update_progress(
     State(state): State<AppState>,
-    Path((title_id, page)): Path<(String, i32)>,
+    Path((title_id, page)): Path<(String, String)>,
     Query(query): Query<ProgressQuery>,
     crate::auth::Username(username): crate::auth::Username,
 ) -> Json<serde_json::Value> {
@@ -1354,6 +1375,15 @@ pub async fn update_progress(
             "success": false,
             "error": "Nil assertion failed"
         }));
+    };
+    let page = match page.parse::<i32>() {
+        Ok(page) => page,
+        Err(_) => {
+            return Json(serde_json::json!({
+                "success": false,
+                "error": format!("Invalid Int32: {page}")
+            }));
+        }
     };
 
     if let Some(entry_id) = query.eid {

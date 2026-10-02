@@ -57,6 +57,46 @@ describe('Admin API', () => {
     }
   });
 
+  it('matches Mango when deleting the current or an absent user', async () => {
+    const username = `self-delete-${Date.now()}`;
+    const password = 'self-delete-password';
+    const createResponse = await api.post('/api/admin/users', {
+      username,
+      password,
+      is_admin: true,
+    });
+    expect(createResponse.status).toBe(201);
+
+    const loginResponse = await fetch(`${BASE_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    expect(loginResponse.status).toBe(200);
+    const cookie = loginResponse.headers.get('set-cookie')?.split(';')[0];
+    expect(cookie).toBeDefined();
+
+    try {
+      const selfDeleteResponse = await fetch(
+        `${BASE_URL}/api/admin/user/delete/${encodeURIComponent(username)}`,
+        { method: 'DELETE', headers: { Cookie: cookie! } },
+      );
+      expect(selfDeleteResponse.status).toBe(200);
+      expect(await selfDeleteResponse.json()).toEqual({ success: true });
+
+      const absentDeleteResponse = await fetch(
+        `${BASE_URL}/api/admin/user/delete/${encodeURIComponent(username)}`,
+        { method: 'DELETE', headers: { Cookie: getSessionCookie()! } },
+      );
+      expect(absentDeleteResponse.status).toBe(200);
+      expect(await absentDeleteResponse.json()).toEqual({ success: true });
+    } finally {
+      await fetch(`${BASE_URL}/api/admin/users/${encodeURIComponent(username)}`, {
+        method: 'DELETE',
+        headers: { Cookie: getSessionCookie()! },
+      });
+    }
+  });
   it('returns a Mango-style JSON error for an invalid display-name target', async () => {
     const response = await api.put('/api/admin/display_name/nonexistent-title/name');
     expect(response.status).toBe(200);

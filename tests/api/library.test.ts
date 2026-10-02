@@ -27,6 +27,27 @@ describe('Library API', () => {
     });
   });
 
+  it('uses Mango full-depth defaults for nonnumeric depth parameters', async () => {
+    const defaultLibraryResponse = await api.get('/api/library');
+    expect(defaultLibraryResponse.status).toBe(200);
+    const defaultLibrary = await defaultLibraryResponse.json();
+
+    const invalidDepthResponse = await api.get('/api/library?depth=not-a-number');
+    expect(invalidDepthResponse.status).toBe(200);
+    expect(await invalidDepthResponse.json()).toEqual(defaultLibrary);
+
+    const title = defaultLibrary.titles[0];
+    const defaultBookResponse = await api.get(`/api/book/${encodeURIComponent(title.id)}`);
+    expect(defaultBookResponse.status).toBe(200);
+    const defaultBook = await defaultBookResponse.json();
+
+    const invalidBookDepthResponse = await api.get(
+      `/api/book/${encodeURIComponent(title.id)}?depth=not-a-number`,
+    );
+    expect(invalidBookDepthResponse.status).toBe(200);
+    expect(await invalidBookDepthResponse.json()).toEqual(defaultBook);
+  });
+
   describe('GET /api/book/:tid', () => {
     it('returns title details with entries for a populated title', async () => {
       const libraryResponse = await api.get('/api/library');
@@ -87,6 +108,54 @@ describe('Library API', () => {
       success: false,
       error: 'Nil assertion failed',
     });
+  });
+  it('matches Mango numeric-path parse failures', async () => {
+    const libraryResponse = await api.get('/api/library');
+    const library = await libraryResponse.json();
+    const title = library.titles[0];
+    const progressResponse = await fetch(
+      `${BASE_URL}/api/progress/${encodeURIComponent(title.id)}/not-a-page?eid=missing-entry`,
+      {
+        method: 'PUT',
+        headers: { Cookie: getSessionCookie()! },
+      },
+    );
+    expect(progressResponse.status).toBe(200);
+    expect(await progressResponse.json()).toEqual({
+      success: false,
+      error: 'Invalid Int32: not-a-page',
+    });
+
+    const pageResponse = await api.get(
+      '/api/page/nonexistent-title/nonexistent-entry/not-a-page',
+    );
+    expect(pageResponse.status).toBe(500);
+    expect(await pageResponse.text()).toBe('Invalid Int32: not-a-page');
+  });
+  it('keeps malformed sort and bulk-progress JSON failures in Mango envelopes', async () => {
+    const response = await api.get('/api/library');
+    const library = await response.json();
+    const title = library.titles.find(
+      (item: { entries?: unknown[] }) => item.entries?.length,
+    );
+    expect(title).toBeDefined();
+    if (!title) throw new Error('The test library must contain a title with entries');
+
+    const cookie = getSessionCookie()!;
+    for (const path of [
+      '/api/sort_opt',
+      `/api/bulk_progress/read/${encodeURIComponent(title.id)}`,
+    ]) {
+      const malformedResponse = await fetch(`${BASE_URL}${path}`, {
+        method: 'PUT',
+        headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+        body: '{',
+      });
+      expect(malformedResponse.status).toBe(200);
+      const body = await malformedResponse.json();
+      expect(body.success).toBe(false);
+      expect(typeof body.error).toBe('string');
+    }
   });
   it('returns Mango success bodies while adding and deleting title tags', async () => {
     const libraryResponse = await api.get('/api/library');

@@ -1,6 +1,9 @@
 use askama::Template;
 use axum::{
-    extract::{rejection::FormRejection, Path, State},
+    extract::{
+        rejection::{FormRejection, JsonRejection},
+        Path, State,
+    },
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     Json,
@@ -749,8 +752,17 @@ pub async fn bulk_progress(
     State(state): State<AppState>,
     crate::auth::Username(username): crate::auth::Username,
     Path((action, title_id)): Path<(String, String)>,
-    Json(request): Json<BulkProgressRequest>,
+    request: std::result::Result<Json<BulkProgressRequest>, JsonRejection>,
 ) -> Result<Json<serde_json::Value>> {
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(Json(serde_json::json!({
+                "success": false,
+                "error": error.body_text()
+            })));
+        }
+    };
     let lib = state.library.load();
 
     let Some(title) = lib.get_title(&title_id) else {
@@ -1134,33 +1146,9 @@ pub async fn user_edit_post_existing(
 #[utoipa::path(delete, path = "/api/admin/user/delete/{username}", tag = "users", summary = "Delete user", params(("username" = String, Path, description = "Username")), responses((status = 200, description = "User deleted")))]
 pub async fn delete_user_api(
     State(state): State<AppState>,
-    AdminOnly(current_username): AdminOnly,
+    _admin: AdminOnly,
     Path(username): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
-    // Prevent self-deletion
-    if username == current_username {
-        return Ok(Json(serde_json::json!({
-            "success": false,
-            "error": "Cannot delete yourself"
-        })));
-    }
-
-    match state.storage.username_exists(&username).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return Ok(Json(serde_json::json!({
-                "success": false,
-                "error": format!("User '{}' not found", username)
-            })));
-        }
-        Err(error) => {
-            return Ok(Json(serde_json::json!({
-                "success": false,
-                "error": error.to_string()
-            })));
-        }
-    }
-
     match state.storage.delete_user(&username).await {
         Ok(()) => {
             tracing::info!("Deleted user '{}'", username);
