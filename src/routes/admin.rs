@@ -140,21 +140,17 @@ pub async fn scan_library(
         &state.config,
     );
     new_lib.scan().await?;
-    let stats = new_lib.stats();
+    let titles = new_lib.get_titles().len();
 
     // Atomically swap the new library in
     state.library.store(std::sync::Arc::new(new_lib));
 
     let elapsed = start.elapsed().as_millis();
 
-    tracing::info!(
-        "Library scan completed: {} titles in {}ms",
-        stats.titles,
-        elapsed
-    );
+    tracing::info!("Library scan completed: {} titles in {}ms", titles, elapsed);
 
     Ok(Json(ScanResponse {
-        titles: stats.titles,
+        titles,
         milliseconds: elapsed,
     }))
 }
@@ -624,38 +620,42 @@ pub async fn update_display_name(
     Path((title_id, name)): Path<(String, String)>,
     axum::extract::Query(query): axum::extract::Query<DisplayNameQuery>,
 ) -> Result<Json<serde_json::Value>> {
-    let decoded_name = percent_encoding::percent_decode_str(&name)
-        .decode_utf8()
-        .map_err(|e| crate::error::Error::BadRequest(format!("Invalid UTF-8 in name: {}", e)))?
-        .to_string();
+    let (title_path, entry_title) = {
+        let lib = state.library.load();
+        let title = lib
+            .get_title(&title_id)
+            .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {title_id}")))?;
+        let entry_title = if let Some(entry_id) = query.eid.as_deref() {
+            Some(
+                lib.get_entry(&title_id, entry_id)
+                    .ok_or_else(|| {
+                        crate::error::Error::NotFound(format!("Entry not found: {entry_id}"))
+                    })?
+                    .title
+                    .clone(),
+            )
+        } else {
+            None
+        };
+        (title.path.clone(), entry_title)
+    };
 
-    // Update display name in database
-    if let Some(entry_id) = query.eid {
-        state
-            .storage
-            .update_entry_display_name(&entry_id, &decoded_name)
-            .await?;
-        tracing::info!(
-            "Updated entry {} display name to '{}'",
-            entry_id,
-            decoded_name
-        );
+    let mut info = crate::library::progress::TitleInfo::load(&title_path).await?;
+    if let Some(entry_title) = entry_title {
+        info.entry_display_name.insert(entry_title, name);
     } else {
-        state
-            .storage
-            .update_title_display_name(&title_id, &decoded_name)
-            .await?;
-        tracing::info!(
-            "Updated title {} display name to '{}'",
-            title_id,
-            decoded_name
-        );
+        info.display_name = name;
     }
+    info.save(&title_path).await?;
+    state
+        .library
+        .load()
+        .progress_cache()
+        .load_title(&title_id, &title_path)
+        .await?;
 
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "error": null
-    })))
+    tracing::info!("Updated display name for title {}", title_id);
+    Ok(Json(serde_json::json!({ "success": true })))
 }
 
 #[derive(Deserialize)]
@@ -687,10 +687,7 @@ pub async fn update_sort_title(
         tracing::info!("Updated title {} sort title to {:?}", title_id, sort_title);
     }
 
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "error": null
-    })))
+    Ok(Json(serde_json::json!({ "success": true })))
 }
 
 // ========== Bulk Progress API ==========
@@ -724,25 +721,29 @@ pub async fn bulk_progress(
         })));
     }
 
-    let cache = lib.progress_cache();
-    for entry_id in &request.ids {
-        if let Some(entry) = lib.get_entry(&title_id, entry_id) {
-            let page = match action.as_str() {
-                "read" => entry.pages as i32,
-                "unread" => 0i32,
-                _ => unreachable!(),
-            };
-
-            if let Err(error) = cache
-                .save_progress(&title_id, &title.path, &username, &entry.title, page)
-                .await
-            {
-                return Ok(Json(serde_json::json!({
-                    "success": false,
-                    "error": error.to_string()
-                })));
-            }
-        }
+    let updates: Vec<(String, i32)> = request
+        .ids
+        .iter()
+        .filter_map(|entry_id| {
+            lib.get_entry(&title_id, entry_id).map(|entry| {
+                let page = if action == "read" {
+                    entry.pages as i32
+                } else {
+                    0
+                };
+                (entry.title.clone(), page)
+            })
+        })
+        .collect();
+    if let Err(error) = lib
+        .progress_cache()
+        .save_bulk_progress(&title_id, &title.path, &username, &updates)
+        .await
+    {
+        return Ok(Json(serde_json::json!({
+            "success": false,
+            "error": error.to_string()
+        })));
     }
 
     lib.invalidate_cache_for_progress(&username).await;
@@ -755,8 +756,7 @@ pub async fn bulk_progress(
     );
 
     Ok(Json(serde_json::json!({
-        "success": true,
-        "error": null
+        "success": true
     })))
 }
 
@@ -854,80 +854,116 @@ pub async fn upload_cover(
     AdminOnly(_username): AdminOnly,
     axum::extract::Query(query): axum::extract::Query<CoverUploadQuery>,
     mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>> {
-    // Get the file from multipart
-    let mut file_data: Option<Vec<u8>> = None;
-    let mut content_type: Option<String> = None;
+) -> axum::response::Response {
+    let result: Result<()> = async {
+        use tokio::io::AsyncWriteExt;
 
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| crate::error::Error::BadRequest(format!("Failed to parse multipart: {}", e)))?
-    {
-        if field.name() == Some("file") {
-            content_type = field.content_type().map(|s| s.to_string());
-            file_data = Some(
-                field
-                    .bytes()
-                    .await
-                    .map_err(|e| {
-                        crate::error::Error::BadRequest(format!("Failed to read file: {}", e))
-                    })?
-                    .to_vec(),
-            );
-            break;
+        let mut field = loop {
+            match multipart.next_field().await.map_err(|error| {
+                crate::error::Error::BadRequest(format!("Failed to parse multipart: {error}"))
+            })? {
+                Some(field) if field.name() == Some("file") => break field,
+                Some(_) => {}
+                None => {
+                    return Err(crate::error::Error::BadRequest(
+                        "No part with name `file` found".to_string(),
+                    ))
+                }
+            }
+        };
+        let file_name = field
+            .file_name()
+            .ok_or_else(|| crate::error::Error::BadRequest("No file uploaded".to_string()))?;
+        let extension = std::path::Path::new(file_name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .ok_or_else(|| {
+                crate::error::Error::BadRequest(
+                    "The uploaded image must be either JPEG or PNG".to_string(),
+                )
+            })?;
+        let _mime = match extension.as_str() {
+            "jpg" | "jpeg" | "jpe" | "jfif" => "image/jpeg",
+            "png" => "image/png",
+            "webp" => "image/webp",
+            "apng" => "image/apng",
+            "avif" => "image/avif",
+            "gif" => "image/gif",
+            "svg" => "image/svg+xml",
+            "jxl" => "image/jxl",
+            _ => {
+                return Err(crate::error::Error::BadRequest(
+                    "The uploaded image must be either JPEG or PNG".to_string(),
+                ))
+            }
+        };
+
+        let (title_path, entry_title) = {
+            let lib = state.library.load();
+            let title = lib.get_title(&query.tid).ok_or_else(|| {
+                crate::error::Error::NotFound(format!("Title not found: {}", query.tid))
+            })?;
+            let entry_title = query
+                .eid
+                .as_deref()
+                .map(|entry_id| {
+                    lib.get_entry(&query.tid, entry_id)
+                        .map(|entry| entry.title.clone())
+                        .ok_or_else(|| {
+                            crate::error::Error::NotFound(format!("Entry not found: {entry_id}"))
+                        })
+                })
+                .transpose()?;
+            (title.path.clone(), entry_title)
+        };
+
+        let upload_dir = state.config.upload_path.join("img");
+        tokio::fs::create_dir_all(&upload_dir).await?;
+        let stored_name = format!("{}.{}", uuid::Uuid::new_v4().simple(), extension);
+        let destination = upload_dir.join(&stored_name);
+        let mut output = tokio::fs::File::create(&destination).await?;
+        let write_result: Result<()> = async {
+            while let Some(chunk) = field.chunk().await.map_err(|error| {
+                crate::error::Error::BadRequest(format!("Failed to read file: {error}"))
+            })? {
+                output.write_all(&chunk).await?;
+            }
+            Ok(())
         }
-    }
+        .await;
+        drop(output);
+        if let Err(error) = write_result {
+            let _ = tokio::fs::remove_file(&destination).await;
+            return Err(error);
+        }
 
-    let data =
-        file_data.ok_or_else(|| crate::error::Error::BadRequest("No file provided".to_string()))?;
-
-    // Validate file size (max 10MB)
-    const MAX_COVER_SIZE: usize = 10 * 1024 * 1024;
-    if data.len() > MAX_COVER_SIZE {
-        return Err(crate::error::Error::BadRequest(format!(
-            "File too large. Maximum size is {} bytes",
-            MAX_COVER_SIZE
-        )));
-    }
-
-    // Determine entry ID (either specific entry or first entry of title)
-    let entry_id = if let Some(eid) = query.eid {
-        eid
-    } else {
-        // Get first entry of title
-        let lib = state.library.load();
-        let title = lib.get_title(&query.tid).ok_or_else(|| {
-            crate::error::Error::NotFound(format!("Title not found: {}", query.tid))
-        })?;
-        title
-            .entries
-            .first()
-            .map(|e| e.id.clone())
-            .ok_or_else(|| crate::error::Error::NotFound("Title has no entries".to_string()))?
-    };
-
-    // Determine MIME type
-    let mime = content_type.unwrap_or_else(|| {
-        // Guess from data
-        if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
-            "image/jpeg".to_string()
-        } else if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
-            "image/png".to_string()
+        let url = format!("/uploads/img/{stored_name}");
+        let mut info = crate::library::progress::TitleInfo::load(&title_path).await?;
+        if let Some(entry_title) = entry_title {
+            info.entry_cover_url.insert(entry_title, url);
         } else {
-            "image/jpeg".to_string()
+            info.cover_url = url;
         }
-    });
+        info.save(&title_path).await?;
+        state
+            .library
+            .load()
+            .progress_cache()
+            .load_title(&query.tid, &title_path)
+            .await?;
+        Ok(())
+    }
+    .await;
 
-    // Save thumbnail to database
-    let db = state.storage.pool();
-    crate::library::Entry::save_thumbnail(&entry_id, &data, &mime, db).await?;
-
-    tracing::info!("Uploaded custom cover for entry {}", entry_id);
-
-    Ok(Json(serde_json::json!({
-        "success": true
-    })))
+    match result {
+        Ok(()) => Json(serde_json::json!({ "success": true })).into_response(),
+        Err(error) => Json(serde_json::json!({
+            "success": false,
+            "error": error.to_string()
+        }))
+        .into_response(),
+    }
 }
 
 /// Query params for user edit page

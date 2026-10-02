@@ -25,8 +25,8 @@
     <title>{{ entry.title }}</title>
     <id>urn:mango:{{ entry.id }}</id>
 
-    <link rel="http://opds-spec.org/image" href="{{ base_url }}api/cover/{{ title.id }}/{{ entry.id }}" />
-    <link rel="http://opds-spec.org/image/thumbnail" href="{{ base_url }}api/cover/{{ title.id }}/{{ entry.id }}" />
+    <link rel="http://opds-spec.org/image" href="{{ entry.cover_url }}" />
+    <link rel="http://opds-spec.org/image/thumbnail" href="{{ entry.cover_url }}" />
 
     <link rel="http://opds-spec.org/acquisition" href="{{ base_url }}api/download/{{ title.id }}/{{ entry.id }}" title="Read" type="{{ entry.mime_type }}" />
 

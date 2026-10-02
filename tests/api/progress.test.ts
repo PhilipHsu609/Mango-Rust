@@ -31,6 +31,25 @@ describe('Progress API', () => {
       expect(await response.json()).toEqual({ success: true });
       await api.put(`/api/progress/${titleId}/0?eid=${entryId}`);
     });
+
   });
 
+  it('bulk progress matches Mango success response', async () => {
+    const libraryResponse = await api.get('/api/library');
+    const library = await libraryResponse.json();
+    if (library.titles.length === 0) return;
+
+    const titleId = library.titles[0].id;
+    const titleResponse = await api.get(`/api/book/${titleId}`);
+    const title = await titleResponse.json();
+    if (!title.entries || title.entries.length === 0) return;
+
+    const entryId = title.entries[0].id;
+    const response = await api.put(`/api/bulk_progress/read/${titleId}`, {
+      ids: [entryId],
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+    await api.put(`/api/bulk_progress/unread/${titleId}`, { ids: [entryId] });
+  });
 });

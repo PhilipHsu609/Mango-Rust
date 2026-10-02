@@ -17,8 +17,8 @@
         </div>
         <div class="uk-margin-bottom uk-width-1-4@s">
             <select class="uk-select" @change="handleSortChange($event)">
-            <option value="title:1"{% if sort_name_asc %} selected{% endif %}>▲ Name</option>
-            <option value="title:0"{% if sort_name_desc %} selected{% endif %}>▼ Name</option>
+            <option value="auto:1"{% if sort_name_asc %} selected{% endif %}>▲ Auto</option>
+            <option value="auto:0"{% if sort_name_desc %} selected{% endif %}>▼ Auto</option>
             <option value="modified:1"{% if sort_time_asc %} selected{% endif %}>▲ Date Modified</option>
             <option value="modified:0"{% if sort_time_desc %} selected{% endif %}>▼ Date Modified</option>
             <option value="progress:1"{% if sort_progress_asc %} selected{% endif %}>▲ Progress</option>
@@ -30,20 +30,15 @@
     <!-- Titles Grid - using UIkit card structure like original Mango -->
     <div class="uk-child-width-1-4@m uk-child-width-1-2" uk-grid>
         {% for title in titles %}
-        <div class="item" x-show="matchesSearch('{{ title.name }}')">
+        <div class="item" x-show="matchesSearch('{{ title.display_name }}')">
             <div class="acard" onclick="location='/book/{{ title.id }}'">
                 <div class="uk-card uk-card-default">
                     <div class="uk-card-media-top uk-inline">
-                        {% match title.first_entry_id %}
-                        {% when Some with (entry_id) %}
-                        <img data-src="/api/cover/{{ title.id }}/{{ entry_id }}" width="100%" height="100%" alt="{{ title.name }}" uk-img>
-                        {% when None %}
-                        <img data-src="/static/img/placeholder.png" width="100%" height="100%" alt="{{ title.name }}" uk-img>
-                        {% endmatch %}
+                        <img data-src="{{ title.cover_url }}" width="100%" height="100%" alt="{{ title.display_name }}" uk-img>
                     </div>
                     <div class="uk-card-body">
                         <div class="uk-card-badge label">{{ title.progress_display }}%</div>
-                        <h3 class="uk-card-title break-word">{{ title.name }}</h3>
+                        <h3 class="uk-card-title break-word">{{ title.display_name }}</h3>
                         <p class="uk-text-meta">{{ title.entry_count }} {% if title.entry_count == 1 %}entry{% else %}entries{% endif %}</p>
                     </div>
                 </div>

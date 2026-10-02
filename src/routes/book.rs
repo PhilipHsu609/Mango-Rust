@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::{sort_by_progress, HasProgress};
+use super::HasProgress;
 use crate::{
     auth::User,
     error::{Error, Result},
@@ -93,14 +93,32 @@ impl BookCardItem {
         book_title: &str,
         pages: usize,
         entry_path: &str,
+        info: &crate::library::progress::TitleInfo,
     ) -> Self {
+        let display_name = info
+            .entry_display_name
+            .get(entry_title)
+            .filter(|name| !name.is_empty())
+            .map(String::as_str)
+            .unwrap_or(entry_title);
+        let book_display_name = if info.display_name.is_empty() {
+            book_title
+        } else {
+            &info.display_name
+        };
+        let cover_url = info
+            .entry_cover_url
+            .get(entry_title)
+            .filter(|url| !url.is_empty())
+            .cloned()
+            .unwrap_or_else(|| format!("/api/cover/{}/{}", book_id, entry_id));
         Self {
             id: entry_id.to_string(),
             is_entry: true,
-            display_name: entry_title.to_string(),
-            cover_url: format!("/api/cover/{}/{}", book_id, entry_id),
+            display_name: display_name.to_string(),
+            cover_url,
             book_id: book_id.to_string(),
-            book_display_name: book_title.to_string(),
+            book_display_name: book_display_name.to_string(),
             pages,
             encoded_path: percent_encoding::percent_encode(
                 entry_path.as_bytes(),
@@ -130,22 +148,37 @@ impl BookCardItem {
         title_name: &str,
         entry_count: usize,
         first_entry_id: Option<&str>,
+        first_entry_title: Option<&str>,
+        info: &crate::library::progress::TitleInfo,
     ) -> Self {
         let content_label = if entry_count == 1 {
             "1 entry".to_string()
         } else {
             format!("{} entries", entry_count)
         };
-
-        // Cover URL uses first entry's cover if available
-        let cover_url = first_entry_id
-            .map(|eid| format!("/api/cover/{}/{}", title_id, eid))
+        let display_name = if info.display_name.is_empty() {
+            title_name
+        } else {
+            &info.display_name
+        };
+        let default_cover = first_entry_title
+            .and_then(|entry_title| {
+                info.entry_cover_url
+                    .get(entry_title)
+                    .filter(|url| !url.is_empty())
+                    .cloned()
+            })
+            .or_else(|| first_entry_id.map(|eid| format!("/api/cover/{}/{}", title_id, eid)))
             .unwrap_or_else(|| "/static/img/placeholder.png".to_string());
-
+        let cover_url = if info.cover_url.is_empty() {
+            default_cover
+        } else {
+            info.cover_url.clone()
+        };
         Self {
             id: title_id.to_string(),
             is_entry: false,
-            display_name: title_name.to_string(),
+            display_name: display_name.to_string(),
             cover_url,
             book_id: String::new(),
             book_display_name: String::new(),
@@ -213,22 +246,29 @@ pub async fn get_book(
     let sort_method = SortMethod::parse(&sort_method_str);
 
     // Build the title info and gather all data
-    let (title_info, nested_title_items, mut items) = {
+    let (title_info, nested_title_items, items) = {
         let lib = state.library.load();
 
         // Get the title
         let title = lib
             .get_title(&title_id)
             .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
+        let info = crate::library::progress::TitleInfo::load(&title.path).await?;
 
         // Build parent breadcrumb chain
         let mut parents = Vec::new();
         let mut current_parent_id = title.parent_id.clone();
         while let Some(pid) = current_parent_id {
             if let Some(parent_title) = lib.get_title(&pid) {
+                let parent_info =
+                    crate::library::progress::TitleInfo::load(&parent_title.path).await?;
                 parents.push(ParentItem {
                     id: parent_title.id.clone(),
-                    display_name: parent_title.title.clone(),
+                    display_name: if parent_info.display_name.is_empty() {
+                        parent_title.title.clone()
+                    } else {
+                        parent_info.display_name
+                    },
                 });
                 current_parent_id = parent_title.parent_id.clone();
             } else {
@@ -272,103 +312,145 @@ pub async fn get_book(
         };
 
         // Build title info
-        let cover_url = title
+        let default_cover = title
             .entries
             .first()
-            .map(|e| format!("/api/cover/{}/{}", title.id, e.id))
+            .and_then(|entry| {
+                info.entry_cover_url
+                    .get(&entry.title)
+                    .filter(|url| !url.is_empty())
+                    .cloned()
+            })
+            .or_else(|| {
+                title
+                    .entries
+                    .first()
+                    .map(|entry| format!("/api/cover/{}/{}", title.id, entry.id))
+            })
             .unwrap_or_else(|| "/static/img/placeholder.png".to_string());
-
+        let cover_url = if info.cover_url.is_empty() {
+            default_cover
+        } else {
+            info.cover_url.clone()
+        };
+        let display_name = if info.display_name.is_empty() {
+            title.title.clone()
+        } else {
+            info.display_name.clone()
+        };
         let sort_title = state.storage.get_title_sort_title(&title.id).await?;
         let title_info = TitleInfo {
             id: title.id.clone(),
             title: title.title.clone(),
-            display_name: title.title.clone(),
+            display_name,
             sort_title,
             cover_url,
             content_label,
             parents,
         };
 
-        // Build nested titles cards and calculate their progress
-        let mut nested_title_items = Vec::new();
-
+        let mut nested_order = Vec::with_capacity(title.nested_titles.len());
         for nested in &title.nested_titles {
-            let nested_entry_count = nested.entries.len();
-            let first_entry_id = nested.entries.first().map(|e| e.id.as_str());
+            let sort_title = state
+                .storage
+                .get_title_sort_title(&nested.id)
+                .await?
+                .unwrap_or_else(|| nested.title.clone());
+            let progress = nested.get_title_progress(&user.username).await?;
+            nested_order.push((nested, sort_title, progress));
+        }
+        nested_order.sort_by(
+            |(left, left_sort, left_progress), (right, right_sort, right_progress)| {
+                match sort_method {
+                    SortMethod::TimeModified => left
+                        .mtime
+                        .cmp(&right.mtime)
+                        .then_with(|| natord::compare(left_sort, right_sort)),
+                    SortMethod::Progress => left_progress
+                        .total_cmp(right_progress)
+                        .then_with(|| natord::compare(left_sort, right_sort)),
+                    SortMethod::Name | SortMethod::TimeAdded | SortMethod::Auto => {
+                        natord::compare(left_sort, right_sort)
+                    }
+                }
+            },
+        );
+        if !ascending {
+            nested_order.reverse();
+        }
 
-            let card = BookCardItem::from_title(
+        let mut nested_title_items = Vec::with_capacity(nested_order.len());
+        for (nested, sort_title, progress) in nested_order {
+            let nested_info = crate::library::progress::TitleInfo::load(&nested.path).await?;
+            let mut card = BookCardItem::from_title(
                 &nested.id,
                 &nested.title,
-                nested_entry_count,
-                first_entry_id,
+                nested.entries.len(),
+                nested.entries.first().map(|entry| entry.id.as_str()),
+                nested.entries.first().map(|entry| entry.title.as_str()),
+                &nested_info,
             );
-
-            // Calculate average progress for nested title
-            let mut total_progress = 0.0f64;
-            let mut count = 0;
-            for entry in &nested.entries {
-                let (progress, _) = nested
-                    .get_entry_progress(&user.username, &entry.id)
-                    .await
-                    .unwrap_or((0.0, 0));
-                total_progress += progress as f64;
-                count += 1;
-            }
-            let avg_progress = if count > 0 {
-                total_progress / count as f64
-            } else {
-                0.0
-            };
-
+            card.sort_title = Some(sort_title);
             nested_title_items.push(BookItem {
                 item: card,
-                progress: avg_progress,
+                progress: progress as f64,
             });
         }
 
-        // Build entry items in the selected order.
-        let mut all_entries = if matches!(sort_method, SortMethod::Progress) {
-            title.get_entries_sorted(SortMethod::Name, true)
-        } else {
-            title.get_entries_sorted(sort_method, ascending)
-        };
-        if matches!(sort_method, SortMethod::TimeAdded) {
-            let info = crate::library::TitleInfo::load(&title.path).await?;
-            all_entries.sort_by(|left, right| {
-                info.get_date_added(&left.title)
-                    .unwrap_or_default()
-                    .cmp(&info.get_date_added(&right.title).unwrap_or_default())
-                    .then_with(|| natord::compare(&left.title, &right.title))
-            });
-            if !ascending {
-                all_entries.reverse();
-            }
-        }
-
-        let mut items = Vec::new();
-        for entry in all_entries {
-            // Load progress for this entry using Title's method
-            let (progress_percentage, _saved_page) = title
+        let mut entry_order = Vec::with_capacity(title.entries.len());
+        for entry in &title.entries {
+            let sort_title = state
+                .storage
+                .get_entry_sort_title(&entry.id)
+                .await?
+                .unwrap_or_else(|| entry.title.clone());
+            let (progress, _) = title
                 .get_entry_progress(&user.username, &entry.id)
                 .await
                 .unwrap_or((0.0, 0));
+            entry_order.push((entry, sort_title, progress));
+        }
+        entry_order.sort_by(
+            |(left, left_sort, left_progress), (right, right_sort, right_progress)| {
+                match sort_method {
+                    SortMethod::TimeModified => left
+                        .mtime
+                        .cmp(&right.mtime)
+                        .then_with(|| natord::compare(left_sort, right_sort)),
+                    SortMethod::TimeAdded => info
+                        .get_date_added(&left.title)
+                        .unwrap_or_default()
+                        .cmp(&info.get_date_added(&right.title).unwrap_or_default())
+                        .then_with(|| natord::compare(left_sort, right_sort)),
+                    SortMethod::Progress => left_progress
+                        .total_cmp(right_progress)
+                        .then_with(|| natord::compare(left_sort, right_sort)),
+                    SortMethod::Name | SortMethod::Auto => natord::compare(left_sort, right_sort),
+                }
+            },
+        );
+        if !ascending {
+            entry_order.reverse();
+        }
 
-            // Apply search filter if provided
+        let mut items = Vec::new();
+        for (entry, sort_title, progress_percentage) in entry_order {
             if let Some(ref search) = params.search {
                 if !entry.title.to_lowercase().contains(&search.to_lowercase()) {
                     continue;
                 }
             }
 
-            let card = BookCardItem::from_entry(
+            let mut card = BookCardItem::from_entry(
                 &entry.id,
                 &entry.title,
                 &title.id,
                 &title.title,
                 entry.pages,
                 &entry.path.to_string_lossy(),
+                &info,
             );
-
+            card.sort_title = Some(sort_title);
             items.push(BookItem {
                 item: card,
                 progress: progress_percentage as f64,
@@ -377,11 +459,6 @@ pub async fn get_book(
 
         (title_info, nested_title_items, items)
     }; // Lock is released here
-
-    // Sort by progress if requested (after calculating progress)
-    if matches!(sort_method, SortMethod::Progress) {
-        sort_by_progress(&mut items, ascending);
-    }
 
     // Create sort option for template
     let sort_opt = Some(SortOption::new(&sort_method_str, ascending));
@@ -396,7 +473,9 @@ pub async fn get_book(
     ];
 
     // Supported image types for upload
-    let supported_img_types = "image/jpeg,image/png,image/gif,image/webp".to_string();
+    let supported_img_types =
+        "image/jpeg,image/png,image/webp,image/apng,image/avif,image/gif,image/svg+xml,image/jxl"
+            .to_string();
 
     let template = BookTemplate {
         nav: crate::util::NavigationState::library().with_admin(user.is_admin),

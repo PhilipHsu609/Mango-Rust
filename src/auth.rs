@@ -73,10 +73,7 @@ pub async fn require_auth(
         }
     }
 
-    // Not authenticated - response depends on path type
     if is_opds_path {
-        // OPDS/download clients need RFC 7235 compliant response
-        // Return 401 Unauthorized with WWW-Authenticate header
         use axum::http::header;
         return (
             StatusCode::UNAUTHORIZED,
@@ -85,7 +82,11 @@ pub async fn require_auth(
             .into_response();
     }
 
-    // Browser clients get redirect to login page
+    // API clients receive Mango's 401; browser pages redirect.
+    if path.starts_with("/api") {
+        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    }
+
     Redirect::to("/login").into_response()
 }
 
@@ -126,6 +127,7 @@ fn is_public_path(path: &str) -> bool {
         || path.starts_with("/img/")
         || path.starts_with("/css/")
         || path.starts_with("/js/")
+        || path.starts_with("/uploads/")
 }
 
 /// Verify HTTP Basic Auth credentials

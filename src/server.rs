@@ -143,6 +143,7 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/api/login", post(api_login))
         // Static files (no auth required)
         .nest_service("/static", ServeDir::new("static"))
+        .nest_service("/uploads", ServeDir::new(config.upload_path.clone()))
         // Protected routes (auth required)
         .route("/", get(home))
         .route("/library", get(library_page))
@@ -217,12 +218,15 @@ pub async fn run(config: Config) -> Result<()> {
         // User API
         .route("/api/user/change-password", post(change_password_api))
         // Admin metadata API
+        .route("/api/admin/sort_title/:tid", put(update_sort_title))
         .route(
             "/api/admin/display_name/:tid/:name",
             put(update_display_name),
         )
-        .route("/api/admin/sort_title/:tid", put(update_sort_title))
-        .route("/api/admin/upload/cover", post(upload_cover))
+        .route(
+            "/api/admin/upload/cover",
+            post(upload_cover).layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         // Bulk progress API
         .route("/api/bulk_progress/:action/:tid", put(bulk_progress))
         // Thumbnail generation API

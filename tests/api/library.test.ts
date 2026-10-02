@@ -57,6 +57,27 @@ describe('Library API', () => {
   });
 
 
+  it('rejects page zero instead of serving the first page', async () => {
+    const libraryResponse = await api.get('/api/library');
+    const library = await libraryResponse.json();
+    const pending = [...library.titles];
+    let pageLocation: { titleId: string; entryId: string } | undefined;
+    while (pending.length > 0 && !pageLocation) {
+      const title = pending.shift();
+      if (title.entries?.length > 0) {
+        pageLocation = { titleId: title.id, entryId: title.entries[0].id };
+      }
+      pending.push(...(title.titles ?? []));
+    }
+    if (!pageLocation) return;
+
+    const response = await api.get(
+      `/api/page/${pageLocation.titleId}/${pageLocation.entryId}/0`,
+    );
+    expect(response.status).toBe(500);
+    expect(await response.text()).toContain('Failed to load page 0');
+  });
+
   describe('Mango homepage API', () => {
     it('returns wrapped Continue Reading entries and percentages', async () => {
       const response = await api.get('/api/library/continue_reading');

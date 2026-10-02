@@ -5,6 +5,7 @@ use axum::{
     response::IntoResponse,
 };
 
+use super::api::join_base_url;
 use crate::{error::Result, AppState};
 
 /// Template for OPDS main catalog feed
@@ -41,6 +42,7 @@ struct OPDSTitleTemplate {
 struct OPDSEntryInfo {
     id: String,
     title: String,
+    cover_url: String,
     mime_type: String,
 }
 
@@ -124,6 +126,7 @@ pub async fn opds_title(
         },
     };
 
+    let base_url = get_base_url(&state);
     let opds_entries: Vec<OPDSEntryInfo> = title
         .entries
         .iter()
@@ -135,12 +138,18 @@ pub async fn opds_title(
                 .filter(|name| !name.is_empty())
                 .cloned()
                 .unwrap_or_else(|| entry.title.clone()),
+            cover_url: info
+                .entry_cover_url
+                .get(&entry.title)
+                .filter(|url| !url.is_empty())
+                .map(|url| join_base_url(&base_url, url))
+                .unwrap_or_else(|| format!("{}api/cover/{}/{}", base_url, title.id, entry.id)),
             mime_type: get_mime_type(&entry.path),
         })
         .collect();
 
     let template = OPDSTitleTemplate {
-        base_url: get_base_url(&state),
+        base_url,
         title: opds_title,
         entries: opds_entries,
     };

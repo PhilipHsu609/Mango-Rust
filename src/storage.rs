@@ -505,35 +505,7 @@ impl Storage {
         &self.pool
     }
 
-    // ========== Display Name / Sort Title Methods ==========
-
-    /// Update display name for a title
-    pub async fn update_title_display_name(
-        &self,
-        title_id: &str,
-        display_name: &str,
-    ) -> Result<()> {
-        sqlx::query("UPDATE titles SET display_name = ? WHERE id = ?")
-            .bind(display_name)
-            .bind(title_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    /// Update display name for an entry
-    pub async fn update_entry_display_name(
-        &self,
-        entry_id: &str,
-        display_name: &str,
-    ) -> Result<()> {
-        sqlx::query("UPDATE ids SET display_name = ? WHERE id = ?")
-            .bind(display_name)
-            .bind(entry_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
+    // ========== Sort Title Methods ==========
 
     /// Update sort title for a title (None clears it)
     pub async fn update_title_sort_title(

@@ -107,6 +107,35 @@ impl ProgressCache {
         Ok(())
     }
 
+    /// Persist bulk progress without changing Mango's last-read timestamps.
+    pub async fn save_bulk_progress(
+        &self,
+        title_id: &str,
+        title_path: &Path,
+        username: &str,
+        updates: &[(String, i32)],
+    ) -> Result<()> {
+        let info_to_save = {
+            let mut data = self.data.write().map_err(|error| {
+                tracing::error!(
+                    "Progress cache RwLock poisoned during bulk progress: {}",
+                    error
+                );
+                Error::Internal("Progress cache lock poisoned".to_string())
+            })?;
+            let info = data
+                .entry(title_id.to_string())
+                .or_insert_with(TitleInfo::default);
+            let user_progress = info.progress.entry(username.to_string()).or_default();
+            for (entry_title, page) in updates {
+                user_progress.insert(entry_title.clone(), *page);
+            }
+            info.clone()
+        };
+
+        info_to_save.save(title_path).await
+    }
+
     /// Clear cache (for rescans)
     pub fn clear(&self) {
         match self.data.write() {
@@ -159,5 +188,42 @@ impl ProgressCache {
 impl Default for ProgressCache {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProgressCache;
+    use crate::library::progress::TitleInfo;
+
+    #[tokio::test]
+    async fn bulk_progress_preserves_last_read_timestamp() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut info = TitleInfo::default();
+        info.set_progress("reader", "Chapter 1", 7);
+        info.set_last_read("reader", "Chapter 1", 1_700_000_000);
+        info.save(directory.path()).await.unwrap();
+
+        let cache = ProgressCache::new();
+        cache
+            .load_title("title-id", directory.path())
+            .await
+            .unwrap();
+        cache
+            .save_bulk_progress(
+                "title-id",
+                directory.path(),
+                "reader",
+                &[("Chapter 1".to_string(), 0)],
+            )
+            .await
+            .unwrap();
+
+        let saved = TitleInfo::load(directory.path()).await.unwrap();
+        assert_eq!(saved.get_progress("reader", "Chapter 1"), Some(0));
+        assert_eq!(
+            saved.get_last_read("reader", "Chapter 1"),
+            Some(1_700_000_000)
+        );
     }
 }

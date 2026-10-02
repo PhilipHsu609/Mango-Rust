@@ -5,7 +5,7 @@ use axum::{
 };
 
 use super::recently_added::{group_recent_entries, RecentEntry, RECENT_ITEMS_LIMIT};
-use super::{sort_by_progress, HasProgress};
+use super::HasProgress;
 use crate::{
     auth::User,
     error::Result,
@@ -35,10 +35,17 @@ impl SortOption {
 struct TitleData {
     id: String,
     name: String,
+    display_name: String,
+    cover_url: String,
+    sort_title: Option<String>,
+    mtime: i64,
     entry_count: usize,
-    progress: f32,                  // Progress percentage (0.0 - 100.0) for sorting
-    progress_display: String,       // Formatted progress for display (e.g., "0.0")
-    first_entry_id: Option<String>, // For cover thumbnail URL
+    progress: f32,
+    progress_display: String,
+    first_entry_id: Option<String>,
+    first_entry_title: Option<String>,
+    #[serde(skip)]
+    info: crate::library::progress::TitleInfo,
 }
 
 impl HasProgress for TitleData {
@@ -93,7 +100,7 @@ struct HomeCardItem {
 }
 
 impl HomeCardItem {
-    /// Create a card item for an entry
+    /// Create a card item for an entry.
     fn from_entry(
         entry_id: &str,
         entry_title: &str,
@@ -101,14 +108,33 @@ impl HomeCardItem {
         book_title: &str,
         pages: usize,
         entry_path: &str,
+        info: &crate::library::progress::TitleInfo,
     ) -> Self {
+        let display_name = info
+            .entry_display_name
+            .get(entry_title)
+            .filter(|name| !name.is_empty())
+            .map(String::as_str)
+            .unwrap_or(entry_title);
+        let book_display_name = if info.display_name.is_empty() {
+            book_title
+        } else {
+            &info.display_name
+        };
+        let cover_url = info
+            .entry_cover_url
+            .get(entry_title)
+            .filter(|url| !url.is_empty())
+            .cloned()
+            .unwrap_or_else(|| format!("/api/cover/{}/{}", book_id, entry_id));
+
         Self {
             id: entry_id.to_string(),
             is_entry: true,
-            display_name: entry_title.to_string(),
-            cover_url: format!("/api/cover/{}/{}", book_id, entry_id),
+            display_name: display_name.to_string(),
+            cover_url,
             book_id: book_id.to_string(),
-            book_display_name: book_title.to_string(),
+            book_display_name: book_display_name.to_string(),
             pages,
             encoded_path: percent_encoding::percent_encode(
                 entry_path.as_bytes(),
@@ -133,28 +159,44 @@ impl HomeCardItem {
         }
     }
 
-    /// Create a card item for a title
+    /// Create a card item for a title.
     fn from_title(
         title_id: &str,
         title_name: &str,
         entry_count: usize,
         first_entry_id: Option<&str>,
+        first_entry_title: Option<&str>,
+        info: &crate::library::progress::TitleInfo,
     ) -> Self {
+        let display_name = if info.display_name.is_empty() {
+            title_name
+        } else {
+            &info.display_name
+        };
+        let default_cover = first_entry_title
+            .and_then(|entry_title| {
+                info.entry_cover_url
+                    .get(entry_title)
+                    .filter(|url| !url.is_empty())
+                    .cloned()
+            })
+            .or_else(|| first_entry_id.map(|eid| format!("/api/cover/{}/{}", title_id, eid)))
+            .unwrap_or_else(|| "/static/img/placeholder.png".to_string());
+        let cover_url = if info.cover_url.is_empty() {
+            default_cover
+        } else {
+            info.cover_url.clone()
+        };
         let content_label = if entry_count == 1 {
             "1 entry".to_string()
         } else {
             format!("{} entries", entry_count)
         };
 
-        // Cover URL uses first entry's cover if available (requires both tid and eid)
-        let cover_url = first_entry_id
-            .map(|eid| format!("/api/cover/{}/{}", title_id, eid))
-            .unwrap_or_else(|| "/static/img/placeholder.png".to_string());
-
         Self {
             id: title_id.to_string(),
             is_entry: false,
-            display_name: title_name.to_string(),
+            display_name: display_name.to_string(),
             cover_url,
             book_id: String::new(),
             book_display_name: String::new(),
@@ -251,14 +293,24 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
 
         // Collect data for all titles
         let titles = lib.all_titles();
+        let mut info_by_title = std::collections::HashMap::with_capacity(titles.len());
+
         for (title_index, title) in titles.iter().enumerate() {
             let info = match TitleInfo::load(&title.path).await {
                 Ok(info) => info,
                 Err(_) => continue,
             };
+            info_by_title.insert(title.id.clone(), info.clone());
 
             // Continue Reading: one Mango-selected entry per title.
-            if let Some((entry, previous)) = title.get_continue_reading_entry(&user.username, &info)
+            let mut sort_title_overrides = std::collections::HashMap::new();
+            for entry in &title.entries {
+                if let Some(sort_title) = state.storage.get_entry_sort_title(&entry.id).await? {
+                    sort_title_overrides.insert(entry.id.clone(), sort_title);
+                }
+            }
+            if let Some((entry, previous)) =
+                title.get_continue_reading_entry(&user.username, &info, &sort_title_overrides)
             {
                 let last_read = info
                     .get_last_read(&user.username, &entry.title)
@@ -282,6 +334,7 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                             &title.title,
                             entry.pages,
                             &entry.path.to_string_lossy(),
+                            &info,
                         ),
                         percentage,
                     },
@@ -316,16 +369,20 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                 .await
                 .unwrap_or(0.0)
                 == 0.0
-                && sr_items.len() < MAX_ITEMS
             {
+                let info = info_by_title.get(&title.id).cloned().unwrap_or_default();
                 sr_items.push(HomeCardItem::from_title(
                     &title.id,
                     &title.title,
                     title.entries.len(),
                     title.entries.first().map(|entry| entry.id.as_str()),
+                    title.entries.first().map(|entry| entry.title.as_str()),
+                    &info,
                 ));
             }
         }
+
+        cr_items.truncate(MAX_ITEMS);
 
         // Sort continue_reading by last_read (most recent first) and take top items
         cr_items.sort_by(|a, b| b.0.cmp(&a.0));
@@ -347,6 +404,7 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                 .into_iter()
                 .map(|group| {
                     let title = titles[group.item.0];
+                    let info = info_by_title.get(&title.id).cloned().unwrap_or_default();
                     let entry = &title.entries[group.item.1];
                     let item = if group.grouped_count > 1 {
                         let mut item = HomeCardItem::from_title(
@@ -354,6 +412,8 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                             &title.title,
                             title.entries.len(),
                             title.entries.first().map(|entry| entry.id.as_str()),
+                            title.entries.first().map(|entry| entry.title.as_str()),
+                            &info,
                         );
                         item.content_label = format!("{} new entries", group.grouped_count);
                         item.grouped_count = Some(group.grouped_count);
@@ -366,6 +426,7 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                             &title.title,
                             entry.pages,
                             &entry.path.to_string_lossy(),
+                            &info,
                         )
                     };
 
@@ -416,47 +477,93 @@ pub async fn library(
 
         // For progress sorting, we need to calculate progress first, then sort
         // For other methods, use the library's cached sorting
-        let sorted_titles = if matches!(sort_method, SortMethod::Progress) {
-            lib.get_titles_sorted_cached(&user.username, SortMethod::Name, true)
-                .await // Get name-sorted as base
-        } else {
-            lib.get_titles_sorted_cached(&user.username, sort_method, ascending)
-                .await
-        };
+        let sorted_titles = lib.get_titles();
 
         // Calculate progress for each title
         let mut title_data_list = Vec::new();
         for t in sorted_titles {
             let progress_pct = t.get_title_progress(&user.username).await.unwrap_or(0.0);
+            let info = crate::library::progress::TitleInfo::load(&t.path).await?;
+            let display_name = if info.display_name.is_empty() {
+                t.title.clone()
+            } else {
+                info.display_name.clone()
+            };
+            let cover_url = if info.cover_url.is_empty() {
+                t.entries
+                    .first()
+                    .and_then(|entry| {
+                        info.entry_cover_url
+                            .get(&entry.title)
+                            .filter(|url| !url.is_empty())
+                            .cloned()
+                    })
+                    .or_else(|| {
+                        t.entries
+                            .first()
+                            .map(|entry| format!("/api/cover/{}/{}", t.id, entry.id))
+                    })
+                    .unwrap_or_else(|| "/static/img/placeholder.png".to_string())
+            } else {
+                info.cover_url.clone()
+            };
+            let sort_title = state.storage.get_title_sort_title(&t.id).await?;
             title_data_list.push(TitleData {
                 id: t.id.clone(),
                 name: t.title.clone(),
+                display_name,
+                cover_url,
+                sort_title,
+                mtime: t.mtime,
                 entry_count: t.entries.len(),
                 progress: progress_pct,
                 progress_display: format!("{:.1}", progress_pct),
                 first_entry_id: t.entries.first().map(|e| e.id.clone()),
+                first_entry_title: t.entries.first().map(|e| e.title.clone()),
+                info,
             });
         }
 
         title_data_list
     }; // Lock is released here
 
-    // Sort by progress if requested (after calculating progress)
-    if matches!(sort_method, SortMethod::Progress) {
-        sort_by_progress(&mut title_data_list, ascending);
-    }
+    title_data_list.sort_by(|left, right| {
+        let left_name = left.sort_title.as_deref().unwrap_or(&left.name);
+        let right_name = right.sort_title.as_deref().unwrap_or(&right.name);
+        let ordering = match sort_method {
+            SortMethod::TimeModified => left
+                .mtime
+                .cmp(&right.mtime)
+                .then_with(|| natord::compare(left_name, right_name)),
+            SortMethod::Progress => left
+                .progress
+                .total_cmp(&right.progress)
+                .then_with(|| natord::compare(left_name, right_name)),
+            SortMethod::Name | SortMethod::TimeAdded | SortMethod::Auto => {
+                natord::compare(left_name, right_name)
+            }
+        };
+        if ascending {
+            ordering
+        } else {
+            ordering.reverse()
+        }
+    });
 
     // Convert TitleData to HomeCardItem and create LibraryItem list
     let mut titles = Vec::with_capacity(title_data_list.len());
     let mut items = Vec::with_capacity(title_data_list.len());
 
     for td in title_data_list {
-        let card_item = HomeCardItem::from_title(
+        let mut card_item = HomeCardItem::from_title(
             &td.id,
             &td.name,
             td.entry_count,
             td.first_entry_id.as_deref(),
+            td.first_entry_title.as_deref(),
+            &td.info,
         );
+        card_item.sort_title = Some(td.sort_title.clone().unwrap_or_else(|| td.name.clone()));
         items.push(LibraryItem {
             item: card_item.clone(),
             progress: td.progress as f64,
@@ -574,12 +681,8 @@ pub async fn list_tags_page(State(state): State<AppState>, user: User) -> Result
         });
     }
 
-    // Sort by count desc, then by tag name asc (case-insensitive)
-    tags_with_counts.sort_by(|a, b| {
-        b.count
-            .cmp(&a.count)
-            .then_with(|| a.tag.to_lowercase().cmp(&b.tag.to_lowercase()))
-    });
+    // Mango orders tags by descending count, then case-sensitive tag name.
+    tags_with_counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.tag.cmp(&b.tag)));
 
     let template = TagsTemplate {
         nav: crate::util::NavigationState::tags().with_admin(user.is_admin),
@@ -627,15 +730,23 @@ pub async fn view_tag_page(
     let mut titles: Vec<TitleData> = title_ids
         .iter()
         .filter_map(|id| {
-            lib.get_title(id).map(|title| {
-                TitleData {
-                    id: title.id.clone(),
-                    name: title.title.clone(),
-                    entry_count: title.entries.len(),
-                    first_entry_id: title.entries.first().map(|e| e.id.clone()),
-                    progress: 0.0, // Will be filled later
-                    progress_display: String::from("0.0"),
-                }
+            lib.get_title(id).map(|title| TitleData {
+                id: title.id.clone(),
+                name: title.title.clone(),
+                display_name: title.title.clone(),
+                cover_url: title
+                    .entries
+                    .first()
+                    .map(|entry| format!("/api/cover/{}/{}", title.id, entry.id))
+                    .unwrap_or_else(|| "/static/img/placeholder.png".to_string()),
+                sort_title: None,
+                mtime: title.mtime,
+                entry_count: title.entries.len(),
+                first_entry_id: title.entries.first().map(|e| e.id.clone()),
+                first_entry_title: title.entries.first().map(|e| e.title.clone()),
+                progress: 0.0,
+                progress_display: String::from("0.0"),
+                info: crate::library::progress::TitleInfo::default(),
             })
         })
         .collect();
@@ -643,6 +754,17 @@ pub async fn view_tag_page(
     // Load progress for each title
     for title_data in &mut titles {
         let title = lib.get_title(&title_data.id).unwrap();
+        let info = crate::library::progress::TitleInfo::load(&title.path).await?;
+        title_data.display_name = if info.display_name.is_empty() {
+            title.title.clone()
+        } else {
+            info.display_name.clone()
+        };
+        if !info.cover_url.is_empty() {
+            title_data.cover_url = info.cover_url.clone();
+        }
+        title_data.sort_title = state.storage.get_title_sort_title(&title.id).await?;
+        title_data.info = info;
         let progress_pct = title.get_title_progress(&user.username).await?;
         title_data.progress = progress_pct;
         title_data.progress_display = format!("{:.1}", progress_pct);
@@ -652,36 +774,28 @@ pub async fn view_tag_page(
     let (sort_method, ascending) =
         crate::library::SortMethod::from_params(params.sort.as_deref(), params.ascend.as_deref());
 
-    // Sort titles based on method
-    match sort_method {
-        crate::library::SortMethod::Name | crate::library::SortMethod::TimeAdded => {
-            titles.sort_by(|a, b| {
-                if ascending {
-                    natord::compare(&a.name, &b.name)
-                } else {
-                    natord::compare(&b.name, &a.name)
-                }
-            });
+    titles.sort_by(|left, right| {
+        let left_name = left.sort_title.as_deref().unwrap_or(&left.name);
+        let right_name = right.sort_title.as_deref().unwrap_or(&right.name);
+        let ordering = match sort_method {
+            crate::library::SortMethod::TimeModified => left
+                .mtime
+                .cmp(&right.mtime)
+                .then_with(|| natord::compare(left_name, right_name)),
+            crate::library::SortMethod::Progress => left
+                .progress
+                .total_cmp(&right.progress)
+                .then_with(|| natord::compare(left_name, right_name)),
+            crate::library::SortMethod::Name
+            | crate::library::SortMethod::TimeAdded
+            | crate::library::SortMethod::Auto => natord::compare(left_name, right_name),
+        };
+        if ascending {
+            ordering
+        } else {
+            ordering.reverse()
         }
-        crate::library::SortMethod::TimeModified => {
-            titles.sort_by(|a, b| {
-                let a_title = lib.get_title(&a.id).unwrap();
-                let b_title = lib.get_title(&b.id).unwrap();
-                let ordering = a_title.mtime.cmp(&b_title.mtime);
-                if ascending {
-                    ordering
-                } else {
-                    ordering.reverse()
-                }
-            });
-        }
-        crate::library::SortMethod::Progress => {
-            crate::routes::sort_by_progress(&mut titles, ascending);
-        }
-        crate::library::SortMethod::Auto => {
-            titles.sort_by(|a, b| natord::compare(&a.name, &b.name));
-        }
-    }
+    });
 
     // Determine which sort option is active
     let (
@@ -692,10 +806,14 @@ pub async fn view_tag_page(
         sort_progress_asc,
         sort_progress_desc,
     ) = match (sort_method, ascending) {
-        (crate::library::SortMethod::Name, true) => (true, false, false, false, false, false),
-        (crate::library::SortMethod::Name, false) => (false, true, false, false, false, false),
-        (crate::library::SortMethod::TimeAdded, true) => (true, false, false, false, false, false),
-        (crate::library::SortMethod::TimeAdded, false) => (false, true, false, false, false, false),
+        (crate::library::SortMethod::Name, true)
+        | (crate::library::SortMethod::TimeAdded, true) => {
+            (true, false, false, false, false, false)
+        }
+        (crate::library::SortMethod::Name, false)
+        | (crate::library::SortMethod::TimeAdded, false) => {
+            (false, true, false, false, false, false)
+        }
         (crate::library::SortMethod::TimeModified, true) => {
             (false, false, true, false, false, false)
         }
@@ -704,7 +822,8 @@ pub async fn view_tag_page(
         }
         (crate::library::SortMethod::Progress, true) => (false, false, false, false, true, false),
         (crate::library::SortMethod::Progress, false) => (false, false, false, false, false, true),
-        (crate::library::SortMethod::Auto, _) => (true, false, false, false, false, false),
+        (crate::library::SortMethod::Auto, true) => (true, false, false, false, false, false),
+        (crate::library::SortMethod::Auto, false) => (false, true, false, false, false, false),
     };
 
     let template = TagTemplate {

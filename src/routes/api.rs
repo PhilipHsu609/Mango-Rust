@@ -35,11 +35,44 @@ pub async fn get_library(
     );
     let depth = params.depth.unwrap_or(-1);
     let mut titles = Vec::new();
-    let mut title_percentages = Vec::new();
-
-    for title in lib.get_titles_sorted(sort_method, ascending) {
+    let mut ordered_titles = Vec::with_capacity(lib.get_titles().len());
+    for title in lib.get_titles() {
+        let sort_title = match state.storage.get_title_sort_title(&title.id).await {
+            Ok(sort_title) => sort_title.unwrap_or_else(|| title.title.clone()),
+            Err(error) => {
+                return Json(serde_json::json!({
+                    "success": false,
+                    "error": error.to_string()
+                }))
+                .into_response();
+            }
+        };
         let info = cache.get_title_info(&title.id).unwrap_or_default();
         let percentage = title_progress_percentage(title, cache, &username);
+        ordered_titles.push((title, sort_title, percentage, info));
+    }
+    ordered_titles.sort_by(
+        |(left, left_sort, left_progress, _), (right, right_sort, right_progress, _)| {
+            match sort_method {
+                SortMethod::TimeModified => left
+                    .mtime
+                    .cmp(&right.mtime)
+                    .then_with(|| natord::compare(left_sort, right_sort)),
+                SortMethod::Progress => left_progress
+                    .total_cmp(right_progress)
+                    .then_with(|| natord::compare(left_sort, right_sort)),
+                SortMethod::Name | SortMethod::TimeAdded | SortMethod::Auto => {
+                    natord::compare(left_sort, right_sort)
+                }
+            }
+        },
+    );
+    if !ascending {
+        ordered_titles.reverse();
+    }
+    let mut title_percentages = Vec::with_capacity(ordered_titles.len());
+
+    for (title, _, percentage, info) in ordered_titles {
         title_percentages.push(percentage);
         match mango_title_response(
             &state,
@@ -205,6 +238,15 @@ pub async fn update_sort_opt(
     }
 }
 
+fn page_index(page: usize) -> Option<usize> {
+    page.checked_sub(1)
+}
+
+fn order_continue_candidates<T>(entries: &mut Vec<(Option<i64>, T, f32)>) {
+    entries.truncate(8);
+    entries.sort_by(|a, b| b.0.cmp(&a.0));
+}
+
 /// API route: GET /api/page/:tid/:eid/:page
 /// Serves a specific page image from an entry
 pub async fn get_page(
@@ -228,7 +270,13 @@ pub async fn get_page(
             .into_response());
     };
 
-    let page_idx = page.saturating_sub(1);
+    let Some(page_idx) = page_index(page) else {
+        return Ok((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to load page 0 of `{}/{}`", title.title, entry.title),
+        )
+            .into_response());
+    };
 
     let image_data = match entry.get_page(page_idx).await {
         Ok(image_data) => image_data,
@@ -321,7 +369,25 @@ pub async fn continue_reading(
 
     for title in lib.all_titles() {
         let info = cache.get_title_info(&title.id).unwrap_or_default();
-        if let Some((entry, previous)) = title.get_continue_reading_entry(&username, &info) {
+        let mut sort_title_overrides = std::collections::HashMap::new();
+        for entry in &title.entries {
+            match state.storage.get_entry_sort_title(&entry.id).await {
+                Ok(Some(sort_title)) => {
+                    sort_title_overrides.insert(entry.id.clone(), sort_title);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    return Json(serde_json::json!({
+                        "success": false,
+                        "error": error.to_string()
+                    }))
+                    .into_response();
+                }
+            }
+        }
+        if let Some((entry, previous)) =
+            title.get_continue_reading_entry(&username, &info, &sort_title_overrides)
+        {
             let last_read = info
                 .get_last_read(&username, &entry.title)
                 .or_else(|| previous.and_then(|entry| info.get_last_read(&username, &entry.title)));
@@ -342,8 +408,7 @@ pub async fn continue_reading(
         }
     }
 
-    entries_with_progress.sort_by(|a, b| b.0.cmp(&a.0));
-    entries_with_progress.truncate(8);
+    order_continue_candidates(&mut entries_with_progress);
     let (entries, entry_percentages): (Vec<_>, Vec<_>) = entries_with_progress
         .into_iter()
         .map(|(_, entry, percentage)| (entry, percentage))
@@ -753,15 +818,42 @@ async fn mango_title_response(
         .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
         .unwrap_or((SortMethod::Auto, true));
     let mut nested_titles = Vec::with_capacity(title.nested_titles.len());
+    let mut nested_order = Vec::with_capacity(title.nested_titles.len());
+    for nested in &title.nested_titles {
+        let sort_title = state
+            .storage
+            .get_title_sort_title(&nested.id)
+            .await?
+            .unwrap_or_else(|| nested.title.clone());
+        let percentage = title_progress_percentage(nested, cache, username);
+        nested_order.push((nested, sort_title, percentage));
+    }
+    nested_order.sort_by(
+        |(left, left_sort, left_progress), (right, right_sort, right_progress)| match sort_method {
+            SortMethod::TimeModified => left
+                .mtime
+                .cmp(&right.mtime)
+                .then_with(|| natord::compare(left_sort, right_sort)),
+            SortMethod::Progress => left_progress
+                .total_cmp(right_progress)
+                .then_with(|| natord::compare(left_sort, right_sort)),
+            SortMethod::Name | SortMethod::TimeAdded | SortMethod::Auto => {
+                natord::compare(left_sort, right_sort)
+            }
+        },
+    );
+    if !ascending {
+        nested_order.reverse();
+    }
     let mut title_percentages = Vec::with_capacity(title.nested_titles.len());
     let mut child_parents = parents;
     child_parents.push(MangoTitleParent {
         title: title.title.clone(),
         id: title.id.clone(),
     });
-    for nested in title.get_nested_titles_sorted(sort_method, ascending) {
+    for (nested, _, percentage) in nested_order {
         let nested_info = cache.get_title_info(&nested.id).unwrap_or_default();
-        title_percentages.push(title_progress_percentage(nested, cache, username));
+        title_percentages.push(percentage);
         nested_titles.push(
             Box::pin(mango_title_response(
                 state,
@@ -778,42 +870,26 @@ async fn mango_title_response(
         );
     }
 
-    let mut ordered_entries = Vec::with_capacity(title.entries.len());
-    if sort_method == SortMethod::TimeAdded {
-        let mut entries = Vec::with_capacity(title.entries.len());
-        for entry in &title.entries {
-            let sort_title = state
-                .storage
-                .get_entry_sort_title(&entry.id)
-                .await?
-                .unwrap_or_else(|| entry.title.clone());
-            entries.push((entry, sort_title));
-        }
-        entries.sort_by(|(left, left_title), (right, right_title)| {
-            info.get_date_added(&left.title)
-                .unwrap_or_default()
-                .cmp(&info.get_date_added(&right.title).unwrap_or_default())
-                .then_with(|| natord::compare(left_title, right_title))
-        });
-        if !ascending {
-            entries.reverse();
-        }
-        ordered_entries.extend(
-            entries
-                .into_iter()
-                .map(|(entry, sort_title)| (entry, Some(sort_title))),
-        );
-    } else if sort_method == SortMethod::Progress {
-        let mut entries = Vec::with_capacity(title.entries.len());
-        for entry in &title.entries {
-            let sort_title = state
-                .storage
-                .get_entry_sort_title(&entry.id)
-                .await?
-                .unwrap_or_else(|| entry.title.clone());
-            entries.push((entry, sort_title));
-        }
-        entries.sort_by(|(left, left_title), (right, right_title)| {
+    let mut entries_with_sort_title = Vec::with_capacity(title.entries.len());
+    for entry in &title.entries {
+        let sort_title = state
+            .storage
+            .get_entry_sort_title(&entry.id)
+            .await?
+            .unwrap_or_else(|| entry.title.clone());
+        entries_with_sort_title.push((entry, sort_title));
+    }
+    entries_with_sort_title.sort_by(|(left, left_sort), (right, right_sort)| match sort_method {
+        SortMethod::TimeModified => left
+            .mtime
+            .cmp(&right.mtime)
+            .then_with(|| natord::compare(left_sort, right_sort)),
+        SortMethod::TimeAdded => info
+            .get_date_added(&left.title)
+            .unwrap_or_default()
+            .cmp(&info.get_date_added(&right.title).unwrap_or_default())
+            .then_with(|| natord::compare(left_sort, right_sort)),
+        SortMethod::Progress => {
             let left_progress = entry_progress_percentage(
                 info.get_progress(username, &left.title).unwrap_or(0),
                 left.pages,
@@ -824,24 +900,17 @@ async fn mango_title_response(
             );
             left_progress
                 .total_cmp(&right_progress)
-                .then_with(|| natord::compare(left_title, right_title))
-        });
-        if !ascending {
-            entries.reverse();
+                .then_with(|| natord::compare(left_sort, right_sort))
         }
-        ordered_entries.extend(
-            entries
-                .into_iter()
-                .map(|(entry, sort_title)| (entry, Some(sort_title))),
-        );
-    } else {
-        ordered_entries.extend(
-            title
-                .get_entries_sorted(sort_method, ascending)
-                .into_iter()
-                .map(|entry| (entry, None)),
-        );
+        SortMethod::Name | SortMethod::Auto => natord::compare(left_sort, right_sort),
+    });
+    if !ascending {
+        entries_with_sort_title.reverse();
     }
+    let ordered_entries = entries_with_sort_title
+        .into_iter()
+        .map(|(entry, sort_title)| (entry, Some(sort_title)))
+        .collect::<Vec<_>>();
 
     let mut entries = Vec::with_capacity(title.entries.len());
     let mut entry_percentages = Vec::with_capacity(title.entries.len());
@@ -893,7 +962,7 @@ fn entry_progress_percentage(progress: i32, pages: usize) -> f32 {
     progress.clamp(0, pages as i32) as f32 / pages as f32
 }
 
-fn join_base_url(base_url: &str, path: &str) -> String {
+pub(super) fn join_base_url(base_url: &str, path: &str) -> String {
     if path.starts_with("http://") || path.starts_with("https://") {
         path.to_string()
     } else {
@@ -1316,4 +1385,32 @@ pub async fn update_progress(
 
     lib.invalidate_cache_for_progress(&username).await;
     Json(serde_json::json!({ "success": true }))
+}
+#[cfg(test)]
+mod parity_contract_tests {
+    use super::{order_continue_candidates, page_index};
+
+    #[test]
+    fn reader_pages_are_one_based() {
+        assert_eq!(page_index(0), None);
+        assert_eq!(page_index(1), Some(0));
+        assert_eq!(page_index(12), Some(11));
+    }
+
+    #[test]
+    fn continue_reading_limits_candidates_before_sorting() {
+        let mut candidates: Vec<(Option<i64>, usize, f32)> = (0..10)
+            .map(|timestamp| (Some(timestamp), timestamp as usize, 0.0))
+            .collect();
+
+        order_continue_candidates(&mut candidates);
+
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|(_, candidate_id, _)| *candidate_id)
+                .collect::<Vec<_>>(),
+            (0..8).rev().map(|id| id as usize).collect::<Vec<_>>()
+        );
+    }
 }

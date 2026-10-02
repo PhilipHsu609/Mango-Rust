@@ -172,48 +172,52 @@ impl Title {
         &'a self,
         username: &str,
         info: &super::progress::TitleInfo,
+        sort_title_overrides: &std::collections::HashMap<String, String>,
     ) -> Option<(&'a Entry, Option<&'a Entry>)> {
         let (method, ascending) = info
             .get_sort_by(username)
             .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
             .unwrap_or((SortMethod::Auto, true));
-        let mut entries = self.get_entries_sorted(method, ascending);
-        if method == SortMethod::TimeAdded {
-            entries.sort_by(|left, right| {
-                info.get_date_added(&left.title)
-                    .unwrap_or_default()
-                    .cmp(&info.get_date_added(&right.title).unwrap_or_default())
-                    .then_with(|| natord::compare(&left.title, &right.title))
-            });
-            if !ascending {
-                entries.reverse();
+        let mut entries: Vec<&Entry> = self.entries.iter().collect();
+        entries.sort_by(|left, right| {
+            let name_order = || {
+                let left_title = sort_title_overrides
+                    .get(&left.id)
+                    .map(String::as_str)
+                    .unwrap_or(&left.title);
+                let right_title = sort_title_overrides
+                    .get(&right.id)
+                    .map(String::as_str)
+                    .unwrap_or(&right.title);
+                natord::compare(left_title, right_title)
+            };
+            match method {
+                SortMethod::TimeModified => left.mtime.cmp(&right.mtime).then_with(name_order),
+                SortMethod::TimeAdded => info
+                    .get_date_added(&left.title)
+                    .unwrap_or(left.ctime)
+                    .cmp(&info.get_date_added(&right.title).unwrap_or(right.ctime))
+                    .then_with(name_order),
+                SortMethod::Progress => {
+                    let percentage = |entry: &Entry| {
+                        if entry.pages == 0 {
+                            0.0
+                        } else {
+                            info.get_progress(username, &entry.title)
+                                .unwrap_or(0)
+                                .clamp(0, entry.pages as i32) as f32
+                                / entry.pages as f32
+                        }
+                    };
+                    percentage(left)
+                        .total_cmp(&percentage(right))
+                        .then_with(name_order)
+                }
+                SortMethod::Name | SortMethod::Auto => name_order(),
             }
-        }
-        if method == SortMethod::Progress {
-            entries.sort_by(|left, right| {
-                let left_progress = if left.pages == 0 {
-                    0.0
-                } else {
-                    info.get_progress(username, &left.title)
-                        .unwrap_or(0)
-                        .clamp(0, left.pages as i32) as f32
-                        / left.pages as f32
-                };
-                let right_progress = if right.pages == 0 {
-                    0.0
-                } else {
-                    info.get_progress(username, &right.title)
-                        .unwrap_or(0)
-                        .clamp(0, right.pages as i32) as f32
-                        / right.pages as f32
-                };
-                left_progress
-                    .total_cmp(&right_progress)
-                    .then_with(|| natord::compare(&left.title, &right.title))
-            });
-            if !ascending {
-                entries.reverse();
-            }
+        });
+        if !ascending {
+            entries.reverse();
         }
         let mut index = entries.iter().rposition(|entry| {
             info.get_progress(username, &entry.title)
@@ -633,11 +637,15 @@ mod tests {
         info.set_progress("admin", "Volume 1", 10);
         info.set_progress("admin", "Volume 2", 3);
 
-        let (selected, _) = title.get_continue_reading_entry("admin", &info).unwrap();
+        let (selected, _) = title
+            .get_continue_reading_entry("admin", &info, &Default::default())
+            .unwrap();
         assert_eq!(selected.id, "entry-2");
 
         info.set_progress("admin", "Volume 2", 10);
-        let (selected, previous) = title.get_continue_reading_entry("admin", &info).unwrap();
+        let (selected, previous) = title
+            .get_continue_reading_entry("admin", &info, &Default::default())
+            .unwrap();
         assert_eq!(selected.id, "entry-3");
         assert_eq!(previous.unwrap().id, "entry-2");
     }
@@ -650,7 +658,9 @@ mod tests {
         info.set_date_added("Volume 1", 1_700_000_000);
         info.set_progress("admin", "Volume 1", 2);
 
-        let (selected, _) = title.get_continue_reading_entry("admin", &info).unwrap();
+        let (selected, _) = title
+            .get_continue_reading_entry("admin", &info, &Default::default())
+            .unwrap();
         assert_eq!(selected.id, "entry-1");
     }
     #[test]
@@ -661,8 +671,28 @@ mod tests {
         info.set_progress("admin", "Volume 1", 10);
         info.set_progress("admin", "Volume 2", 3);
 
-        let (selected, _) = title.get_continue_reading_entry("admin", &info).unwrap();
+        let (selected, _) = title
+            .get_continue_reading_entry("admin", &info, &Default::default())
+            .unwrap();
         assert_eq!(selected.id, "entry-3");
+    }
+
+    #[test]
+    fn continue_reading_uses_entry_sort_title_overrides() {
+        let title = continue_reading_title();
+        let mut info = TitleInfo::default();
+        info.set_progress("admin", "Volume 1", 2);
+        info.set_progress("admin", "Volume 2", 3);
+        let sort_titles = std::collections::HashMap::from([
+            ("entry-1".to_string(), "Z".to_string()),
+            ("entry-2".to_string(), "A".to_string()),
+            ("entry-3".to_string(), "M".to_string()),
+        ]);
+
+        let (selected, _) = title
+            .get_continue_reading_entry("admin", &info, &sort_titles)
+            .unwrap();
+        assert_eq!(selected.id, "entry-1");
     }
 
     #[tokio::test]
@@ -719,7 +749,9 @@ mod tests {
         let mut info = TitleInfo::default();
         info.set_progress("admin", "Volume 3", 10);
 
-        let (selected, previous) = title.get_continue_reading_entry("admin", &info).unwrap();
+        let (selected, previous) = title
+            .get_continue_reading_entry("admin", &info, &Default::default())
+            .unwrap();
         assert_eq!(selected.id, "entry-1");
         assert!(previous.is_none());
     }

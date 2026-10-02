@@ -116,7 +116,7 @@ describe('Auth API', () => {
         headers: { Cookie: sessionCookie! },
         redirect: 'manual',
       });
-      expect(verifyResponse.status).toBe(303);
+      expect(verifyResponse.status).toBe(401);
     });
 
     it('redirects to login even without session', async () => {
@@ -130,13 +130,18 @@ describe('Auth API', () => {
   });
 
   describe('Protected routes', () => {
-    it('unauthenticated request to /api/library redirects to login', async () => {
+    it('unauthenticated API requests return Mango 401 responses', async () => {
       const response = await fetch(`${BASE_URL}/api/library`, {
         redirect: 'manual',
       });
 
-      expect(response.status).toBe(303);
-      expect(response.headers.get('location')).toBe('/login');
+      expect(response.status).toBe(401);
+      expect(await response.text()).toBe('Unauthorized');
+      const apiRootResponse = await fetch(`${BASE_URL}/api`, {
+        redirect: 'manual',
+      });
+      expect(apiRootResponse.status).toBe(401);
+      expect(await apiRootResponse.text()).toBe('Unauthorized');
     });
 
     it('authenticated request to /api/library succeeds', async () => {
@@ -245,8 +250,7 @@ describe('Auth API', () => {
         redirect: 'manual',
       });
 
-      expect(response.status).toBe(303);
-      expect(response.headers.get('location')).toBe('/login');
+      expect(response.status).toBe(401);
     });
   });
 });
