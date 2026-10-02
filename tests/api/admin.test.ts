@@ -32,6 +32,59 @@ describe('Admin API', () => {
       ]));
     });
   });
+  describe('POST /admin/user/edit/:original_username', () => {
+    it('renames an existing user without changing its role or password', async () => {
+      const suffix = Date.now().toString();
+      const originalUsername = `rename-source-${suffix}`;
+      const renamedUsername = `rename-target-${suffix}`;
+      const password = 'rename-test-password';
+      const cookie = getSessionCookie()!;
+
+      try {
+        const createResponse = await api.post('/api/admin/users', {
+          username: originalUsername,
+          password,
+          is_admin: false,
+        });
+        expect(createResponse.status).toBe(201);
+
+        const renameResponse = await fetch(
+          `${BASE_URL}/admin/user/edit/${encodeURIComponent(originalUsername)}`,
+          {
+            method: 'POST',
+            headers: {
+              Cookie: cookie,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({ username: renamedUsername }),
+            redirect: 'manual',
+          },
+        );
+        expect(renameResponse.status).toBe(303);
+
+        const usersResponse = await api.get('/api/admin/users');
+        expect(usersResponse.status).toBe(200);
+        const users = await usersResponse.json();
+        expect(users).toContainEqual({ username: renamedUsername, is_admin: false });
+        expect(users).not.toContainEqual({ username: originalUsername, is_admin: false });
+
+        const loginResponse = await fetch(`${BASE_URL}/api/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: renamedUsername, password }),
+        });
+        expect(loginResponse.status).toBe(200);
+      } finally {
+        for (const username of [originalUsername, renamedUsername]) {
+          await fetch(`${BASE_URL}/api/admin/users/${encodeURIComponent(username)}`, {
+            method: 'DELETE',
+            headers: { Cookie: cookie },
+          });
+        }
+      }
+    });
+  });
+
   describe('POST /api/admin/upload/cover', () => {
     it('persists title and entry cover URLs, serves uploads, and exposes entry covers in OPDS', async () => {
       const libraryResponse = await api.get('/api/library');

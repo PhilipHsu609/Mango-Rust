@@ -1043,7 +1043,7 @@ pub async fn user_edit_post_existing(
 
     state
         .storage
-        .update_user(&username, &username, password.as_deref(), is_admin)
+        .update_user(&username, &form.username, password.as_deref(), is_admin)
         .await?;
 
     tracing::info!(

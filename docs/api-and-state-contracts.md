@@ -6,15 +6,18 @@
 
 ## Open in-scope behavior gaps
 
-1. **Existing-user rename.** Mango's `POST /admin/user/edit/:original_username` applies the submitted username. Rust's `src/routes/admin.rs::user_edit_post_existing` passes the path username as both old and new names, ignoring the editable form field.
-2. **User-input validation.** `Mango/src/util/validation.cr` requires usernames of at least 3 characters matching `[A-Za-z_][A-Za-z0-9_-]*` and passwords of at least 6 ASCII characters. Rust web/API create and update paths call `Storage::create_user`/`update_user` without those checks; the CLI checks only password length.
-3. **Authentication modes.** Mango supports Bearer tokens, `disable_login` with `default_username`, and `auth_proxy_header_name` (`Mango/src/handlers/auth_handler.cr`). Rust `require_auth` supports sessions, Basic credentials on OPDS/archive-download paths, and browser/API failures, but not those Mango modes.
-4. **Configuration contracts.** Mango honors `CONFIG_PATH`, derives environment variables for every option, uses file > environment > default precedence, and normalizes `base_url` to end in `/`. Rust loads a fixed default path unless its caller passes a path, overrides only selected `MANGO_*` variables after YAML, and validates but does not store the normalized trailing slash. Default database paths also differ: `~/mango.db` in Mango, `~/mango/mango.db` in Rust.
-5. **CLI parity.** Mango supports `admin user add/delete/update/list` and `--config`; Rust implements only `admin user update <username> --password <password>` and loads the default config.
-6. **API-reference surface.** Mango serves the `/api` page and `/openapi.json`; Rust registers neither. Documentation surface only, not a missing API operation.
-7. **Reader error branch.** Mango renders `reader-error.html.ecr` when an entry has `err_msg`, with next-entry and return-to-title actions. Rust's reader has no equivalent error page/branch.
-8. **HTTP and state differences.** CORS/preflight headers, 365-day versus 7-day sessions, login callback redirects, HTML error pages versus Rust text errors, route status/body behavior, image ETags/cache headers, scan timing, and cover upload validation/path semantics differ in inspected source; details are recorded in the route matrix.
-9. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Invalid archives are retained as error entries by Mango but dropped by the Rust scanner. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
+1. **User-input validation.** `Mango/src/util/validation.cr` requires usernames of at least 3 characters matching `[A-Za-z_][A-Za-z0-9_-]*` and passwords of at least 6 ASCII characters. Rust web/API create and update paths call `Storage::create_user`/`update_user` without those checks; the CLI checks only password length.
+2. **Authentication modes.** Mango supports Bearer tokens, `disable_login` with `default_username`, and `auth_proxy_header_name` (`Mango/src/handlers/auth_handler.cr`). Rust `require_auth` supports sessions, Basic credentials on OPDS/archive-download paths, and browser/API failures, but not those Mango modes.
+3. **Configuration contracts.** Mango honors `CONFIG_PATH`, derives environment variables for every option, uses file > environment > default precedence, and normalizes `base_url` to end in `/`. Rust loads a fixed default path unless its caller passes a path, overrides only selected `MANGO_*` variables after YAML, and validates but does not store the normalized trailing slash. Default database paths also differ: `~/mango.db` in Mango, `~/mango/mango.db` in Rust.
+4. **CLI parity.** Mango supports `admin user add/delete/update/list` and `--config`; Rust implements only `admin user update <username> --password <password>` and loads the default config.
+5. **API-reference surface.** Mango serves the `/api` page and `/openapi.json`; Rust registers neither. Documentation surface only, not a missing API operation.
+6. **Reader error branch.** Mango renders `reader-error.html.ecr` when an entry has `err_msg`, with next-entry and return-to-title actions. Rust's reader has no equivalent error page/branch.
+7. **HTTP and state differences.** CORS/preflight headers, 365-day versus 7-day sessions, login callback redirects, HTML error pages versus Rust text errors, route status/body behavior, image ETags/cache headers, scan timing, and cover upload validation/path semantics differ in inspected source; details are recorded in the route matrix.
+8. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Invalid archives are retained as error entries by Mango but dropped by the Rust scanner. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
+
+## Resolved behavior gaps
+
+- **Existing-user rename.** `user_edit_post_existing` now passes the URL username as the existing account key and the submitted form username as the new key. An integration test exercises the admin form route, checks that the renamed user replaces the old listing while retaining its role, and authenticates with the unchanged password. Username validation and Mango's error-query redirect behavior remain separate gaps.
 
 ## Status vocabulary
 
@@ -34,11 +37,12 @@
 | `GET /`, `GET /library`, `GET /book/:title` | Same page shapes (`/book/:id`); `src/routes/main.rs`, `book.rs` | Matched route/page purposes; home/title data selection and template contracts have specific differences below. |
 | `GET /tags`, `GET /tags/:tag` | Same paths; `src/routes/main.rs` | Matched route/page purposes; sort-query parsing and error behavior differ. |
 | `GET /admin`, `/admin/user`, `/admin/user/edit`, `/admin/missing` | Same paths; `src/routes/admin.rs` | Matched route/page purposes; user validation and edit-error feedback differ. |
-| `POST /admin/user/edit`, `POST /admin/user/edit/:original_username` | Same create/edit paths (`:username`); `src/routes/admin.rs` | Different: Rust cannot rename the existing user and does not reproduce Mango's error-query redirect contract. |
+| `POST /admin/user/edit`, `POST /admin/user/edit/:original_username` | Same create/edit paths (`:username`); `src/routes/admin.rs` | Rename behavior now applies the submitted username; user validation and Mango's error-query redirect remain different. |
 | `GET /reader/:title/:entry`, `GET /reader/:title/:entry/:page` | Same route shapes (`:tid/:eid[/page]`); `src/routes/reader.rs` | Different: Mango continuation detects errored entries and renders a dedicated error page; no Rust equivalent found. |
 | `GET /opds`, `GET /opds/book/:title_id` | Same paths; `src/routes/opds.rs` | Matched route/page purposes; Crystal omits error entries in title feed; exact rendered-field and error parity is not established. |
 | `GET /api` | No Rust route/template | Missing documentation page. |
 | `GET /download/plugins`, `GET /admin/downloads`, `GET /admin/subscriptions` | No Rust route/template | Explicitly excluded download/plugin UI. |
+
 
 ### Crystal JSON/WebSocket API routes
 
