@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+use super::chapter_sort::{compare_numerically, ChapterSorter};
 use super::entry::Entry;
 use super::manager::SortMethod;
 use crate::error::Result;
@@ -179,18 +180,31 @@ impl Title {
             .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
             .unwrap_or((SortMethod::Auto, true));
         let mut entries: Vec<&Entry> = self.entries.iter().collect();
+        let chapter_sorter = if matches!(method, SortMethod::Auto) {
+            let sort_titles = self
+                .entries
+                .iter()
+                .map(|entry| {
+                    sort_title_overrides
+                        .get(&entry.id)
+                        .map(String::as_str)
+                        .unwrap_or(&entry.title)
+                })
+                .collect::<Vec<_>>();
+            Some(ChapterSorter::new(&sort_titles))
+        } else {
+            None
+        };
         entries.sort_by(|left, right| {
-            let name_order = || {
-                let left_title = sort_title_overrides
-                    .get(&left.id)
-                    .map(String::as_str)
-                    .unwrap_or(&left.title);
-                let right_title = sort_title_overrides
-                    .get(&right.id)
-                    .map(String::as_str)
-                    .unwrap_or(&right.title);
-                natord::compare(left_title, right_title)
-            };
+            let left_title = sort_title_overrides
+                .get(&left.id)
+                .map(String::as_str)
+                .unwrap_or(&left.title);
+            let right_title = sort_title_overrides
+                .get(&right.id)
+                .map(String::as_str)
+                .unwrap_or(&right.title);
+            let name_order = || compare_numerically(left_title, right_title);
             match method {
                 SortMethod::TimeModified => left.mtime.cmp(&right.mtime).then_with(name_order),
                 SortMethod::TimeAdded => info
@@ -213,7 +227,12 @@ impl Title {
                         .total_cmp(&percentage(right))
                         .then_with(name_order)
                 }
-                SortMethod::Name | SortMethod::Auto => name_order(),
+                SortMethod::Name => name_order(),
+                SortMethod::Auto => chapter_sorter
+                    .as_ref()
+                    .expect("auto sorting builds a chapter sorter")
+                    .compare(left_title, right_title)
+                    .then_with(name_order),
             }
         });
         if !ascending {

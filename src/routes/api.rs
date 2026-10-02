@@ -10,7 +10,10 @@ use super::recently_added::{group_recent_entries, RecentEntry, RECENT_ITEMS_LIMI
 
 use crate::{
     error::Result,
-    library::{Entry, SortMethod},
+    library::{
+        chapter_sort::{compare_numerically, ChapterSorter},
+        Entry, SortMethod,
+    },
     AppState,
 };
 
@@ -58,12 +61,12 @@ pub async fn get_library(
                 SortMethod::TimeModified => left
                     .mtime
                     .cmp(&right.mtime)
-                    .then_with(|| natord::compare(left_sort, right_sort)),
+                    .then_with(|| compare_numerically(left_sort, right_sort)),
                 SortMethod::Progress => left_progress
                     .total_cmp(right_progress)
-                    .then_with(|| natord::compare(left_sort, right_sort)),
+                    .then_with(|| compare_numerically(left_sort, right_sort)),
                 SortMethod::Name | SortMethod::TimeAdded | SortMethod::Auto => {
-                    natord::compare(left_sort, right_sort)
+                    compare_numerically(left_sort, right_sort)
                 }
             }
         },
@@ -869,12 +872,12 @@ async fn mango_title_response(
             SortMethod::TimeModified => left
                 .mtime
                 .cmp(&right.mtime)
-                .then_with(|| natord::compare(left_sort, right_sort)),
+                .then_with(|| compare_numerically(left_sort, right_sort)),
             SortMethod::Progress => left_progress
                 .total_cmp(right_progress)
-                .then_with(|| natord::compare(left_sort, right_sort)),
+                .then_with(|| compare_numerically(left_sort, right_sort)),
             SortMethod::Name | SortMethod::TimeAdded | SortMethod::Auto => {
-                natord::compare(left_sort, right_sort)
+                compare_numerically(left_sort, right_sort)
             }
         },
     );
@@ -915,16 +918,25 @@ async fn mango_title_response(
             .unwrap_or_else(|| entry.title.clone());
         entries_with_sort_title.push((entry, sort_title));
     }
+    let chapter_sorter = if matches!(sort_method, SortMethod::Auto) {
+        let sort_titles = entries_with_sort_title
+            .iter()
+            .map(|(_, sort_title)| sort_title.as_str())
+            .collect::<Vec<_>>();
+        Some(ChapterSorter::new(&sort_titles))
+    } else {
+        None
+    };
     entries_with_sort_title.sort_by(|(left, left_sort), (right, right_sort)| match sort_method {
         SortMethod::TimeModified => left
             .mtime
             .cmp(&right.mtime)
-            .then_with(|| natord::compare(left_sort, right_sort)),
+            .then_with(|| compare_numerically(left_sort, right_sort)),
         SortMethod::TimeAdded => info
             .get_date_added(&left.title)
             .unwrap_or_default()
             .cmp(&info.get_date_added(&right.title).unwrap_or_default())
-            .then_with(|| natord::compare(left_sort, right_sort)),
+            .then_with(|| compare_numerically(left_sort, right_sort)),
         SortMethod::Progress => {
             let left_progress = entry_progress_percentage(
                 info.get_progress(username, &left.title).unwrap_or(0),
@@ -936,9 +948,14 @@ async fn mango_title_response(
             );
             left_progress
                 .total_cmp(&right_progress)
-                .then_with(|| natord::compare(left_sort, right_sort))
+                .then_with(|| compare_numerically(left_sort, right_sort))
         }
-        SortMethod::Name | SortMethod::Auto => natord::compare(left_sort, right_sort),
+        SortMethod::Name => compare_numerically(left_sort, right_sort),
+        SortMethod::Auto => chapter_sorter
+            .as_ref()
+            .expect("auto sorting builds a chapter sorter")
+            .compare(left_sort, right_sort)
+            .then_with(|| compare_numerically(left_sort, right_sort)),
     });
     if !ascending {
         entries_with_sort_title.reverse();

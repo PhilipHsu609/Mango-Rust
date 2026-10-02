@@ -1,4 +1,5 @@
 pub mod cache;
+pub(crate) mod chapter_sort;
 pub mod entry;
 pub mod progress;
 pub mod progress_cache;
