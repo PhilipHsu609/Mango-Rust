@@ -921,3 +921,77 @@ mod path_similarity_tests {
         assert!(moved_chapter > other_chapter);
     }
 }
+
+#[cfg(test)]
+mod archive_error_tests {
+    use super::Library;
+    use crate::{Config, Storage};
+
+    #[tokio::test]
+    async fn corrupt_archive_remains_an_entry_across_scans_and_cache_serialization() {
+        let temp = tempfile::tempdir().unwrap();
+        let library_path = temp.path().join("library");
+        let title_path = library_path.join("Series");
+        std::fs::create_dir_all(&title_path).unwrap();
+        let archive_path = title_path.join("Chapter 1.cbz");
+        let bad_archive = b"not a valid archive";
+        std::fs::write(&archive_path, bad_archive).unwrap();
+
+        let db_path = temp.path().join("test.db");
+        std::fs::File::create(&db_path).unwrap();
+        let storage = Storage::new(&format!("sqlite://{}", db_path.display()))
+            .await
+            .unwrap();
+        let config = Config {
+            host: "127.0.0.1".to_string(),
+            port: 9000,
+            base_url: "/".to_string(),
+            session_secret: "test".to_string(),
+            library_path: library_path.clone(),
+            db_path,
+            queue_db_path: temp.path().join("queue.db"),
+            scan_interval_minutes: 0,
+            thumbnail_generation_interval_hours: 0,
+            log_level: "info".to_string(),
+            upload_path: temp.path().join("uploads"),
+            plugin_path: temp.path().join("plugins"),
+            download_timeout_seconds: 30,
+            library_cache_path: temp.path().join("library-cache.bin"),
+            cache_enabled: false,
+            cache_size_mbs: 0,
+            cache_log_enabled: false,
+            disable_login: false,
+            default_username: String::new(),
+            auth_proxy_header_name: String::new(),
+            plugin_update_interval_hours: 24,
+        };
+        let mut library = Library::new(library_path, storage, &config);
+        library.scan().await.unwrap();
+        let title = library.get_titles()[0];
+        assert_eq!(title.entries.len(), 1);
+        let entry = &title.entries[0];
+        assert_eq!(entry.path, archive_path);
+        assert_eq!(entry.title, "Chapter 1");
+        assert_eq!(entry.size_bytes, bad_archive.len() as u64);
+        assert_eq!(entry.pages, 0);
+        assert!(entry.image_files.is_empty());
+        assert!(entry
+            .err_msg
+            .as_deref()
+            .unwrap()
+            .starts_with("Archive error:"));
+        let original_id = entry.id.clone();
+
+        // The persistent cache uses MessagePack to serialize the complete title tree.
+        let serialized = rmp_serde::to_vec(title).unwrap();
+        let cached: crate::library::Title = rmp_serde::from_slice(&serialized).unwrap();
+        assert_eq!(cached.entries[0].err_msg, entry.err_msg);
+        assert_eq!(cached.entries[0].id, original_id);
+
+        library.scan().await.unwrap();
+        let rescanned = &library.get_titles()[0].entries[0];
+        assert_eq!(rescanned.id, original_id);
+        assert!(rescanned.err_msg.is_some());
+        assert_eq!(rescanned.pages, 0);
+    }
+}

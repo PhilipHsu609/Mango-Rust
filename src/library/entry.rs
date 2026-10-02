@@ -35,6 +35,10 @@ pub struct Entry {
     /// Total bytes in the archive or loose-image directory.
     #[serde(default)]
     pub size_bytes: u64,
+
+    /// Archive validation failure, if the entry cannot be read.
+    #[serde(default)]
+    pub err_msg: Option<String>,
 }
 impl Entry {
     /// Create a new Entry from a file path (ZIP/CBZ archive)
@@ -53,8 +57,26 @@ impl Entry {
             .unwrap()
             .as_secs() as i64;
 
-        // Extract image list from archive (moved to blocking task to avoid blocking async runtime)
-        let image_files = extract_image_list(&path).await?;
+        // Archive validation errors are represented by a visible, unreadable entry.
+        // Metadata and identity still belong to the file, even when it has no pages.
+        let (image_files, err_msg) = match extract_image_list(&path).await {
+            Ok(images) => (images, None),
+            Err(crate::error::Error::Archive(error)) => {
+                let message = format!("Archive error: {error}");
+                tracing::warn!("Unable to extract archive {}. {}", path.display(), message);
+                (Vec::new(), Some(message))
+            }
+            Err(crate::error::Error::Io(error))
+                if error.kind() == std::io::ErrorKind::PermissionDenied =>
+            {
+                let message = format!("File {} is not readable.", path.display());
+                tracing::warn!(
+                    "{message} Please make sure the file permission is configured correctly."
+                );
+                (Vec::new(), Some(message))
+            }
+            Err(error) => return Err(error),
+        };
         let pages = image_files.len();
 
         Ok(Self {
@@ -67,6 +89,7 @@ impl Entry {
             pages,
             image_files,
             size_bytes: metadata.len(),
+            err_msg,
         })
     }
 
@@ -129,6 +152,7 @@ impl Entry {
             pages: image_files.len(),
             image_files,
             size_bytes,
+            err_msg: None,
         }))
     }
 
@@ -183,6 +207,10 @@ impl Entry {
         &self,
         db: &sqlx::SqlitePool,
     ) -> Result<Option<(Vec<u8>, String, usize)>> {
+        if self.err_msg.is_some() {
+            return Ok(None);
+        }
+
         // Get first page
         let page_data = match self.get_page(0).await {
             Ok(data) => data,
@@ -318,9 +346,38 @@ async fn extract_image_list(archive_path: &Path) -> Result<Vec<String>> {
     let path = archive_path.to_path_buf();
 
     tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::open(&path)?;
-        let files = compress_tools::list_archive_files(file)
-            .map_err(|e| crate::error::Error::Internal(format!("Failed to list archive: {}", e)))?;
+        use std::io::{Read, Seek};
+
+        let mut file = std::fs::File::open(&path)?;
+        // compress-tools enables libarchive's "raw" fallback: arbitrary data can
+        // otherwise appear to be a valid archive with no image entries.
+        let mut magic = [0; 8];
+        if let Err(error) = file.read_exact(&mut magic) {
+            if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Err(crate::error::Error::Archive(
+                    compress_tools::Error::Extraction("Unrecognized archive format".to_string()),
+                ));
+            }
+            return Err(error.into());
+        }
+        let zip = matches!(&magic[..4], b"PK\x03\x04" | b"PK\x05\x06" | b"PK\x07\x08");
+        let rar =
+            magic.starts_with(b"Rar!\x1a\x07\x00") || magic.starts_with(b"Rar!\x1a\x07\x01\x00");
+        let seven_zip = magic.starts_with(b"7z\xbc\xaf\x27\x1c");
+        let is_zip_path = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                extension.eq_ignore_ascii_case("zip") || extension.eq_ignore_ascii_case("cbz")
+            });
+        if !(zip || (!is_zip_path && (rar || seven_zip))) {
+            return Err(crate::error::Error::Archive(
+                compress_tools::Error::Extraction("Unrecognized archive format".to_string()),
+            ));
+        }
+        file.rewind()?;
+        let files =
+            compress_tools::list_archive_files(file).map_err(crate::error::Error::Archive)?;
 
         let mut images: Vec<String> = files
             .into_iter()
@@ -404,5 +461,7 @@ mod tests {
         let entry = Entry::from_archive(PathBuf::from(path)).await.unwrap();
 
         assert_eq!(entry.ctime, expected_ctime);
+        assert_eq!(entry.pages, 0);
+        assert_eq!(entry.err_msg, None);
     }
 }

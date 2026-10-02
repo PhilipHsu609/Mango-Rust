@@ -1,13 +1,13 @@
 use askama::Template;
 use axum::{
     extract::{Path, State},
-    response::{Html, Redirect},
+    response::{Html, IntoResponse, Redirect, Response},
 };
 
 use crate::{
     auth::Username,
     error::{Error, Result},
-    library::{SortMethod, TitleInfo},
+    library::{Entry, SortMethod, Title, TitleInfo},
     util::render_error,
     AppState,
 };
@@ -33,6 +33,74 @@ struct ReaderTemplate {
     prev_entry_url: Option<String>,
     next_entry_url: Option<String>,
     exit_url: String,
+}
+
+#[derive(Template)]
+#[template(path = "reader-error.html")]
+struct ReaderErrorTemplate {
+    nav: crate::util::NavigationState,
+    entry_path: String,
+    err_msg: String,
+    next_entry_url: Option<String>,
+    exit_url: String,
+}
+
+async fn ordered_entries<'a>(
+    state: &AppState,
+    title: &'a Title,
+    info: &TitleInfo,
+    username: &str,
+) -> Result<Vec<(&'a Entry, String)>> {
+    let (sort_method, ascending) = info
+        .get_sort_by(username)
+        .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
+        .unwrap_or((SortMethod::Auto, true));
+    let mut ordered_entries = Vec::with_capacity(title.entries.len());
+    for item in &title.entries {
+        let sort_title = state
+            .storage
+            .get_entry_sort_title(&item.id)
+            .await?
+            .unwrap_or_else(|| item.title.clone());
+        ordered_entries.push((item, sort_title));
+    }
+    ordered_entries.sort_by(|(left, left_title), (right, right_title)| {
+        let name_order = || natord::compare(left_title, right_title);
+        match sort_method {
+            SortMethod::TimeModified => left.mtime.cmp(&right.mtime).then_with(name_order),
+            SortMethod::TimeAdded => info
+                .get_date_added(&left.title)
+                .unwrap_or_default()
+                .cmp(&info.get_date_added(&right.title).unwrap_or_default())
+                .then_with(name_order),
+            SortMethod::Progress => {
+                let left_progress = if left.pages == 0 {
+                    0.0
+                } else {
+                    info.get_progress(username, &left.title)
+                        .unwrap_or(0)
+                        .clamp(0, left.pages as i32) as f32
+                        / left.pages as f32
+                };
+                let right_progress = if right.pages == 0 {
+                    0.0
+                } else {
+                    info.get_progress(username, &right.title)
+                        .unwrap_or(0)
+                        .clamp(0, right.pages as i32) as f32
+                        / right.pages as f32
+                };
+                left_progress
+                    .total_cmp(&right_progress)
+                    .then_with(name_order)
+            }
+            SortMethod::Name | SortMethod::Auto => name_order(),
+        }
+    });
+    if !ascending {
+        ordered_entries.reverse();
+    }
+    Ok(ordered_entries)
 }
 
 /// GET /reader/{title_id}/{entry_id}/{page} - Display reader for an entry page
@@ -66,55 +134,7 @@ pub async fn reader(
     }
 
     let info = TitleInfo::load(&title.path).await?;
-    let (sort_method, ascending) = info
-        .get_sort_by(&username)
-        .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
-        .unwrap_or((SortMethod::Auto, true));
-    let mut ordered_entries = Vec::with_capacity(title.entries.len());
-    for item in &title.entries {
-        let sort_title = state
-            .storage
-            .get_entry_sort_title(&item.id)
-            .await?
-            .unwrap_or_else(|| item.title.clone());
-        ordered_entries.push((item, sort_title));
-    }
-    ordered_entries.sort_by(|(left, left_title), (right, right_title)| {
-        let name_order = || natord::compare(left_title, right_title);
-        match sort_method {
-            SortMethod::TimeModified => left.mtime.cmp(&right.mtime).then_with(name_order),
-            SortMethod::TimeAdded => info
-                .get_date_added(&left.title)
-                .unwrap_or_default()
-                .cmp(&info.get_date_added(&right.title).unwrap_or_default())
-                .then_with(name_order),
-            SortMethod::Progress => {
-                let left_progress = if left.pages == 0 {
-                    0.0
-                } else {
-                    info.get_progress(&username, &left.title)
-                        .unwrap_or(0)
-                        .clamp(0, left.pages as i32) as f32
-                        / left.pages as f32
-                };
-                let right_progress = if right.pages == 0 {
-                    0.0
-                } else {
-                    info.get_progress(&username, &right.title)
-                        .unwrap_or(0)
-                        .clamp(0, right.pages as i32) as f32
-                        / right.pages as f32
-                };
-                left_progress
-                    .total_cmp(&right_progress)
-                    .then_with(name_order)
-            }
-            SortMethod::Name | SortMethod::Auto => name_order(),
-        }
-    });
-    if !ascending {
-        ordered_entries.reverse();
-    }
+    let ordered_entries = ordered_entries(&state, title, &info, &username).await?;
 
     let entries: Vec<EntryOption> = ordered_entries
         .iter()
@@ -137,8 +157,8 @@ pub async fn reader(
             .and_then(|index| ordered_entries.get(index));
         let next = ordered_entries.get(index + 1);
         (
-            previous.map(|(entry, _)| format!("/reader/{}/{}/1", title_id, entry.id)),
-            next.map(|(entry, _)| format!("/reader/{}/{}/1", title_id, entry.id)),
+            previous.map(|(entry, _)| format!("/reader/{}/{}", title_id, entry.id)),
+            next.map(|(entry, _)| format!("/reader/{}/{}", title_id, entry.id)),
         )
     } else {
         (None, None)
@@ -166,12 +186,12 @@ pub async fn reader(
 }
 
 /// GET /reader/{title_id}/{entry_id} - Continue reading from saved progress
-/// Redirects to the reader page at the user's saved progress, or page 1 if finished/not started
+/// Displays an archive error instead of redirecting when the entry cannot be read.
 pub async fn reader_continue(
     State(state): State<AppState>,
     Path((title_id, entry_id)): Path<(String, String)>,
     Username(username): Username,
-) -> Result<Redirect> {
+) -> Result<Response> {
     // Get library read lock
     let lib = state.library.load();
 
@@ -184,6 +204,30 @@ pub async fn reader_continue(
     let entry = lib
         .get_entry(&title_id, &entry_id)
         .ok_or_else(|| Error::NotFound(format!("Entry not found: {}", entry_id)))?;
+
+    if let Some(err_msg) = &entry.err_msg {
+        let info = TitleInfo::load(&title.path).await?;
+        let ordered = ordered_entries(&state, title, &info, &username).await?;
+        let next_entry_url = ordered
+            .iter()
+            .position(|(item, _)| item.id == entry_id)
+            .and_then(|index| ordered.get(index + 1))
+            .map(|(item, _)| format!("/reader/{}/{}", title_id, item.id));
+        let template = ReaderErrorTemplate {
+            nav: crate::util::NavigationState {
+                home_active: false,
+                library_active: false,
+                tags_active: false,
+                admin_active: false,
+                is_admin: state.storage.is_admin(&username).await?,
+            },
+            entry_path: entry.path.display().to_string(),
+            err_msg: err_msg.clone(),
+            next_entry_url,
+            exit_url: format!("/book/{}", title.id),
+        };
+        return Ok(Html(template.render().map_err(render_error)?).into_response());
+    }
 
     let total_pages = entry.pages;
 
@@ -209,8 +253,5 @@ pub async fn reader_continue(
         progress_page.max(1)
     };
 
-    Ok(Redirect::to(&format!(
-        "/reader/{}/{}/{}",
-        title_id, entry_id, page
-    )))
+    Ok(Redirect::to(&format!("/reader/{}/{}/{}", title_id, entry_id, page)).into_response())
 }

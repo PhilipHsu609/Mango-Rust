@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Reader Error{% endblock %}
+
+{% block content %}
+  <div id="modal" class="uk-flex-top" uk-modal>
+    <div class="uk-modal-dialog uk-margin-auto-vertical">
+      <button class="uk-modal-close-default" type="button" uk-close></button>
+      <div class="uk-modal-header">
+        <div>
+          <h3 class="uk-modal-title uk-margin-remove-top">Error</h3>
+        </div>
+        <p class="uk-text-meta uk-margin-remove-bottom">{{ entry_path }}</p>
+        <p class="uk-text-meta uk-margin-remove-top">{{ err_msg }}</p>
+      </div>
+      <div class="uk-modal-body">
+        <p uk-margin>
+          {% if let Some(url) = next_entry_url %}
+            <a class="uk-button uk-button-default" href="{{ url }}">Next Entry</a>
+          {% endif %}
+          <a class="uk-button uk-button-primary" href="{{ exit_url }}">Return to Title</a>
+        </p>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    UIkit.modal('#modal').show();
+    UIkit.util.on('#modal', 'hide', function() {
+      location.href = document.querySelector('.uk-button-primary').href;
+    });
+  </script>
+{% endblock %}

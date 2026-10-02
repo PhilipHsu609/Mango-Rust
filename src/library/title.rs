@@ -543,6 +543,7 @@ mod tests {
                     pages: 0,
                     image_files: Vec::new(),
                     size_bytes: 0,
+                    err_msg: None,
                 },
                 Entry {
                     id: "existing-entry".to_string(),
@@ -554,6 +555,7 @@ mod tests {
                     pages: 0,
                     image_files: Vec::new(),
                     size_bytes: 0,
+                    err_msg: None,
                 },
                 Entry {
                     id: "legacy-uuid".to_string(),
@@ -565,6 +567,7 @@ mod tests {
                     pages: 0,
                     image_files: Vec::new(),
                     size_bytes: 0,
+                    err_msg: None,
                 },
             ],
             parent_id: None,
@@ -623,6 +626,7 @@ mod tests {
                     pages: 10,
                     image_files: Vec::new(),
                     size_bytes: 0,
+                    err_msg: None,
                 })
                 .collect(),
             parent_id: None,
@@ -718,6 +722,7 @@ mod tests {
                 pages: 3,
                 image_files: Vec::new(),
                 size_bytes: 0,
+                err_msg: None,
             }],
             parent_id: Some("root".to_string()),
             nested_titles: Vec::new(),

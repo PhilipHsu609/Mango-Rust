@@ -93,6 +93,7 @@ impl BookCardItem {
         book_title: &str,
         pages: usize,
         entry_path: &str,
+        err_msg: Option<&str>,
         info: &crate::library::progress::TitleInfo,
     ) -> Self {
         let display_name = info
@@ -106,12 +107,15 @@ impl BookCardItem {
         } else {
             &info.display_name
         };
-        let cover_url = info
-            .entry_cover_url
-            .get(entry_title)
-            .filter(|url| !url.is_empty())
-            .cloned()
-            .unwrap_or_else(|| format!("/api/cover/{}/{}", book_id, entry_id));
+        let cover_url = if err_msg.is_some() {
+            "/static/img/icons/icon_x192.png".to_string()
+        } else {
+            info.entry_cover_url
+                .get(entry_title)
+                .filter(|url| !url.is_empty())
+                .cloned()
+                .unwrap_or_else(|| format!("/api/cover/{}/{}", book_id, entry_id))
+        };
         Self {
             id: entry_id.to_string(),
             is_entry: true,
@@ -135,7 +139,7 @@ impl BookCardItem {
                 percent_encoding::NON_ALPHANUMERIC,
             )
             .to_string(),
-            err_msg: None,
+            err_msg: err_msg.map(str::to_string),
             content_label: String::new(),
             title: Some(entry_title.to_string()),
             sort_title: None,
@@ -448,6 +452,7 @@ pub async fn get_book(
                 &title.title,
                 entry.pages,
                 &entry.path.to_string_lossy(),
+                entry.err_msg.as_deref(),
                 &info,
             );
             card.sort_title = Some(sort_title);

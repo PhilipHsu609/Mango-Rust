@@ -590,6 +590,8 @@ struct MangoEntry {
     title: String,
     size: String,
     id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    err_msg: Option<String>,
     zip_path: String,
     title_id: String,
     title_title: String,
@@ -717,23 +719,27 @@ async fn mango_entry_response(
         .filter(|name| !name.is_empty())
         .cloned()
         .unwrap_or_else(|| entry.title.clone());
-    let cover_url = info
-        .entry_cover_url
-        .get(&entry.title)
-        .filter(|url| !url.is_empty())
-        .map(|url| join_base_url(&state.config.base_url, url))
-        .unwrap_or_else(|| {
-            format!(
-                "{}api/cover/{}/{}",
-                state.config.base_url, title.id, entry.id
-            )
-        });
+    let cover_url = if entry.err_msg.is_some() {
+        format!("{}static/img/icons/icon_x192.png", state.config.base_url)
+    } else {
+        info.entry_cover_url
+            .get(&entry.title)
+            .filter(|url| !url.is_empty())
+            .map(|url| join_base_url(&state.config.base_url, url))
+            .unwrap_or_else(|| {
+                format!(
+                    "{}api/cover/{}/{}",
+                    state.config.base_url, title.id, entry.id
+                )
+            })
+    };
 
     Ok(MangoEntry {
         path: path.clone(),
         title: entry.title.clone(),
         size: humanize_bytes(size),
         id: entry.id.clone(),
+        err_msg: entry.err_msg.clone(),
         zip_path: path,
         title_id: title.id.clone(),
         title_title: title.title.clone(),
