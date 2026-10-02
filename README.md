@@ -52,6 +52,19 @@ scan_interval_minutes: 30
 
 Login modes use `DISABLE_LOGIN=true` with `DEFAULT_USERNAME`, or `AUTH_PROXY_HEADER_NAME` when a trusted reverse proxy supplies the username.
 
+## Admin CLI
+
+User management commands:
+
+```sh
+mango-rust -c config.yml admin user add -u reader -p password
+mango-rust admin user update reader -u new-reader -p new-password -a
+mango-rust admin user delete new-reader
+mango-rust admin user list
+```
+
+`-c PATH` / `--config=PATH` can appear before or after the command.
+
 ## OPDS
 
 E-reader apps can connect to `http://server:9000/opds` with HTTP Basic Auth.

@@ -21,6 +21,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 config = "0.15"
+clap = { version = "4", features = ["derive"] }
 rmp-serde = "1.1"  # MessagePack serialization for cache
 flate2 = "1.0"  # gzip compression for cache files
 sha2 = "0.10"  # SHA256 for cache keys

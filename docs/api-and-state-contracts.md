@@ -6,17 +6,18 @@
 
 ## Open in-scope behavior gaps
 
-1. **CLI parity.** Mango supports `admin user add/delete/update/list`; Rust implements only `admin user update <username> --password <password>`. Both Rust server and admin commands now accept `-c PATH` / `--config=PATH`.
-2. **API-reference surface.** Mango serves the `/api` page and `/openapi.json`; Rust registers neither. Documentation surface only, not a missing API operation.
-3. **Reader error branch.** Mango renders `reader-error.html.ecr` when an entry has `err_msg`, with next-entry and return-to-title actions. Rust's reader has no equivalent error page/branch.
-4. **HTTP and state differences.** CORS/preflight headers, 365-day versus 7-day sessions, login callback redirects, HTML error pages versus Rust text errors, route status/body behavior, image ETags/cache headers, scan timing, and cover upload validation/path semantics differ in inspected source; details are recorded in the route matrix.
-5. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Invalid archives are retained as error entries by Mango but dropped by the Rust scanner. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
+1. **API-reference surface.** Mango serves the `/api` page and `/openapi.json`; Rust registers neither. Documentation surface only, not a missing API operation.
+2. **Reader error branch.** Mango renders `reader-error.html.ecr` when an entry has `err_msg`, with next-entry and return-to-title actions. Rust's reader has no equivalent error page/branch.
+3. **HTTP and state differences.** CORS/preflight headers, 365-day versus 7-day sessions, login callback redirects, HTML error pages versus Rust text errors, route status/body behavior, image ETags/cache headers, scan timing, and cover upload validation/path semantics differ in inspected source; details are recorded in the route matrix.
+4. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Invalid archives are retained as error entries by Mango but dropped by the Rust scanner. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
 
 ## Resolved behavior gaps
 
 - **Existing-user rename.** `user_edit_post_existing` passes the URL username as the existing account key and the submitted form username as the new key. Its integration test checks the renamed listing, retained role, and unchanged password.
 - **Authentication modes.** Rust now accepts Basic credentials on every protected path, Bearer session IDs backed by the shared session store, `disable_login` with a validated `default_username`, and `auth_proxy_header_name` usernames after checking that the user exists. Focused HTTP tests cover these identities and admin role selection.
 - **Configuration contracts.** Rust uses `-c/--config`, `CONFIG_PATH`, all same-named environment settings, YAML > environment > defaults precedence, Mango's `~/mango.db` default, and stored trailing-slash normalization for `base_url`. The config crate supplies builder defaults and layered YAML/environment loading; Serde deserializes the merged settings into `Config`.
+
+- **User-management CLI.** Clap derive implements `admin user add/delete/update/list` with Mango's username/password/admin options, optional update password, and shared `-c/--config` handling. HTTP-independent integration tests exercise CRUD, list output, help, and global config placement.
 
 - **User-input validation.** `src/storage.rs` enforces Mango's minimum username/password lengths, ASCII password requirement, and username character/first-character rules for create, update, and password-change operations. The storage boundary covers web/API and CLI callers; integration coverage checks invalid inputs and the exact minimum accepted values.
 
