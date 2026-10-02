@@ -1,6 +1,9 @@
 use arc_swap::ArcSwap;
 use axum::{
-    middleware,
+    body::Body,
+    http::{header, HeaderValue, Method, Request, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{delete, get, patch, post, put},
     Router,
 };
@@ -40,6 +43,48 @@ pub struct AppState {
     pub library: Arc<ArcSwap<Library>>,
     pub config: Arc<Config>,
     pub session_store: SqliteStore,
+}
+
+// Mango's `cors` OPTIONS route applies to these roots and their descendants.
+fn preflight_path(path: &str) -> bool {
+    ["/api", "/uploads", "/img"].iter().any(|prefix| {
+        path.strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('/'))
+    })
+}
+
+async fn mango_cors(request: Request<Body>, next: Next) -> Response {
+    let path = request.uri().path();
+    let preflight = request.method() == Method::OPTIONS && preflight_path(path);
+    let api_path = path.starts_with("/api");
+    let mut response = if preflight {
+        let mut response = StatusCode::OK.into_response();
+        response
+            .headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html"));
+        response
+            .headers_mut()
+            .insert(header::CONTENT_LENGTH, HeaderValue::from_static("0"));
+        response
+    } else {
+        next.run(request).await
+    };
+
+    if preflight || (api_path && response.status() != StatusCode::NOT_FOUND) {
+        let headers = response.headers_mut();
+        headers.insert("access-control-allow-origin", HeaderValue::from_static("*"));
+        headers.insert(
+            "access-control-allow-methods",
+            HeaderValue::from_static("HEAD,GET,PUT,POST,DELETE,OPTIONS"),
+        );
+        headers.insert(
+            "access-control-allow-headers",
+            HeaderValue::from_static(
+                "X-Requested-With,X-HTTP-Method-Override, Content-Type, Cache-Control, Accept,Authorization",
+            ),
+        );
+    }
+    response
 }
 
 /// Build and run the Axum server
@@ -246,6 +291,7 @@ pub async fn run(config: Config) -> Result<()> {
         ))
         .layer(session_layer)
         .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn(mango_cors))
         .with_state(app_state);
 
     // Bind and serve

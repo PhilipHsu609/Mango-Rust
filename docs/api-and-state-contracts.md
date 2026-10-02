@@ -6,11 +6,18 @@
 
 ## Open in-scope behavior gaps
 
-1. **HTTP and state differences.** CORS/preflight headers, 365-day versus 7-day sessions, login callback redirects, HTML error pages versus Rust text errors, route status/body behavior, image ETags/cache headers, scan timing, and cover upload validation/path semantics differ in inspected source; details are recorded in the route matrix.
-2. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
+1. **Session lifetime.** Match Mango's 365-day session behavior instead of Rust's 7-day inactivity expiry.
+2. **Login callback redirects.** Preserve and consume Mango's saved destination after login instead of always redirecting to `/`.
+3. **HTML error pages.** Render Mango-style error pages for browser routes instead of Rust's plain-text errors.
+4. **Route response contracts.** Reconcile remaining method/path-specific status codes, bodies, and failure responses in the route matrix below, including admin form feedback and JSON API errors.
+5. **Image cache responses.** Match Mango's ETags, conditional responses, and cache headers for page images and dimensions.
+6. **Scan timing.** Match the synchronous result and state visibility of Mango's admin scan endpoint instead of Rust's background scan.
+7. **Cover uploads.** Match Mango's image validation, storage paths, generated URLs, and upload error behavior.
+8. **Persistence and scanning differences.** Mango and Rust migration histories are not interchangeable; Rust's gzip MessagePack library snapshot cannot read Mango's gzip YAML snapshot. Signature/ordering algorithms, recursive unread state, and corrupt `info.json` handling differ as detailed below.
 
 ## Resolved behavior gaps
 
+- **CORS and preflight.** Rust answers unauthenticated `OPTIONS` requests under `/api`, `/uploads`, and `/img` with Mango's empty 200 response and exact allow headers. API responses carry those headers even without an `Origin` request header; unrelated browser and static responses do not.
 - **Reader error branch.** Invalid archives remain indexed as error entries with stable IDs and `err_msg`. Reader continuation shows the archive path and error in a modal, with next-entry and return-to-title actions. Error cards and entry API responses expose the failure; archive covers use the default icon.
 - **Existing-user rename.** `user_edit_post_existing` passes the URL username as the existing account key and the submitted form username as the new key. Its integration test checks the renamed listing, retained role, and unchanged password.
 - **Authentication modes.** Rust now accepts Basic credentials on every protected path, Bearer session IDs backed by the shared session store, `disable_login` with a validated `default_username`, and `auth_proxy_header_name` usernames after checking that the user exists. Focused HTTP tests cover these identities and admin role selection.
@@ -85,7 +92,7 @@ Every declaration in `Mango/src/routes/api.cr` was compared to the complete Rust
 
 | Area | Crystal → Rust sources | Status and findings |
 |---|---|---|
-| Startup, server, sessions, logging | `Mango/src/{mango,main_fiber,server,logger}.cr`, `Mango/src/handlers/*.cr` → `src/{main,server,auth}.rs` | Different architectures. Auth modes (Basic on protected paths, Bearer session IDs, disabled-login identity, and proxy identity) now match the inspected Mango contract. Same session cookie name; 365-day Crystal session versus 7-day Rust inactivity expiry. Crystal adds configured base path, custom log formatting and OPTIONS/CORS behavior; Rust uses Axum/Tower tracing and filesystem static mounts. |
+| Startup, server, sessions, logging | `Mango/src/{mango,main_fiber,server,logger}.cr`, `Mango/src/handlers/*.cr` → `src/{main,server,auth}.rs` | Different architectures. Auth modes (Basic on protected paths, Bearer session IDs, disabled-login identity, and proxy identity) now match the inspected Mango contract. Same session cookie name; 365-day Crystal session versus 7-day Rust inactivity expiry. Rust matches Mango's unauthenticated `/api`, `/uploads`, and `/img` preflight and API CORS headers; configured base path, custom logging, and static mounts remain different. |
 | Configuration | `Mango/src/config.cr` → `src/config.rs` | Config path, same-named environment settings, file > environment > defaults precedence, database default, path expansion, and stored trailing-slash normalization are implemented. `ConfigBuilder::set_default` supplies schema defaults, then `try_deserialize` uses Serde; the CLI forwards explicit `-c/--config` paths. |
 | User storage and validation | `Mango/src/storage.cr`, `Mango/src/util/validation.cr` → `src/storage.rs`, `src/routes/admin.rs`, `src/routes/main.rs`, `src/main.rs` | Rust applies Mango's username/password rules at storage create/update/password-change boundaries, covering web/API and CLI callers. |
 | SQLite schema/migration history | All 12 `Mango/migration/*.cr` → all 7 `migrations/*.sql`, `src/storage.rs` | Current core tables overlap, but Rust creates final schemas rather than replaying Crystal's history. Crystal relative-path migrations and `md_account` are absent in Rust; legacy DB conversion is not demonstrated. MangaDex account token table is listed with excluded integration below. Rust also has `display_name` and `dimensions` schema additions. |
