@@ -705,19 +705,28 @@ pub async fn update_sort_title(
     axum::extract::Query(query): axum::extract::Query<SortTitleQuery>,
 ) -> Json<serde_json::Value> {
     let result: Result<()> = async {
-        if state.library.load().get_title(&title_id).is_none() {
-            return Err(crate::error::Error::BadRequest(
-                "Nil assertion failed".to_string(),
-            ));
-        }
+        let entry_belongs_to_title = {
+            let library = state.library.load();
+            let Some(title) = library.get_title(&title_id) else {
+                return Err(crate::error::Error::BadRequest(
+                    "Nil assertion failed".to_string(),
+                ));
+            };
+            query
+                .eid
+                .as_deref()
+                .is_some_and(|entry_id| title.entries.iter().any(|entry| entry.id == entry_id))
+        };
         let sort_title = query.name.as_deref();
 
         if let Some(entry_id) = &query.eid {
-            state
-                .storage
-                .update_entry_sort_title(entry_id, sort_title)
-                .await?;
-            tracing::info!("Updated entry {} sort title to {:?}", entry_id, sort_title);
+            if entry_belongs_to_title {
+                state
+                    .storage
+                    .update_entry_sort_title(entry_id, sort_title)
+                    .await?;
+                tracing::info!("Updated entry {} sort title to {:?}", entry_id, sort_title);
+            }
         } else {
             state
                 .storage

@@ -433,5 +433,40 @@ describe('Admin API', () => {
       expect(sorted.titles[0].id).toBe(title.id);
       expect(sorted.titles[0].sort_title).toBe(sortTitle);
     });
+
+    it('ignores an entry ID that does not belong to the requested title', async () => {
+      const libraryResponse = await api.get('/api/library');
+      const library = await libraryResponse.json();
+      const requestedTitle = library.titles.find(
+        (item: { title: string }) => item.title === 'Test Manga Alpha',
+      );
+      const entryOwner = library.titles.find(
+        (item: { title: string }) => item.title === 'Test Manga Beta',
+      );
+      expect(requestedTitle).toBeDefined();
+      expect(entryOwner).toBeDefined();
+      const entry = entryOwner.entries[0];
+      const originalSortTitle = entry.sort_title;
+      const mismatchedSortTitle = 'Must Not Be Applied';
+
+      try {
+        const updateResponse = await api.put(
+          `/api/admin/sort_title/${encodeURIComponent(requestedTitle.id)}?eid=${encodeURIComponent(entry.id)}&name=${encodeURIComponent(mismatchedSortTitle)}`,
+        );
+        expect(updateResponse.status).toBe(200);
+        expect(await updateResponse.json()).toEqual({ success: true });
+
+        const ownerResponse = await api.get(`/api/book/${encodeURIComponent(entryOwner.id)}?depth=1`);
+        const ownerTitle = await ownerResponse.json();
+        const updatedEntry = ownerTitle.entries.find(
+          (item: { id: string }) => item.id === entry.id,
+        );
+        expect(updatedEntry.sort_title).toBe(originalSortTitle);
+      } finally {
+        await api.put(
+          `/api/admin/sort_title/${encodeURIComponent(entryOwner.id)}?eid=${encodeURIComponent(entry.id)}&name=${encodeURIComponent(originalSortTitle)}`,
+        );
+      }
+    });
   });
 });
