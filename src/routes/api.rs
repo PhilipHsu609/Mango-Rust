@@ -85,10 +85,12 @@ pub async fn get_library(
             cache,
             &username,
             Vec::new(),
-            depth,
-            params.percentage.is_some(),
-            params.slim.is_some(),
-            Some((sort_method, ascending)),
+            TitleResponseOptions {
+                depth,
+                include_percentages: params.percentage.is_some(),
+                slim: params.slim.is_some(),
+                sort_context: Some((sort_method, ascending)),
+            },
         )
         .await
         {
@@ -139,10 +141,12 @@ pub async fn get_title(
         lib.progress_cache(),
         &username,
         title_parent_summaries(&lib, title),
-        catalog_depth(params.depth.as_deref()),
-        params.percentage.is_some(),
-        params.slim.is_some(),
-        None,
+        TitleResponseOptions {
+            depth: catalog_depth(params.depth.as_deref()),
+            include_percentages: params.percentage.is_some(),
+            slim: params.slim.is_some(),
+            sort_context: None,
+        },
     )
     .await
     {
@@ -272,7 +276,7 @@ fn page_index(page: i32) -> Option<usize> {
 
 fn order_continue_candidates<T>(entries: &mut Vec<(Option<i64>, T, f64)>) {
     entries.truncate(8);
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.0));
 }
 
 /// API route: GET /api/page/:tid/:eid/:page
@@ -496,10 +500,12 @@ pub async fn start_reading(
             cache,
             &username,
             title_parent_summaries(&lib, title),
-            1,
-            false,
-            false,
-            None,
+            TitleResponseOptions {
+                depth: 1,
+                include_percentages: false,
+                slim: false,
+                sort_context: None,
+            },
         )
         .await
         {
@@ -844,6 +850,14 @@ fn title_parent_summaries(
         .collect()
 }
 
+#[derive(Clone, Copy)]
+struct TitleResponseOptions {
+    depth: i32,
+    include_percentages: bool,
+    slim: bool,
+    sort_context: Option<(SortMethod, bool)>,
+}
+
 async fn mango_title_response(
     state: &AppState,
     title: &crate::library::Title,
@@ -851,11 +865,14 @@ async fn mango_title_response(
     cache: &crate::library::ProgressCache,
     username: &str,
     parents: Vec<MangoTitleParent>,
-    depth: i32,
-    include_percentages: bool,
-    slim: bool,
-    sort_context: Option<(SortMethod, bool)>,
+    options: TitleResponseOptions,
 ) -> Result<MangoTitleResponse> {
+    let TitleResponseOptions {
+        depth,
+        include_percentages,
+        slim,
+        sort_context,
+    } = options;
     let summary = mango_title_summary(state, title, info, parents.clone(), slim).await?;
     if depth == 0 {
         return Ok(MangoTitleResponse {
@@ -917,10 +934,11 @@ async fn mango_title_response(
                 cache,
                 username,
                 child_parents.clone(),
-                if depth > 0 { depth - 1 } else { depth },
-                include_percentages,
-                slim,
-                Some((sort_method, ascending)),
+                TitleResponseOptions {
+                    depth: if depth > 0 { depth - 1 } else { depth },
+                    sort_context: Some((sort_method, ascending)),
+                    ..options
+                },
             ))
             .await?,
         );
@@ -977,18 +995,14 @@ async fn mango_title_response(
     if !ascending {
         entries_with_sort_title.reverse();
     }
-    let ordered_entries = entries_with_sort_title
-        .into_iter()
-        .map(|(entry, sort_title)| (entry, Some(sort_title)))
-        .collect::<Vec<_>>();
-
     let mut entries = Vec::with_capacity(title.entries.len());
     let mut entry_percentages = Vec::with_capacity(title.entries.len());
-    for (entry, sort_title) in ordered_entries {
+    for (entry, sort_title) in entries_with_sort_title {
         let progress = info.get_progress(username, &entry.title).unwrap_or(0);
         entry_percentages.push(entry_progress_percentage(progress, entry.pages));
         entries.push(
-            mango_entry_response(state, title, entry, info, sort_title.as_deref(), slim).await?,
+            mango_entry_response(state, title, entry, info, Some(sort_title.as_str()), slim)
+                .await?,
         );
     }
 

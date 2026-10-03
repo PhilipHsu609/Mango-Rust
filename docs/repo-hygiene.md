@@ -20,3 +20,9 @@ Branch: `repo-hygiene`. Preserve behavior and data contracts; use Crystal Mango 
 - The LRU map owns each key once; debug entries derive their keys from map iteration.
 - Prefix invalidation removes matching entries in place and updates byte accounting, without allocating debug metadata. Serialized values, byte budgets, invalidation logging, and eviction statistics retain their existing semantics.
 - Verification: regressions cover selective prefixes, reclaimed budget reuse, unchanged counters, no matches, empty prefixes, and repeated invalidation. All 64 tests passed; the isolated executable confirmed per-user invalidation, retained debug keys, and reclaimed bytes.
+
+## Catalog response options
+
+- Grouped recursive response formatting and traversal controls in a private `TitleResponseOptions` value. Request dependencies stay borrowed; each child inherits resolved sorting and formatting while decrementing only positive depth.
+- Removed the intermediate entry vector that wrapped sort titles in `Some` only to borrow them immediately afterward. Timestamp ordering uses `sort_by_key` with `Reverse`.
+- Verification: all 64 Rust tests and strict all-target Clippy passed. A disposable container using the rebuilt image exercised nested recursion, depths zero/one/unlimited, invalid-depth defaults, parent breadcrumbs, slim output, percentage alignment, and inherited descending sorting through HTTP.
