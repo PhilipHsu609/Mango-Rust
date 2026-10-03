@@ -191,8 +191,8 @@ impl Library {
             })
             .unwrap_or_default();
 
-        let mut tasks = Vec::new();
-
+        let root_count = title_paths.len();
+        let mut tasks = tokio::task::JoinSet::new();
         for title_path in title_paths {
             let sem = semaphore.clone();
             let storage_clone = storage.clone();
@@ -205,7 +205,7 @@ impl Library {
                 .map(|id| id.to_string());
             let prior = previous.as_ref().map(Arc::clone);
 
-            let task = tokio::spawn(async move {
+            tasks.spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
 
                 let fingerprint_path = title_path.clone();
@@ -285,15 +285,39 @@ impl Library {
 
                 Some(title)
             });
-
-            tasks.push(task);
         }
 
-        // Collect results
+        // Collect results as tasks complete so progress reflects actual work,
+        // not the launch order of root directories.
         let mut new_titles = HashMap::new();
-        for task in tasks {
-            if let Ok(Some(title)) = task.await {
-                new_titles.insert(title.id.clone(), title);
+        let mut completed_roots = 0;
+        let mut progress_interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        progress_interval.tick().await;
+        while completed_roots < root_count {
+            tokio::select! {
+                joined = tasks.join_next() => {
+                    let Some(joined) = joined else {
+                        break;
+                    };
+                    completed_roots += 1;
+                    match joined {
+                        Ok(Some(title)) => {
+                            new_titles.insert(title.id.clone(), title);
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            tracing::warn!("Library scan task failed: {}", error);
+                        }
+                    }
+                }
+                _ = progress_interval.tick() => {
+                    tracing::info!(
+                        "Library scan progress: {}/{} root directories completed ({:.1}s)",
+                        completed_roots,
+                        root_count,
+                        scan_start.elapsed().as_secs_f64()
+                    );
+                }
             }
         }
 
