@@ -39,7 +39,7 @@
       </div>
 
       <div class="uk-card-body">
-        {% if progress >= 0.0 && progress <= 100.0 %}
+        {% if (0.0..=100.0).contains(progress) %}
           <div class="uk-card-badge label">{{ progress|fmt("{:.1}") }}%</div>
         {% endif %}
 

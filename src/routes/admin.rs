@@ -77,7 +77,7 @@ pub async fn cache_debug_page(
 
     // Get top 20 cache entries sorted by access count
     let mut entries = cache.entries();
-    entries.sort_by(|a, b| b.access_count.cmp(&a.access_count));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.access_count));
     entries.truncate(20);
 
     drop(cache);
@@ -317,8 +317,6 @@ pub async fn missing_items_page(AdminOnly(_username): AdminOnly) -> Result<Html<
 
     Ok(Html(template.render().map_err(render_error)?))
 }
-
-/// Users template
 
 /// POST /api/cache/clear - Clear all LRU cache entries
 /// Removes all cached sorted lists from memory (library cache file remains)
@@ -714,9 +712,8 @@ pub async fn generate_thumbnails(
             THUMBNAIL_CURRENT.store(i + 1, Ordering::SeqCst);
 
             if let Some(entry) = lib.get_entry(title_id, entry_id) {
-                match crate::library::Entry::get_thumbnail(entry_id, db).await {
-                    Ok(Some(_)) => continue,
-                    _ => {}
+                if let Ok(Some(_)) = crate::library::Entry::get_thumbnail(entry_id, db).await {
+                    continue;
                 }
 
                 if let Err(e) = entry.generate_thumbnail(db).await {

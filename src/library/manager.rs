@@ -1245,8 +1245,10 @@ mod scan_regression_tests {
         assert_eq!(entry.pages, 0);
 
         // An out-of-band info.json edit must be visible after an unchanged scan.
-        let mut info = crate::library::progress::TitleInfo::default();
-        info.display_name = "Updated series".to_string();
+        let mut info = crate::library::progress::TitleInfo {
+            display_name: "Updated series".to_string(),
+            ..Default::default()
+        };
         info.set_progress("reader", "Chapter 1", 4);
         info.save(&title_path).await.unwrap();
         let rescanned = Arc::new(rescanned);

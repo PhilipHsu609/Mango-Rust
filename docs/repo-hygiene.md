@@ -33,3 +33,10 @@ Branch: `repo-hygiene`. Preserve behavior and data contracts; use Crystal Mango 
 - Continue-reading timestamp ordering uses `sort_by_key` with `Reverse`.
 - Verification: all 64 Rust tests and strict all-target Clippy passed. Rebuilt `mango-rust:local`, ran `./local-dev/run-local.sh`, signed into both apps, inspected home and matching book cards, and opened entry modals. Covers, titles, page counts, badges, and modal paths/actions rendered; the two comparison databases have different progress values, so their badges/home selections are not identical.
 - Comparison browser sessions use `127.0.0.1:9000` for Crystal and `localhost:9001` for Rust to isolate same-host cookies from the containers' internal port configuration.
+
+## Idiomatic Rust cleanup
+
+- Replaced remaining simple descending comparators with key-based ordering, a single-pattern thumbnail match with `if let`, a redundant `PathBuf` conversion with direct ownership transfer, and post-default field assignment with a struct initializer.
+- Removed an orphaned doc comment. The card template uses an inclusive range check for progress badges, preserving the zero/100 boundaries and hiding out-of-range values.
+- Verification: `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --all-targets` passed (64 tests). Rebuilt Docker image and local launcher succeeded; home/book badges and entry modals were visually inspected, and the cache debug page rendered.
+- Removed the throwaway scan/cache executable and disposable HTTP-smoke container/data after successful verification. Local Crystal and Rust comparison containers remain running.

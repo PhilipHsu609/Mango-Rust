@@ -447,7 +447,7 @@ impl super::Sortable for &Entry {
 #[cfg(all(test, unix))]
 mod tests {
     use super::Entry;
-    use std::{os::unix::fs::MetadataExt, path::PathBuf};
+    use std::os::unix::fs::MetadataExt;
 
     #[tokio::test]
     async fn archive_entries_record_filesystem_ctime() {
@@ -458,7 +458,7 @@ mod tests {
         std::fs::write(&path, empty_zip).unwrap();
 
         let expected_ctime = std::fs::metadata(&path).unwrap().ctime();
-        let entry = Entry::from_archive(PathBuf::from(path)).await.unwrap();
+        let entry = Entry::from_archive(path).await.unwrap();
 
         assert_eq!(entry.ctime, expected_ctime);
         assert_eq!(entry.pages, 0);
