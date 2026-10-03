@@ -1427,6 +1427,7 @@ dependencies = [
  "dirs",
  "flate2",
  "home",
+ "humansize",
  "image",
  "natord",
  "parking_lot",

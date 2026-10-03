@@ -76,6 +76,58 @@ describe('Library API', () => {
       expect(await response.text()).toContain('not found');
     });
   });
+  it('applies sort option changes to the next book response', async () => {
+    const libraryResponse = await api.get('/api/library');
+    const library = await libraryResponse.json();
+    const title = library.titles.find(
+      (item: { entries?: unknown[] }) => item.entries?.length,
+    );
+    expect(title).toBeDefined();
+    if (!title) throw new Error('The test library must contain a title with entries');
+
+    const titleId = encodeURIComponent(title.id);
+    const originalResponse = await api.get(`/api/sort_opt?tid=${titleId}`);
+    const original = await originalResponse.json();
+    const originalLibraryResponse = await api.get('/api/sort_opt');
+    const originalLibrarySort = await originalLibraryResponse.json();
+    try {
+      const updateResponse = await api.put('/api/sort_opt', {
+        tid: title.id,
+        sort: 'title',
+        ascend: false,
+      });
+      expect(await updateResponse.json()).toEqual({ success: true });
+
+      const bookResponse = await api.get(`/api/book/${titleId}`);
+      const book = await bookResponse.json();
+      expect(book.entries[0].title).toContain('Vol.05');
+
+      const librarySortResponse = await api.put('/api/sort_opt', {
+        sort: 'title',
+        ascend: true,
+      });
+      expect(await librarySortResponse.json()).toEqual({ success: true });
+
+      const sortedLibraryResponse = await api.get('/api/library');
+      const sortedLibrary = await sortedLibraryResponse.json();
+      const embeddedTitle = sortedLibrary.titles.find((item: { id: string }) => item.id === title.id);
+      expect(embeddedTitle.entries[0].title).toContain('Vol.01');
+
+      const bookAfterGlobalResponse = await api.get(`/api/book/${titleId}`);
+      const bookAfterGlobal = await bookAfterGlobalResponse.json();
+      expect(bookAfterGlobal.entries[0].title).toContain('Vol.05');
+    } finally {
+      await api.put('/api/sort_opt', {
+        tid: title.id,
+        sort: original.method,
+        ascend: original.ascend,
+      });
+      await api.put('/api/sort_opt', {
+        sort: originalLibrarySort.method,
+        ascend: originalLibrarySort.ascend,
+      });
+    }
+  });
   it('returns Crystal-compatible JSON errors for missing sort and progress targets', async () => {
     const sortResponse = await api.get('/api/sort_opt?tid=nonexistent-title');
     expect(sortResponse.status).toBe(200);

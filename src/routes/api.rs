@@ -88,6 +88,7 @@ pub async fn get_library(
             depth,
             params.percentage.is_some(),
             params.slim.is_some(),
+            Some((sort_method, ascending)),
         )
         .await
         {
@@ -141,6 +142,7 @@ pub async fn get_title(
         catalog_depth(params.depth.as_deref()),
         params.percentage.is_some(),
         params.slim.is_some(),
+        None,
     )
     .await
     {
@@ -245,7 +247,18 @@ pub async fn update_sort_opt(
     };
     info.set_sort_by(&username, &request.sort, request.ascend);
     match info.save(&dir).await {
-        Ok(()) => Json(serde_json::json!({ "success": true })),
+        Ok(()) => {
+            if let Some(title_id) = request.tid.as_deref() {
+                let lib = state.library.load_full();
+                if let Err(error) = lib.progress_cache().load_title(title_id, &dir).await {
+                    return Json(serde_json::json!({
+                        "success": false,
+                        "error": error.to_string()
+                    }));
+                }
+            }
+            Json(serde_json::json!({ "success": true }))
+        }
         Err(error) => Json(serde_json::json!({
             "success": false,
             "error": error.to_string()
@@ -486,6 +499,7 @@ pub async fn start_reading(
             1,
             false,
             false,
+            None,
         )
         .await
         {
@@ -761,7 +775,7 @@ async fn mango_entry_response(
     Ok(MangoEntry {
         path: path.clone(),
         title: entry.title.clone(),
-        size: humanize_bytes(size),
+        size: humansize::format_size(size, humansize::BINARY),
         id: entry.id.clone(),
         err_msg: entry.err_msg.clone(),
         zip_path: path,
@@ -840,6 +854,7 @@ async fn mango_title_response(
     depth: i32,
     include_percentages: bool,
     slim: bool,
+    sort_context: Option<(SortMethod, bool)>,
 ) -> Result<MangoTitleResponse> {
     let summary = mango_title_summary(state, title, info, parents.clone(), slim).await?;
     if depth == 0 {
@@ -852,10 +867,11 @@ async fn mango_title_response(
         });
     }
 
-    let (sort_method, ascending) = info
-        .get_sort_by(username)
-        .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
-        .unwrap_or((SortMethod::Auto, true));
+    let (sort_method, ascending) = sort_context.unwrap_or_else(|| {
+        info.get_sort_by(username)
+            .map(|(method, ascending)| (SortMethod::parse(&method), ascending))
+            .unwrap_or((SortMethod::Auto, true))
+    });
     let mut nested_titles = Vec::with_capacity(title.nested_titles.len());
     let mut nested_order = Vec::with_capacity(title.nested_titles.len());
     for nested in &title.nested_titles {
@@ -904,6 +920,7 @@ async fn mango_title_response(
                 if depth > 0 { depth - 1 } else { depth },
                 include_percentages,
                 slim,
+                Some((sort_method, ascending)),
             ))
             .await?,
         );
@@ -1021,21 +1038,6 @@ pub(super) fn join_base_url(base_url: &str, path: &str) -> String {
     } else {
         format!("{}{}", base_url, path.trim_start_matches('/'))
     }
-}
-
-fn humanize_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
-    if bytes < 1024 {
-        return format!("{bytes}B");
-    }
-
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit + 1 < UNITS.len() {
-        value /= 1024.0;
-        unit += 1;
-    }
-    format!("{value:.1}{}", UNITS[unit])
 }
 
 /// API route: GET /api/tags
@@ -1249,7 +1251,7 @@ pub async fn get_dimensions(
     let is_directory = entry.path.is_dir();
     let mut etag_source = format!("{}{}", entry.path.display(), entry.mtime);
     if is_directory {
-        etag_source.push_str(&humanize_bytes(entry.size_bytes));
+        etag_source.push_str(&humansize::format_size(entry.size_bytes, humansize::BINARY));
     }
     let etag = format!("W/{:x}", {
         use sha1::Digest;
