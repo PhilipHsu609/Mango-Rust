@@ -6,12 +6,9 @@ target/
 tests/
 node_modules/
 static/dist/
-docs/
 *.md
 !README.md
 Mango/
-.claude/
-.spec-workflow/
 mango-data/
 config/
 *.db

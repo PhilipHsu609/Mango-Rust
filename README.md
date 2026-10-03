@@ -1,73 +1,31 @@
 # Mango-Rust
 
-A fast, self-hosted manga server. Drop-in replacement for [Mango](https://github.com/getmango/Mango) with 100% database compatibility.
+A self-hosted manga server in Rust, based on Mango.
 
-## Quick Start
+## Run with Docker
 
-```bash
-docker run -d -p 9000:9000 \
-  -v ~/manga:/root/mango \
-  -v ~/.config/mango:/root/.config/mango \
+```sh
+docker run -d --name mango-rust -p 9000:9000 \
+  -v "$HOME/manga:/root/mango" \
+  -v "$HOME/.config/mango:/root/.config/mango" \
   ghcr.io/philiphsu609/mango-rust:latest
 ```
 
-Open `http://localhost:9000`. Default credentials shown in logs.
+Open <http://localhost:9000>. On a fresh database, the server creates an `admin` account and prints its random password in `docker logs mango-rust`.
 
 ## Features
 
-- Multi-user authentication
-- Web reader (paged/continuous modes)
-- Progress tracking & resume
-- Continue Reading selects one Mango-compatible continuation entry per title
-- Homepage Recently Added groups entries of the same title added within 24 hours
-- Tags, search, sorting
-- Admin page lists missing titles and entries separately and supports removing their database records
-- Dark/light themes
-- OPDS catalog for e-readers
-- ZIP/CBZ, RAR/CBR, 7z/CB7 archives
+- Multi-user reading, progress tracking, search, sorting, and tags
+- OPDS catalog and ZIP/CBZ, RAR/CBR, and 7z/CB7 archives
+- Admin tools for users, library scans, missing items, and thumbnails
 
-## Migration from Mango
+Plugin, subscription, and MangaDex queue endpoints are not implemented.
 
-Just swap the Docker image. All data (database, progress, thumbnails) works as-is.
-Per-entry `info.json` maps use Mango entry-title keys. Startup and scans migrate earlier Rust UUID-keyed metadata; legacy UUID-keyed `date_added` values are replaced with the entry file's creation time, while existing Mango title-keyed dates are preserved.
+## Mango data and configuration
 
-## API compatibility
+Mount your existing database and library at the paths configured by `DB_PATH` and `LIBRARY_PATH`. Rust applies database migrations and rebuilds incompatible cache files.
 
-Shared catalog, homepage, progress, tag, thumbnail, image, and login APIs follow Mango's request and response contracts, including nested titles, parent metadata, and `time_added` sorting. The Rust-only `/api/stats` and progress GET/POST routes were removed; Mango's `PUT /api/progress/:tid/:page` remains. This is not full API parity: Axum extractor failures and some internal-error details can still differ.
-
-Known gaps: plugin and subscription endpoints and MangaDex queue endpoints are not implemented.
-
-## Configuration
-
-`~/.config/mango/config.yml`:
-
-host: 0.0.0.0
-port: 9000
-library_path: ~/mango/library
-db_path: ~/mango.db
-scan_interval_minutes: 30
-```
-
-`CONFIG_PATH` selects a different YAML file; the CLI also accepts `-c PATH` or `--config=PATH`, which takes precedence over `CONFIG_PATH`. Configuration precedence is YAML file, environment, then defaults. Every configuration key is also available as an uppercase environment variable, such as `HOST`, `PORT`, `LIBRARY_PATH`, and `DB_PATH`.
-
-Login modes use `DISABLE_LOGIN=true` with `DEFAULT_USERNAME`, or `AUTH_PROXY_HEADER_NAME` when a trusted reverse proxy supplies the username.
-
-## Admin CLI
-
-User management commands:
-
-```sh
-mango-rust -c config.yml admin user add -u reader -p password
-mango-rust admin user update reader -u new-reader -p new-password -a
-mango-rust admin user delete new-reader
-mango-rust admin user list
-```
-
-`-c PATH` / `--config=PATH` can appear before or after the command.
-
-## OPDS
-
-E-reader apps can connect to `http://server:9000/opds` with HTTP Basic Auth.
+Optional YAML configuration: `~/.config/mango/config.yml`. Override its path with `CONFIG_PATH` or `-c PATH`; uppercase environment variables override YAML values. The default library path is `~/mango/library`.
 
 ## License
 

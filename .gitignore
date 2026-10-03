@@ -1,7 +1,4 @@
 /target
-.serena/
-.playwright-mcp/
-.claude/
 
 # Environment variables (may contain sensitive data)
 .env
@@ -10,7 +7,6 @@
 # Node modules (not needed in production)
 node_modules/
 static/dist/
-.spec-workflow
 
 # Local development scripts
 /local-dev/
