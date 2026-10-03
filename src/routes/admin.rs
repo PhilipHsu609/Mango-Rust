@@ -141,14 +141,16 @@ pub async fn scan_library(
     let start = Instant::now();
     let _scan_guard = crate::library::SCAN_LOCK.lock().await;
 
-    // Build new library instance and scan (double-buffer approach)
+    // Publish completed roots while building the replacement library.
     let mut new_lib = crate::library::Library::new(
         state.config.library_path.clone(),
         state.storage.clone(),
         &state.config,
     );
     let previous = state.library.load_full();
-    new_lib.scan_with_previous(Some(previous)).await?;
+    new_lib
+        .scan_with_previous_and_publish(Some(previous), std::sync::Arc::clone(&state.library))
+        .await?;
     let titles = new_lib.get_titles().len();
 
     // Atomically swap the new library in

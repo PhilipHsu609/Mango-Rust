@@ -196,7 +196,7 @@ pub async fn run(config: Config) -> Result<()> {
     // Use ArcSwap for lock-free reads
     let library = Arc::new(ArcSwap::from_pointee(library));
 
-    // If cache didn't load, spawn background scan task (non-blocking, double-buffer)
+    // Publish completed root scans to readers while scanning in the background.
     if !cache_loaded {
         tracing::info!("Cache not available, starting background library scan...");
         let library_clone = library.clone();
@@ -211,7 +211,10 @@ pub async fn run(config: Config) -> Result<()> {
                 storage_clone,
                 &config_clone,
             );
-            match new_lib.scan().await {
+            match new_lib
+                .scan_with_previous_and_publish(None, Arc::clone(&library_clone))
+                .await
+            {
                 Ok(_) => {
                     let stats = new_lib.stats();
                     // Atomically swap the new library in

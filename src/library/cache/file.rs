@@ -30,7 +30,7 @@ pub struct CachedLibraryData {
 #[derive(serde::Serialize)]
 struct BorrowedLibraryData<'a> {
     path: &'a PathBuf,
-    titles: &'a std::collections::HashMap<String, crate::library::Title>,
+    titles: &'a std::collections::HashMap<String, std::sync::Arc<crate::library::Title>>,
 }
 
 impl CacheFileManager {
@@ -49,7 +49,7 @@ impl CacheFileManager {
     pub async fn save_shared(
         &self,
         path: &PathBuf,
-        titles: &std::collections::HashMap<String, crate::library::Title>,
+        titles: &std::collections::HashMap<String, std::sync::Arc<crate::library::Title>>,
     ) -> Result<()> {
         use flate2::write::GzEncoder;
         use flate2::Compression;

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -74,18 +74,19 @@ impl IdIndex {
     }
 }
 
+#[derive(Clone)]
 pub struct Library {
     /// Library root directory
     path: PathBuf,
 
-    /// All titles indexed by ID
-    titles: Arc<HashMap<String, Title>>,
+    /// Root titles indexed by ID and shared between scan snapshots
+    titles: Arc<HashMap<String, Arc<Title>>>,
 
     /// Database storage for ID persistence
     storage: Storage,
 
-    /// Cache for sorted lists and library data (uses Mutex for thread-safe interior mutability)
-    cache: Mutex<super::cache::Cache>,
+    /// Cache for sorted lists and library data
+    cache: Arc<Mutex<super::cache::Cache>>,
 
     /// In-memory cache for progress data
     progress_cache: Arc<super::progress_cache::ProgressCache>,
@@ -98,7 +99,7 @@ impl Library {
             path,
             titles: Arc::new(HashMap::new()),
             storage,
-            cache: Mutex::new(super::cache::Cache::new(config)),
+            cache: Arc::new(Mutex::new(super::cache::Cache::new(config))),
             progress_cache: Arc::new(super::progress_cache::ProgressCache::new()),
         }
     }
@@ -120,7 +121,13 @@ impl Library {
             Some(cached_data) => {
                 drop(cache); // Release lock before modifying self.titles
 
-                self.titles = Arc::new(cached_data.titles);
+                self.titles = Arc::new(
+                    cached_data
+                        .titles
+                        .into_iter()
+                        .map(|(id, title)| (id, Arc::new(title)))
+                        .collect(),
+                );
                 let entry_count: usize = self.titles.values().map(|t| t.entries.len()).sum();
 
                 tracing::info!(
@@ -147,8 +154,38 @@ impl Library {
         self.scan_with_previous(None).await
     }
 
-    /// Reuse unchanged title trees from the last published library.
     pub async fn scan_with_previous(&mut self, previous: Option<Arc<Library>>) -> Result<()> {
+        self.scan_inner(previous, None).await
+    }
+
+    /// Publish immutable library snapshots as root directories finish scanning.
+    pub async fn scan_with_previous_and_publish(
+        &mut self,
+        previous: Option<Arc<Library>>,
+        publisher: SharedLibrary,
+    ) -> Result<()> {
+        let original = publisher.load_full();
+        match self
+            .scan_inner(previous, Some(Arc::clone(&publisher)))
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                publisher.store(original);
+                Err(error)
+            }
+        }
+    }
+
+    async fn scan_inner(
+        &mut self,
+        previous: Option<Arc<Library>>,
+        publisher: Option<SharedLibrary>,
+    ) -> Result<()> {
+        if let Some(previous) = &previous {
+            self.progress_cache = Arc::clone(&previous.progress_cache);
+        }
+
         let scan_start = std::time::Instant::now();
         tracing::info!("Starting library scan: {}", self.path.display());
 
@@ -191,7 +228,9 @@ impl Library {
             })
             .unwrap_or_default();
 
+        let root_paths: HashSet<PathBuf> = title_paths.iter().cloned().collect();
         let root_count = title_paths.len();
+        let publish_batch = root_count.div_ceil(20).max(1);
         let mut tasks = tokio::task::JoinSet::new();
         for title_path in title_paths {
             let sem = semaphore.clone();
@@ -283,17 +322,20 @@ impl Library {
                     return None;
                 }
 
-                Some(title)
+                Some(Arc::new(title))
             });
         }
 
         // Collect results as tasks complete so progress reflects actual work,
         // not the launch order of root directories.
         let mut new_titles = HashMap::new();
+        let mut partial_titles: Option<HashMap<String, Arc<Title>>> = None;
         let mut completed_roots = 0;
+        let mut published_roots = 0;
         let mut progress_interval = tokio::time::interval(std::time::Duration::from_secs(10));
         progress_interval.tick().await;
         while completed_roots < root_count {
+            let mut publish_tick = false;
             tokio::select! {
                 joined = tasks.join_next() => {
                     let Some(joined) = joined else {
@@ -317,6 +359,37 @@ impl Library {
                         root_count,
                         scan_start.elapsed().as_secs_f64()
                     );
+                    publish_tick = true;
+                }
+            }
+            if let Some(publisher) = &publisher {
+                if completed_roots > published_roots
+                    && (publish_tick || completed_roots - published_roots >= publish_batch)
+                {
+                    let partial = partial_titles.get_or_insert_with(|| {
+                        let mut titles = previous
+                            .as_deref()
+                            .map(|library| library.titles.as_ref().clone())
+                            .unwrap_or_default();
+                        titles.retain(|_, title| root_paths.contains(&title.path));
+                        titles
+                    });
+                    partial.extend(
+                        new_titles
+                            .iter()
+                            .map(|(id, title)| (id.clone(), Arc::clone(title))),
+                    );
+                    let pending_title_ids = std::mem::take(&mut *new_title_ids.lock().await);
+                    let pending_entry_ids = std::mem::take(&mut *new_entry_ids.lock().await);
+                    if !pending_title_ids.is_empty() || !pending_entry_ids.is_empty() {
+                        self.bulk_insert_ids(&pending_title_ids, &pending_entry_ids)
+                            .await?;
+                    }
+
+                    self.cache.lock().await.clear();
+                    self.titles = Arc::new(partial.clone());
+                    publisher.store(Arc::new(self.clone()));
+                    published_roots = completed_roots;
                 }
             }
         }
@@ -349,6 +422,10 @@ impl Library {
 
         // Mark items in database as unavailable if not found during scan
         self.mark_unavailable().await?;
+        if let Some(publisher) = publisher {
+            self.cache.lock().await.clear();
+            publisher.store(Arc::new(self.clone()));
+        }
 
         let scan_duration = scan_start.elapsed();
         tracing::info!(
@@ -583,7 +660,7 @@ impl Library {
 
     /// Get all titles sorted by specified method
     pub fn get_titles_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Title> {
-        let mut titles: Vec<&Title> = self.titles.values().collect();
+        let mut titles: Vec<&Title> = self.titles.values().map(Arc::as_ref).collect();
 
         use super::{sort_by_mtime, sort_by_name};
 
@@ -636,7 +713,7 @@ impl Library {
             let mut result = Vec::with_capacity(cached_ids.len());
             for id in &cached_ids {
                 if let Some(title) = self.titles.get(id) {
-                    result.push(title);
+                    result.push(title.as_ref());
                 }
             }
             return result;
@@ -659,7 +736,9 @@ impl Library {
 
     /// Get a title by ID, including descendants.
     pub fn get_title(&self, id: &str) -> Option<&Title> {
-        self.titles.values().find_map(|title| find_title(title, id))
+        self.titles
+            .values()
+            .find_map(|title| find_title(title.as_ref(), id))
     }
 
     /// Get all titles in tree order, including root titles.
@@ -792,7 +871,7 @@ impl Library {
     }
 
     /// Get all titles as a HashMap
-    pub fn titles(&self) -> &HashMap<String, Title> {
+    pub fn titles(&self) -> &HashMap<String, Arc<Title>> {
         &self.titles
     }
 
@@ -993,12 +1072,10 @@ pub struct LibraryStats {
     pub pages: usize,
 }
 
-/// Create a shared Library instance that can be used across async tasks
-/// Uses ArcSwap for lock-free reads and atomic swaps during scan
+/// Shared application library, published as immutable snapshots for lock-free reads.
 pub type SharedLibrary = Arc<ArcSwap<Library>>;
 
-/// Spawn a background task that periodically scans the library
-/// Uses double-buffer approach: builds new library in background, then atomically swaps
+/// Spawn a background task that periodically scans and publishes completed roots.
 pub fn spawn_periodic_scanner(
     library: SharedLibrary,
     storage: Storage,
@@ -1013,19 +1090,22 @@ pub fn spawn_periodic_scanner(
             interval.tick().await;
             let _scan_guard = SCAN_LOCK.lock().await;
 
-            tracing::info!("Starting periodic library scan (double-buffer)");
+            tracing::info!("Starting periodic library scan");
             let periodic_start = std::time::Instant::now();
 
             // Build new library instance in background (no lock held)
             let mut new_lib = Library::new(config.library_path.clone(), storage.clone(), &config);
 
             let previous = library.load_full();
-            match new_lib.scan_with_previous(Some(previous)).await {
+            match new_lib
+                .scan_with_previous_and_publish(Some(previous), Arc::clone(&library))
+                .await
+            {
                 Ok(_) => {
                     let periodic_duration = periodic_start.elapsed();
                     let stats = new_lib.stats();
 
-                    // Atomically swap the new library in
+                    // Publish the completed library snapshot.
                     library.store(Arc::new(new_lib));
 
                     tracing::info!(
@@ -1093,7 +1173,7 @@ mod scan_regression_tests {
     use std::sync::Arc;
 
     #[tokio::test]
-    async fn rescan_detects_nested_and_archive_changes_without_losing_ids() {
+    async fn rescan_detects_changes_preserves_ids_and_publishes_partial_roots() {
         let temp = tempfile::tempdir().unwrap();
         let library_path = temp.path().join("library");
         let title_path = library_path.join("Series");
@@ -1216,9 +1296,47 @@ mod scan_regression_tests {
         let removed = Arc::new(removed);
         let renamed_path = title_path.join("Chapter 2.cbz");
         std::fs::rename(&archive_path, &renamed_path).unwrap();
-        let mut renamed = Library::new(library_path, storage, &config);
+        let mut renamed = Library::new(library_path.clone(), storage.clone(), &config);
         renamed.scan_with_previous(Some(removed)).await.unwrap();
         assert_eq!(renamed.get_titles()[0].entries[0].title, "Chapter 2");
         assert_eq!(renamed.get_titles()[0].entries[0].id, original_id);
+        let preserved_title_id = renamed.get_titles()[0].id.clone();
+
+        let previous = Arc::new(renamed);
+        for index in 0..100 {
+            let title_path = library_path.join(format!("New {index:03}"));
+            std::fs::create_dir_all(&title_path).unwrap();
+            std::fs::write(title_path.join("Chapter.cbz"), b"invalid archive").unwrap();
+        }
+        let shared = Arc::new(arc_swap::ArcSwap::from(Arc::clone(&previous)));
+        let publisher = Arc::clone(&shared);
+        let scan_path = library_path.clone();
+        let scan_storage = storage.clone();
+        let scan_config = config.clone();
+        let scan_task = tokio::spawn(async move {
+            let mut scanning = Library::new(scan_path, scan_storage, &scan_config);
+            scanning
+                .scan_with_previous_and_publish(Some(previous), publisher)
+                .await
+                .unwrap();
+        });
+
+        let mut observed_partial_scan = false;
+        while !scan_task.is_finished() {
+            let current = shared.load();
+            let visible_titles = current.get_titles().len();
+            let preserved_title_is_visible = current.get_title(&preserved_title_id).is_some();
+            drop(current);
+            if (1..101).contains(&visible_titles) && preserved_title_is_visible {
+                observed_partial_scan = true;
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        scan_task.await.unwrap();
+        assert!(
+            observed_partial_scan,
+            "completed roots should be visible before the scan finishes"
+        );
     }
 }
