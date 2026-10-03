@@ -204,6 +204,7 @@ pub async fn run(config: Config) -> Result<()> {
         let config_clone = config.clone();
         tokio::spawn(async move {
             let start = std::time::Instant::now();
+            let _scan_guard = crate::library::SCAN_LOCK.lock().await;
             // Build new library instance in background
             let mut new_lib = Library::new(
                 config_clone.library_path.clone(),

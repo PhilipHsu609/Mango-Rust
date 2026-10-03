@@ -80,15 +80,6 @@ impl Cache {
         self.file_manager.save(library).await
     }
 
-    /// Save library data to cache file (for background tasks)
-    /// Takes owned CachedLibraryData to support spawning
-    pub async fn save_library_data(&self, data: file::CachedLibraryData) -> Result<()> {
-        if !self.enabled {
-            return Ok(());
-        }
-        self.file_manager.save_data(data).await
-    }
-
     /// Get cloneable file manager for background save tasks
     pub fn file_manager(&self) -> file::CacheFileManager {
         self.file_manager.clone()

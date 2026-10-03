@@ -10,12 +10,76 @@ use super::title::Title;
 use crate::error::Result;
 use crate::Storage;
 
+/// Serialize scan-and-swap cycles so an older scan cannot replace a newer one.
+pub(crate) static SCAN_LOCK: Mutex<()> = Mutex::const_new(());
+
+struct StoredId {
+    id: String,
+    signature: Option<String>,
+    unavailable: i64,
+}
+
+struct IdIndex {
+    by_path: HashMap<String, StoredId>,
+    by_signature: HashMap<String, Vec<(String, String)>>,
+}
+
+impl IdIndex {
+    async fn load(storage: &Storage, table: &'static str) -> Result<Self> {
+        let query = match table {
+            "titles" => "SELECT id, path, signature, unavailable FROM titles",
+            "ids" => "SELECT id, path, signature, unavailable FROM ids",
+            _ => unreachable!("ID table is selected internally"),
+        };
+        let rows: Vec<(String, String, Option<String>, i64)> =
+            sqlx::query_as(query).fetch_all(storage.pool()).await?;
+        let mut by_path = HashMap::with_capacity(rows.len());
+        let mut by_signature: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        for (id, path, signature, unavailable) in rows {
+            if let Some(signature) = &signature {
+                by_signature
+                    .entry(signature.clone())
+                    .or_default()
+                    .push((id.clone(), path.clone()));
+            }
+            by_path.insert(
+                path,
+                StoredId {
+                    id,
+                    signature,
+                    unavailable,
+                },
+            );
+        }
+        Ok(Self {
+            by_path,
+            by_signature,
+        })
+    }
+
+    fn find(&self, path: &str, signature: &str) -> Option<(&str, bool)> {
+        if let Some(stored) = self.by_path.get(path) {
+            let unchanged =
+                stored.signature.as_deref() == Some(signature) && stored.unavailable == 0;
+            return Some((&stored.id, !unchanged));
+        }
+        self.by_signature
+            .get(signature)?
+            .iter()
+            .max_by(|(_, left), (_, right)| {
+                path_component_similarity(left, path)
+                    .total_cmp(&path_component_similarity(right, path))
+            })
+            .map(|(id, _)| (id.as_str(), true))
+    }
+}
+
 pub struct Library {
     /// Library root directory
     path: PathBuf,
 
     /// All titles indexed by ID
-    titles: HashMap<String, Title>,
+    titles: Arc<HashMap<String, Title>>,
 
     /// Database storage for ID persistence
     storage: Storage,
@@ -23,8 +87,8 @@ pub struct Library {
     /// Cache for sorted lists and library data (uses Mutex for thread-safe interior mutability)
     cache: Mutex<super::cache::Cache>,
 
-    /// In-memory cache for progress data (eliminates O(N) filesystem reads)
-    progress_cache: super::progress_cache::ProgressCache,
+    /// In-memory cache for progress data
+    progress_cache: Arc<super::progress_cache::ProgressCache>,
 }
 
 impl Library {
@@ -32,10 +96,10 @@ impl Library {
     pub fn new(path: PathBuf, storage: Storage, config: &crate::Config) -> Self {
         Self {
             path,
-            titles: HashMap::new(),
+            titles: Arc::new(HashMap::new()),
             storage,
             cache: Mutex::new(super::cache::Cache::new(config)),
-            progress_cache: super::progress_cache::ProgressCache::new(),
+            progress_cache: Arc::new(super::progress_cache::ProgressCache::new()),
         }
     }
 
@@ -56,7 +120,7 @@ impl Library {
             Some(cached_data) => {
                 drop(cache); // Release lock before modifying self.titles
 
-                self.titles = cached_data.titles;
+                self.titles = Arc::new(cached_data.titles);
                 let entry_count: usize = self.titles.values().map(|t| t.entries.len()).sum();
 
                 tracing::info!(
@@ -66,7 +130,7 @@ impl Library {
                 );
 
                 // Load progress cache for all titles
-                self.load_progress_cache().await;
+                self.load_progress_cache(None).await;
 
                 Ok(true)
             }
@@ -80,6 +144,11 @@ impl Library {
     /// Scan the library directory for manga titles
     /// Uses parallel processing with controlled concurrency for improved performance
     pub async fn scan(&mut self) -> Result<()> {
+        self.scan_with_previous(None).await
+    }
+
+    /// Reuse unchanged title trees from the last published library.
+    pub async fn scan_with_previous(&mut self, previous: Option<Arc<Library>>) -> Result<()> {
         let scan_start = std::time::Instant::now();
         tracing::info!("Starting library scan: {}", self.path.display());
 
@@ -103,12 +172,24 @@ impl Library {
         // Collections for bulk database inserts (matching original Mango pattern)
         let new_title_ids = Arc::new(tokio::sync::Mutex::new(Vec::new()));
         let new_entry_ids = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        // Most rescans need no ID lookups; load the tables only if a title changed.
+        let indexes = Arc::new(tokio::sync::OnceCell::new());
 
         // Process titles in parallel with controlled concurrency
         let concurrency_limit = 20; // Increased from 5 to 20 for better parallelism
         let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency_limit));
         let storage = self.storage.clone();
         let library_path = self.path.clone();
+        let previous_titles: HashMap<&Path, &str> = previous
+            .as_deref()
+            .map(|library| {
+                library
+                    .titles
+                    .values()
+                    .map(|title| (title.path.as_path(), title.id.as_str()))
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let mut tasks = Vec::new();
 
@@ -118,11 +199,43 @@ impl Library {
             let lib_path = library_path.clone();
             let title_ids = new_title_ids.clone();
             let entry_ids = new_entry_ids.clone();
+            let indexes = indexes.clone();
+            let old_id = previous_titles
+                .get(title_path.as_path())
+                .map(|id| id.to_string());
+            let prior = previous.as_ref().map(Arc::clone);
 
             let task = tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
 
-                // Scan title directory
+                let fingerprint_path = title_path.clone();
+                let fingerprint = match tokio::task::spawn_blocking(move || {
+                    super::title::calculate_contents_signature(&fingerprint_path)
+                })
+                .await
+                {
+                    Ok(Ok(signature)) => signature,
+                    Ok(Err(error)) => {
+                        tracing::warn!("Failed to fingerprint {}: {}", title_path.display(), error);
+                        return None;
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            "Fingerprint task failed for {}: {}",
+                            title_path.display(),
+                            error
+                        );
+                        return None;
+                    }
+                };
+                if let (Some(prior), Some(id)) = (prior, old_id) {
+                    if let Some(old_title) = prior.titles.get(&id) {
+                        if old_title.contents_signature == fingerprint {
+                            return Some(old_title.clone());
+                        }
+                    }
+                }
+
                 let mut title = match Title::from_directory(title_path.clone()).await {
                     Ok(t) => t,
                     Err(e) => {
@@ -130,15 +243,33 @@ impl Library {
                         return None;
                     }
                 };
+                title.contents_signature = fingerprint;
                 if title.entries.is_empty() && title.nested_titles.is_empty() {
                     return None;
                 }
 
+                let (title_index, entry_index) = match indexes
+                    .get_or_try_init(|| async {
+                        Ok::<_, crate::error::Error>((
+                            IdIndex::load(&storage_clone, "titles").await?,
+                            IdIndex::load(&storage_clone, "ids").await?,
+                        ))
+                    })
+                    .await
+                {
+                    Ok(indexes) => indexes,
+                    Err(error) => {
+                        tracing::warn!("Failed to load ID index: {}", error);
+                        return None;
+                    }
+                };
                 if let Err(error) = Box::pin(Self::assign_title_tree_ids(
                     &mut title,
                     None,
                     &lib_path,
                     &storage_clone,
+                    title_index,
+                    entry_index,
                     &title_ids,
                     &entry_ids,
                 ))
@@ -187,10 +318,10 @@ impl Library {
             );
         }
 
-        self.titles = new_titles;
+        self.titles = Arc::new(new_titles);
 
         // Load progress cache for all titles
-        self.load_progress_cache().await;
+        self.load_progress_cache(previous.as_deref()).await;
 
         // Mark items in database as unavailable if not found during scan
         self.mark_unavailable().await?;
@@ -257,11 +388,15 @@ impl Library {
         parent_id: Option<String>,
         library_path: &Path,
         storage: &Storage,
+        title_index: &IdIndex,
+        entry_index: &IdIndex,
         new_title_ids: &Arc<Mutex<Vec<(String, String, String)>>>,
         new_entry_ids: &Arc<Mutex<Vec<(String, String, String)>>>,
     ) -> Result<()> {
         title.parent_id = parent_id;
-        if let Some(id) = Self::find_existing_title_id(library_path, title, storage).await? {
+        if let Some(id) =
+            Self::find_existing_title_id(library_path, title, storage, title_index).await?
+        {
             title.id = id;
         } else {
             let relative_path = title
@@ -284,7 +419,9 @@ impl Library {
         }
 
         for entry in &mut title.entries {
-            if let Some(id) = Self::find_existing_entry_id(library_path, entry, storage).await? {
+            if let Some(id) =
+                Self::find_existing_entry_id(library_path, entry, storage, entry_index).await?
+            {
                 entry.id = id;
             } else {
                 let relative_path = entry
@@ -314,6 +451,8 @@ impl Library {
                 Some(parent_id.clone()),
                 library_path,
                 storage,
+                title_index,
+                entry_index,
                 new_title_ids,
                 new_entry_ids,
             ))
@@ -326,6 +465,7 @@ impl Library {
         library_path: &Path,
         title: &Title,
         storage: &Storage,
+        index: &IdIndex,
     ) -> Result<Option<String>> {
         let relative_path = title
             .path
@@ -340,13 +480,14 @@ impl Library {
             .to_string_lossy()
             .to_string();
 
-        Self::find_existing_id("titles", &relative_path, &title.signature, storage).await
+        Self::find_existing_id("titles", &relative_path, &title.signature, storage, index).await
     }
 
     async fn find_existing_entry_id(
         library_path: &Path,
         entry: &Entry,
         storage: &Storage,
+        index: &IdIndex,
     ) -> Result<Option<String>> {
         let relative_path = entry
             .path
@@ -361,7 +502,7 @@ impl Library {
             .to_string_lossy()
             .to_string();
 
-        Self::find_existing_id("ids", &relative_path, &entry.signature, storage).await
+        Self::find_existing_id("ids", &relative_path, &entry.signature, storage, index).await
     }
 
     async fn find_existing_id(
@@ -369,52 +510,19 @@ impl Library {
         path: &str,
         signature: &str,
         storage: &Storage,
+        index: &IdIndex,
     ) -> Result<Option<String>> {
-        let (exact_query, path_query, signature_query, update_query) = match table {
-            "titles" => (
-                "SELECT id FROM titles WHERE path = ? AND signature = ? AND unavailable = 0",
-                "SELECT id FROM titles WHERE path = ?",
-                "SELECT id, path FROM titles WHERE signature = ?",
-                "UPDATE titles SET path = ?, signature = ?, unavailable = 0 WHERE id = ?",
-            ),
-            "ids" => (
-                "SELECT id FROM ids WHERE path = ? AND signature = ? AND unavailable = 0",
-                "SELECT id FROM ids WHERE path = ?",
-                "SELECT id, path FROM ids WHERE signature = ?",
-                "UPDATE ids SET path = ?, signature = ?, unavailable = 0 WHERE id = ?",
-            ),
-            _ => unreachable!("ID table is selected internally"),
+        let Some((id, should_update)) = index.find(path, signature) else {
+            return Ok(None);
         };
-
-        let mut id = sqlx::query_scalar::<_, String>(exact_query)
-            .bind(path)
-            .bind(signature)
-            .fetch_optional(storage.pool())
-            .await?;
-        let should_update = id.is_none();
-
-        if id.is_none() {
-            id = sqlx::query_scalar::<_, String>(path_query)
-                .bind(path)
-                .fetch_optional(storage.pool())
-                .await?;
-        }
-
-        if id.is_none() {
-            let candidates = sqlx::query_as::<_, (String, String)>(signature_query)
-                .bind(signature)
-                .fetch_all(storage.pool())
-                .await?;
-            id = candidates
-                .into_iter()
-                .max_by(|(_, left_path), (_, right_path)| {
-                    path_component_similarity(left_path, path)
-                        .total_cmp(&path_component_similarity(right_path, path))
-                })
-                .map(|(id, _)| id);
-        }
-
-        if let Some(id) = id.as_ref().filter(|_| should_update) {
+        if should_update {
+            let update_query = match table {
+                "titles" => {
+                    "UPDATE titles SET path = ?, signature = ?, unavailable = 0 WHERE id = ?"
+                }
+                "ids" => "UPDATE ids SET path = ?, signature = ?, unavailable = 0 WHERE id = ?",
+                _ => unreachable!("ID table is selected internally"),
+            };
             sqlx::query(update_query)
                 .bind(path)
                 .bind(signature)
@@ -422,30 +530,22 @@ impl Library {
                 .execute(storage.pool())
                 .await?;
         }
-
-        Ok(id)
+        Ok(Some(id.to_owned()))
     }
 
     /// Save library to cache in background task (non-blocking)
     async fn save_to_cache_background(&self) {
-        // Clone data needed for background save (to satisfy 'static requirement)
-        let cached_data = super::cache::CachedLibraryData {
-            path: self.path.clone(),
-            titles: self.titles.clone(),
-        };
-
-        // Get file manager for background save
         let file_manager = {
             let cache = self.cache.lock().await;
             if cache.stats().size_limit == 0 {
-                return; // Cache disabled
+                return;
             }
             cache.file_manager()
         };
-
-        // Spawn background task to save cache (non-blocking)
+        let path = self.path.clone();
+        let titles = Arc::clone(&self.titles);
         tokio::spawn(async move {
-            match file_manager.save_data(cached_data).await {
+            match file_manager.save_shared(&path, &titles).await {
                 Ok(_) => tracing::info!("Library cache saved successfully in background"),
                 Err(e) => tracing::warn!("Failed to save library cache in background: {}", e),
             }
@@ -591,12 +691,20 @@ impl Library {
     }
 
     /// Load progress data for all titles into the cache
-    async fn load_progress_cache(&self) {
+    async fn load_progress_cache(&self, previous: Option<&Library>) {
         let start = std::time::Instant::now();
         let mut loaded = 0;
         let mut errors = 0;
 
-        for (title_id, title) in &self.titles {
+        for (title_id, title) in self.titles.iter() {
+            if previous
+                .and_then(|library| library.titles.get(title_id))
+                .is_some_and(|old| {
+                    old.path == title.path && old.contents_signature == title.contents_signature
+                })
+            {
+                continue;
+            }
             if let Err(error) = title.populate_date_added().await {
                 tracing::warn!(
                     "Failed to align info.json for title {}: {}",
@@ -607,15 +715,45 @@ impl Library {
             }
         }
 
-        for title in self.all_titles() {
-            match self.progress_cache.load_title(&title.id, &title.path).await {
-                Ok(_) => loaded += 1,
+        // Distribute independent info.json reads across workers. A missing
+        // info.json returns without yielding, so sequential async reads make
+        // the scan pay filesystem latency once per title.
+        const PROGRESS_WORKERS: usize = 20;
+        let mut workers: Vec<Vec<(String, PathBuf)>> =
+            (0..PROGRESS_WORKERS).map(|_| Vec::new()).collect();
+        for (index, title) in self.all_titles().into_iter().enumerate() {
+            workers[index % PROGRESS_WORKERS].push((title.id.clone(), title.path.clone()));
+        }
+        let mut tasks = tokio::task::JoinSet::new();
+        for titles in workers.into_iter().filter(|titles| !titles.is_empty()) {
+            let progress_cache = Arc::clone(&self.progress_cache);
+            tasks.spawn(async move {
+                let mut loaded = 0;
+                let mut errors = 0;
+                for (title_id, path) in titles {
+                    match progress_cache.load_title(&title_id, &path).await {
+                        Ok(()) => loaded += 1,
+                        Err(error) => {
+                            tracing::warn!(
+                                "Failed to load progress cache for title {}: {}",
+                                title_id,
+                                error
+                            );
+                            errors += 1;
+                        }
+                    }
+                }
+                (loaded, errors)
+            });
+        }
+        while let Some(result) = tasks.join_next().await {
+            match result {
+                Ok((worker_loaded, worker_errors)) => {
+                    loaded += worker_loaded;
+                    errors += worker_errors;
+                }
                 Err(error) => {
-                    tracing::warn!(
-                        "Failed to load progress cache for title {}: {}",
-                        title.id,
-                        error
-                    );
+                    tracing::warn!("Progress cache worker failed: {}", error);
                     errors += 1;
                 }
             }
@@ -849,6 +987,7 @@ pub fn spawn_periodic_scanner(
 
         loop {
             interval.tick().await;
+            let _scan_guard = SCAN_LOCK.lock().await;
 
             tracing::info!("Starting periodic library scan (double-buffer)");
             let periodic_start = std::time::Instant::now();
@@ -856,7 +995,8 @@ pub fn spawn_periodic_scanner(
             // Build new library instance in background (no lock held)
             let mut new_lib = Library::new(config.library_path.clone(), storage.clone(), &config);
 
-            match new_lib.scan().await {
+            let previous = library.load_full();
+            match new_lib.scan_with_previous(Some(previous)).await {
                 Ok(_) => {
                     let periodic_duration = periodic_start.elapsed();
                     let stats = new_lib.stats();
@@ -923,12 +1063,13 @@ mod path_similarity_tests {
 }
 
 #[cfg(test)]
-mod archive_error_tests {
+mod scan_regression_tests {
     use super::Library;
     use crate::{Config, Storage};
+    use std::sync::Arc;
 
     #[tokio::test]
-    async fn corrupt_archive_remains_an_entry_across_scans_and_cache_serialization() {
+    async fn rescan_detects_nested_and_archive_changes_without_losing_ids() {
         let temp = tempfile::tempdir().unwrap();
         let library_path = temp.path().join("library");
         let title_path = library_path.join("Series");
@@ -965,7 +1106,7 @@ mod archive_error_tests {
             auth_proxy_header_name: String::new(),
             plugin_update_interval_hours: 24,
         };
-        let mut library = Library::new(library_path, storage, &config);
+        let mut library = Library::new(library_path.clone(), storage.clone(), &config);
         library.scan().await.unwrap();
         let title = library.get_titles()[0];
         assert_eq!(title.entries.len(), 1);
@@ -988,10 +1129,72 @@ mod archive_error_tests {
         assert_eq!(cached.entries[0].err_msg, entry.err_msg);
         assert_eq!(cached.entries[0].id, original_id);
 
-        library.scan().await.unwrap();
-        let rescanned = &library.get_titles()[0].entries[0];
-        assert_eq!(rescanned.id, original_id);
-        assert!(rescanned.err_msg.is_some());
-        assert_eq!(rescanned.pages, 0);
+        let library = Arc::new(library);
+        let mut rescanned = Library::new(library_path.clone(), storage.clone(), &config);
+        rescanned
+            .scan_with_previous(Some(Arc::clone(&library)))
+            .await
+            .unwrap();
+        let entry = &rescanned.get_titles()[0].entries[0];
+        assert_eq!(entry.id, original_id);
+        assert!(entry.err_msg.is_some());
+        assert_eq!(entry.pages, 0);
+
+        // An out-of-band info.json edit must be visible after an unchanged scan.
+        let mut info = crate::library::progress::TitleInfo::default();
+        info.display_name = "Updated series".to_string();
+        info.set_progress("reader", "Chapter 1", 4);
+        info.save(&title_path).await.unwrap();
+        let rescanned = Arc::new(rescanned);
+        let mut refreshed = Library::new(library_path.clone(), storage.clone(), &config);
+        refreshed.scan_with_previous(Some(rescanned)).await.unwrap();
+        assert_eq!(
+            refreshed
+                .progress_cache()
+                .get_display_name(&library.get_titles()[0].id),
+            Some("Updated series".to_string())
+        );
+        assert_eq!(
+            refreshed.progress_cache().get_progress(
+                &library.get_titles()[0].id,
+                "reader",
+                "Chapter 1"
+            ),
+            Some(4)
+        );
+
+        // Changes inside a nested directory must invalidate the parent title.
+        let nested = title_path.join("Volume");
+        let pages = nested.join("Pages");
+        std::fs::create_dir_all(&pages).unwrap();
+        std::fs::write(pages.join("001.png"), b"page").unwrap();
+        let refreshed = Arc::new(refreshed);
+        let mut changed = Library::new(library_path.clone(), storage.clone(), &config);
+        changed.scan_with_previous(Some(refreshed)).await.unwrap();
+        let title = changed.get_titles()[0];
+        assert_eq!(title.id, library.get_titles()[0].id);
+        assert_eq!(title.nested_titles[0].entries[0].pages, 1);
+        assert_eq!(title.entries[0].id, original_id);
+
+        let changed = Arc::new(changed);
+        std::fs::write(&archive_path, b"longer invalid archive").unwrap();
+        let mut replaced = Library::new(library_path.clone(), storage.clone(), &config);
+        replaced.scan_with_previous(Some(changed)).await.unwrap();
+        assert_eq!(replaced.get_titles()[0].entries[0].size_bytes, 22);
+        assert_eq!(replaced.get_titles()[0].entries[0].id, original_id);
+
+        let replaced = Arc::new(replaced);
+        std::fs::remove_file(pages.join("001.png")).unwrap();
+        let mut removed = Library::new(library_path.clone(), storage.clone(), &config);
+        removed.scan_with_previous(Some(replaced)).await.unwrap();
+        assert!(removed.get_titles()[0].nested_titles.is_empty());
+
+        let removed = Arc::new(removed);
+        let renamed_path = title_path.join("Chapter 2.cbz");
+        std::fs::rename(&archive_path, &renamed_path).unwrap();
+        let mut renamed = Library::new(library_path, storage, &config);
+        renamed.scan_with_previous(Some(removed)).await.unwrap();
+        assert_eq!(renamed.get_titles()[0].entries[0].title, "Chapter 2");
+        assert_eq!(renamed.get_titles()[0].entries[0].id, original_id);
     }
 }

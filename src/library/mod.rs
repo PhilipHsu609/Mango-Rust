@@ -9,6 +9,7 @@ pub mod title;
 mod manager;
 
 pub use entry::Entry;
+pub(crate) use manager::SCAN_LOCK;
 pub use manager::{spawn_periodic_scanner, Library, LibraryStats, SharedLibrary, SortMethod};
 pub use progress::TitleInfo;
 pub use progress_cache::ProgressCache;

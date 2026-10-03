@@ -114,7 +114,7 @@ pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bm
 
 /// Check if file is a supported archive or image file
 /// Used for directory signature calculation - recognizes all media types
-fn is_supported_file(path: &Path) -> bool {
+pub(crate) fn is_supported_file(path: &Path) -> bool {
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
         let ext_lower = ext.to_lowercase();
         ALL_ARCHIVE_EXTENSIONS.contains(&ext_lower.as_str())

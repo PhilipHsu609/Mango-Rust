@@ -21,7 +21,7 @@ pub struct Title {
     /// Directory signature (CRC32 of file inodes) - stored as TEXT for Mango compatibility
     pub signature: String,
 
-    /// Contents signature (SHA1 of filenames) for change detection
+    /// Recursive filesystem fingerprint for reusing unchanged title trees
     pub contents_signature: String,
 
     /// Modification time (latest mtime of all entries)
@@ -113,7 +113,7 @@ impl Title {
         mtime = mtime.max(entries.iter().map(|entry| entry.mtime).max().unwrap_or(0));
 
         let signature = calculate_dir_signature(&path)?;
-        let contents_signature = calculate_contents_signature(&path)?;
+        let contents_signature = String::new();
 
         Ok(Self {
             id,
@@ -479,36 +479,55 @@ fn calculate_dir_signature(path: &Path) -> Result<String> {
     crate::util::dir_signature(path)
 }
 
-/// Calculate contents signature (SHA1 of all filenames, sorted)
-/// Used for detecting when directory contents changed
-fn calculate_contents_signature(path: &Path) -> Result<String> {
+/// Fingerprint visible library contents without opening archives. Include the
+/// metadata of readable files so replacing an archive or changing loose pages
+/// invalidates the cached title even when the filename stays the same.
+pub(super) fn calculate_contents_signature(path: &Path) -> Result<String> {
     use sha1::{Digest, Sha1};
     use std::fs;
 
-    let mut filenames = Vec::new();
-
-    // Collect all archive filenames
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let entry_path = entry.path();
-
-        if entry_path.is_file() && is_archive(&entry_path) {
-            if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
-                filenames.push(name.to_string());
+    fn visit(path: &Path, hasher: &mut Sha1) -> Result<()> {
+        let mut children = fs::read_dir(path)?.collect::<std::io::Result<Vec<_>>>()?;
+        children.sort_by_key(|entry| entry.file_name());
+        for child in children {
+            let name = child.file_name();
+            if name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let child_path = child.path();
+            let metadata = fs::metadata(&child_path)?;
+            if metadata.is_dir() {
+                hasher.update(b"d");
+                hasher.update(name.as_encoded_bytes());
+                hasher.update([0]);
+                visit(&child_path, hasher)?;
+                hasher.update(b"e");
+            } else if metadata.is_file() && crate::util::is_supported_file(&child_path) {
+                hasher.update(b"f");
+                hasher.update(name.as_encoded_bytes());
+                hasher.update([0]);
+                hasher.update(metadata.len().to_le_bytes());
+                let modified = metadata
+                    .modified()?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
+                hasher.update(modified.as_secs().to_le_bytes());
+                hasher.update(modified.subsec_nanos().to_le_bytes());
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    hasher.update(metadata.ino().to_le_bytes());
+                    hasher.update(metadata.ctime().to_le_bytes());
+                    hasher.update(metadata.ctime_nsec().to_le_bytes());
+                }
             }
         }
+        Ok(())
     }
 
-    // Sort filenames
-    filenames.sort();
-
-    // SHA1 of concatenated names
     let mut hasher = Sha1::new();
-    for name in filenames {
-        hasher.update(name.as_bytes());
-    }
-
-    Ok(format!("{:x}", hasher.finalize()))
+    visit(path, &mut hasher)?;
+    Ok(format!("v2:{:x}", hasher.finalize()))
 }
 
 impl super::Sortable for Title {

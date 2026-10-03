@@ -137,6 +137,7 @@ pub async fn scan_library(
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<ScanResponse>> {
     let start = Instant::now();
+    let _scan_guard = crate::library::SCAN_LOCK.lock().await;
 
     // Build new library instance and scan (double-buffer approach)
     let mut new_lib = crate::library::Library::new(
@@ -144,7 +145,8 @@ pub async fn scan_library(
         state.storage.clone(),
         &state.config,
     );
-    new_lib.scan().await?;
+    let previous = state.library.load_full();
+    new_lib.scan_with_previous(Some(previous)).await?;
     let titles = new_lib.get_titles().len();
 
     // Atomically swap the new library in
@@ -518,16 +520,8 @@ pub async fn cache_save_library_api(
 ) -> Result<Json<serde_json::Value>> {
     let lib = state.library.load();
 
-    // Create cached data
-    let cached_data = crate::library::cache::CachedLibraryData {
-        path: lib.path().to_path_buf(),
-        titles: lib.titles().clone(),
-    };
-
     let cache = lib.cache().lock().await;
-    cache.save_library_data(cached_data).await?;
-    drop(cache);
-    drop(lib);
+    cache.save_library(&lib).await?;
 
     tracing::info!("Library cache saved by admin");
 

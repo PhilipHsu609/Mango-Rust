@@ -27,6 +27,12 @@ pub struct CachedLibraryData {
     pub titles: std::collections::HashMap<String, crate::library::Title>,
 }
 
+#[derive(serde::Serialize)]
+struct BorrowedLibraryData<'a> {
+    path: &'a PathBuf,
+    titles: &'a std::collections::HashMap<String, crate::library::Title>,
+}
+
 impl CacheFileManager {
     /// Create new cache file manager
     pub fn new(cache_path: PathBuf) -> Self {
@@ -35,18 +41,21 @@ impl CacheFileManager {
 
     /// Save library to cache file (MessagePack + gzip)
     pub async fn save(&self, library: &Library) -> Result<()> {
-        let cached_data = CachedLibraryData {
-            path: library.path().to_path_buf(),
-            titles: library.titles().clone(),
-        };
-        self.save_data(cached_data).await
+        let path = library.path().to_path_buf();
+        self.save_shared(&path, library.titles()).await
     }
 
-    /// Save cached library data to file (MessagePack + gzip)
-    pub async fn save_data(&self, cached_data: CachedLibraryData) -> Result<()> {
+    /// Save an immutable title snapshot without cloning the entire library.
+    pub async fn save_shared(
+        &self,
+        path: &PathBuf,
+        titles: &std::collections::HashMap<String, crate::library::Title>,
+    ) -> Result<()> {
         use flate2::write::GzEncoder;
         use flate2::Compression;
         use std::io::Write;
+
+        let cached_data = BorrowedLibraryData { path, titles };
 
         // Serialize to MessagePack
         let serialized = rmp_serde::to_vec(&cached_data)
@@ -267,7 +276,10 @@ mod tests {
 
         // Save to cache
         let manager = CacheFileManager::new(cache_path.clone());
-        manager.save(&library).await.unwrap();
+        manager
+            .save_shared(&library_path, library.titles())
+            .await
+            .unwrap();
 
         // Verify cache file exists
         assert!(cache_path.exists(), "Cache file should be created");
