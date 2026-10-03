@@ -63,13 +63,7 @@ impl Cache {
 
     /// Invalidate all cache entries with the given prefix
     fn invalidate_by_prefix(&mut self, prefix: &str) {
-        // Get all entries and find those with matching prefix
-        let entries = self.lru_cache.entries();
-        for entry in entries {
-            if entry.key.starts_with(prefix) {
-                self.lru_cache.invalidate(&entry.key);
-            }
-        }
+        self.lru_cache.invalidate_by_prefix(prefix);
     }
 
     /// Save library to cache file

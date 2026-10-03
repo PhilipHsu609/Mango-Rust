@@ -52,7 +52,6 @@ pub struct CacheEntryInfo {
 /// Internal cache entry with metadata
 #[derive(Debug, Clone)]
 struct CacheEntry {
-    key: String,
     value: Vec<u8>,       // Serialized data (MessagePack)
     size_bytes: usize,    // Memory footprint
     access_time: Instant, // For LRU tracking
@@ -164,7 +163,6 @@ impl LruCache {
         // Insert new entry
         let now = Instant::now();
         let entry = CacheEntry {
-            key: key.clone(),
             value: serialized,
             size_bytes: value_size,
             access_time: now,
@@ -213,6 +211,23 @@ impl LruCache {
         }
     }
 
+    /// Invalidate all cache entries with the given prefix.
+    pub(super) fn invalidate_by_prefix(&mut self, prefix: &str) {
+        let current_size_bytes = &mut self.current_size_bytes;
+        let logging_enabled = self.logging_enabled;
+        self.entries.retain(|key, entry| {
+            if !key.starts_with(prefix) {
+                return true;
+            }
+
+            *current_size_bytes -= entry.size_bytes;
+            if logging_enabled {
+                tracing::debug!("Cache invalidation: {}", key);
+            }
+            false
+        });
+    }
+
     /// Clear all cache entries
     pub fn clear(&mut self) {
         let count = self.entries.len();
@@ -239,9 +254,9 @@ impl LruCache {
     /// Get all cache entries (for debug page)
     pub fn entries(&self) -> Vec<CacheEntryInfo> {
         self.entries
-            .values()
-            .map(|entry| CacheEntryInfo {
-                key: entry.key.clone(),
+            .iter()
+            .map(|(key, entry)| CacheEntryInfo {
+                key: key.clone(),
                 size_bytes: entry.size_bytes,
                 access_count: entry.access_count,
                 last_access: entry.access_time,
@@ -412,6 +427,57 @@ mod tests {
         cache.invalidate("does_not_exist"); // Should not panic
 
         assert_eq!(cache.stats().entry_count, 1, "Existing entry should remain");
+    }
+
+    #[test]
+    fn prefix_invalidation_preserves_other_entries_and_statistics() {
+        let value = vec![0u8; 20];
+        let value_size = rmp_serde::to_vec(&value).unwrap().len();
+        let mut cache = LruCache::new(value_size * 3, false);
+        for key in ["user:a", "user:b", "users:a"] {
+            cache.set(key.to_string(), &value);
+        }
+        let _: Option<Vec<u8>> = cache.get("user:a");
+        let _: Option<Vec<u8>> = cache.get("missing");
+        let before = cache.stats();
+
+        cache.invalidate_by_prefix("user:");
+
+        let after = cache.stats();
+        assert_eq!(after.entry_count, 1);
+        assert_eq!(after.size_bytes, value_size);
+        assert_eq!(after.hit_count, before.hit_count);
+        assert_eq!(after.miss_count, before.miss_count);
+        assert_eq!(after.eviction_count, before.eviction_count);
+        assert!(!cache.entries.contains_key("user:a"));
+        assert!(!cache.entries.contains_key("user:b"));
+        assert_eq!(cache.get::<Vec<u8>>("users:a"), Some(value.clone()));
+
+        // Freed bytes must be available without evicting the surviving entry.
+        cache.set("new:a".to_string(), &value);
+        cache.set("new:b".to_string(), &value);
+        assert_eq!(cache.stats().size_bytes, value_size * 3);
+        assert_eq!(cache.stats().eviction_count, before.eviction_count);
+        assert!(cache.entries.contains_key("users:a"));
+    }
+
+    #[test]
+    fn prefix_invalidation_handles_no_matches_and_empty_prefix() {
+        let mut cache = LruCache::new(1000, false);
+        cache.set("key".to_string(), vec![0u8; 20]);
+        let size_before = cache.stats().size_bytes;
+
+        cache.invalidate_by_prefix("missing");
+        assert_eq!(cache.stats().size_bytes, size_before);
+        assert_eq!(cache.stats().entry_count, 1);
+
+        cache.invalidate_by_prefix("");
+        assert_eq!(cache.stats().size_bytes, 0);
+        assert_eq!(cache.stats().entry_count, 0);
+        assert_eq!(cache.stats().eviction_count, 0);
+
+        cache.invalidate_by_prefix("");
+        assert_eq!(cache.stats().size_bytes, 0);
     }
 
     #[test]
