@@ -13,6 +13,9 @@ Mango-Rust is an incomplete, actively revived Rust port of the Crystal project i
 
 - Prefer the simplest implementation that matches Mango. Avoid speculative features, unnecessary abstractions, and unrelated cleanup.
 - This project has no users yet and is under active development: do not add compatibility shims, legacy fallbacks, or parallel ways to do the same thing. Update callers and remove obsolete paths when changing an interface.
+- We are seeking logical equivalence with Mango, not a exact behavioral match. If a behavior is logically equivalent but implemented differently, it is acceptable to diverge from Mango’s implementation.
+- Avoid unnecessary dependencies. If a dependency is needed, prefer a small, well-maintained crate with a permissive license.
+- Avoid reinventing the wheel. Prefer existing crates over custom implementations, unless the crate is unmaintained or has a restrictive license.
 
 ## Local comparison workflow
 
