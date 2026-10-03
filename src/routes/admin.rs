@@ -125,12 +125,12 @@ pub async fn cache_debug_page(
 #[derive(Serialize)]
 pub struct ScanResponse {
     pub titles: usize,
-    pub milliseconds: u128,
+    pub milliseconds: f64,
 }
 
 /// POST /api/admin/scan - Trigger library rescan
 /// Returns number of titles found and time taken in milliseconds
-/// Uses double-buffer approach: builds new library in background, then atomically swaps
+/// Builds a replacement library during the request, then atomically swaps it in
 #[utoipa::path(post, path = "/api/admin/scan", tag = "admin", summary = "Scan library", responses((status = 200, description = "Library scan completed")))]
 pub async fn scan_library(
     State(state): State<AppState>,
@@ -150,7 +150,7 @@ pub async fn scan_library(
     // Atomically swap the new library in
     state.library.store(std::sync::Arc::new(new_lib));
 
-    let elapsed = start.elapsed().as_millis();
+    let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     tracing::info!("Library scan completed: {} titles in {}ms", titles, elapsed);
 

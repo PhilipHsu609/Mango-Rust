@@ -7,17 +7,19 @@ describe('Admin API', () => {
   });
 
   describe('POST /api/admin/scan', () => {
-    it('triggers library scan and returns results', async () => {
+    it('triggers library scan and returns fractional timing results', async () => {
       const response = await api.post('/api/admin/scan');
 
       expect(response.status).toBe(200);
 
-      const result = await response.json();
+      const responseText = await response.text();
+      const result = JSON.parse(responseText);
       expect(result.titles).toBeGreaterThan(0);
       const libraryResponse = await api.get('/api/library');
       const library = await libraryResponse.json();
       expect(result.titles).toBe(library.titles.length);
       expect(typeof result.milliseconds).toBe('number');
+      expect(responseText).toMatch(/"milliseconds":\s*\d+\.\d+/);
     });
   });
 
