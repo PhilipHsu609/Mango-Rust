@@ -19,6 +19,13 @@ struct StoredId {
     unavailable: i64,
 }
 
+/// IDs owned by one scan worker until its completed title reaches the collector.
+#[derive(Default)]
+struct PendingIds {
+    titles: Vec<(String, String, String)>,
+    entries: Vec<(String, String, String)>,
+}
+
 struct IdIndex {
     by_path: HashMap<String, StoredId>,
     by_signature: HashMap<String, Vec<(String, String)>>,
@@ -206,9 +213,7 @@ impl Library {
 
         tracing::info!("Found {} directories to scan", title_paths.len());
 
-        // Collections for bulk database inserts (matching original Mango pattern)
-        let new_title_ids = Arc::new(tokio::sync::Mutex::new(Vec::new()));
-        let new_entry_ids = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        let mut pending_ids = PendingIds::default();
         // Most rescans need no ID lookups; load the tables only if a title changed.
         let indexes = Arc::new(tokio::sync::OnceCell::new());
 
@@ -236,8 +241,6 @@ impl Library {
             let sem = semaphore.clone();
             let storage_clone = storage.clone();
             let lib_path = library_path.clone();
-            let title_ids = new_title_ids.clone();
-            let entry_ids = new_entry_ids.clone();
             let indexes = indexes.clone();
             let old_id = previous_titles
                 .get(title_path.as_path())
@@ -270,7 +273,7 @@ impl Library {
                 if let (Some(prior), Some(id)) = (prior, old_id) {
                     if let Some(old_title) = prior.titles.get(&id) {
                         if old_title.contents_signature == fingerprint {
-                            return Some(old_title.clone());
+                            return Some((Arc::clone(old_title), PendingIds::default()));
                         }
                     }
                 }
@@ -302,6 +305,7 @@ impl Library {
                         return None;
                     }
                 };
+                let mut pending_ids = PendingIds::default();
                 if let Err(error) = Box::pin(Self::assign_title_tree_ids(
                     &mut title,
                     None,
@@ -309,8 +313,7 @@ impl Library {
                     &storage_clone,
                     title_index,
                     entry_index,
-                    &title_ids,
-                    &entry_ids,
+                    &mut pending_ids,
                 ))
                 .await
                 {
@@ -322,7 +325,7 @@ impl Library {
                     return None;
                 }
 
-                Some(Arc::new(title))
+                Some((Arc::new(title), pending_ids))
             });
         }
 
@@ -343,7 +346,9 @@ impl Library {
                     };
                     completed_roots += 1;
                     match joined {
-                        Ok(Some(title)) => {
+                        Ok(Some((title, ids))) => {
+                            pending_ids.titles.extend(ids.titles);
+                            pending_ids.entries.extend(ids.entries);
                             new_titles.insert(title.id.clone(), title);
                         }
                         Ok(None) => {}
@@ -379,11 +384,11 @@ impl Library {
                             .iter()
                             .map(|(id, title)| (id.clone(), Arc::clone(title))),
                     );
-                    let pending_title_ids = std::mem::take(&mut *new_title_ids.lock().await);
-                    let pending_entry_ids = std::mem::take(&mut *new_entry_ids.lock().await);
-                    if !pending_title_ids.is_empty() || !pending_entry_ids.is_empty() {
-                        self.bulk_insert_ids(&pending_title_ids, &pending_entry_ids)
+                    if !pending_ids.titles.is_empty() || !pending_ids.entries.is_empty() {
+                        self.bulk_insert_ids(&pending_ids.titles, &pending_ids.entries)
                             .await?;
+                        pending_ids.titles.clear();
+                        pending_ids.entries.clear();
                     }
 
                     self.cache.lock().await.clear();
@@ -403,15 +408,14 @@ impl Library {
             .map(|title| title.deep_entries().len())
             .sum();
         // Bulk insert all new IDs in a single transaction
-        let title_ids_vec = new_title_ids.lock().await;
-        let entry_ids_vec = new_entry_ids.lock().await;
 
-        if !title_ids_vec.is_empty() || !entry_ids_vec.is_empty() {
-            self.bulk_insert_ids(&title_ids_vec, &entry_ids_vec).await?;
+        if !pending_ids.titles.is_empty() || !pending_ids.entries.is_empty() {
+            self.bulk_insert_ids(&pending_ids.titles, &pending_ids.entries)
+                .await?;
             tracing::info!(
                 "Bulk inserted {} new titles and {} new entries to database",
-                title_ids_vec.len(),
-                entry_ids_vec.len()
+                pending_ids.titles.len(),
+                pending_ids.entries.len()
             );
         }
 
@@ -491,8 +495,7 @@ impl Library {
         storage: &Storage,
         title_index: &IdIndex,
         entry_index: &IdIndex,
-        new_title_ids: &Arc<Mutex<Vec<(String, String, String)>>>,
-        new_entry_ids: &Arc<Mutex<Vec<(String, String, String)>>>,
+        pending_ids: &mut PendingIds,
     ) -> Result<()> {
         title.parent_id = parent_id;
         if let Some(id) =
@@ -512,11 +515,9 @@ impl Library {
                 })?
                 .to_string_lossy()
                 .to_string();
-            new_title_ids.lock().await.push((
-                title.id.clone(),
-                relative_path,
-                title.signature.clone(),
-            ));
+            pending_ids
+                .titles
+                .push((title.id.clone(), relative_path, title.signature.clone()));
         }
 
         for entry in &mut title.entries {
@@ -537,7 +538,7 @@ impl Library {
                     })?
                     .to_string_lossy()
                     .to_string();
-                new_entry_ids.lock().await.push((
+                pending_ids.entries.push((
                     entry.id.clone(),
                     relative_path,
                     entry.signature.clone(),
@@ -554,8 +555,7 @@ impl Library {
                 storage,
                 title_index,
                 entry_index,
-                new_title_ids,
-                new_entry_ids,
+                pending_ids,
             ))
             .await?;
         }
