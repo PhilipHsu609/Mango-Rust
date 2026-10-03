@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+
 use askama::Template;
 use axum::{
     extract::{Path, Query, State},
@@ -9,7 +11,7 @@ use super::HasProgress;
 use crate::{
     auth::User,
     error::Result,
-    library::SortMethod,
+    library::{Entry, SortMethod, Title},
     util::{render_error, SortParams},
     AppState,
 };
@@ -101,65 +103,56 @@ struct HomeCardItem {
 
 impl HomeCardItem {
     /// Create a card item for an entry.
-    fn from_entry(
-        entry_id: &str,
-        entry_title: &str,
-        book_id: &str,
-        book_title: &str,
-        pages: usize,
-        entry_path: &str,
-        err_msg: Option<&str>,
-        info: &crate::library::progress::TitleInfo,
-    ) -> Self {
+    fn from_entry(entry: &Entry, book: &Title, info: &crate::library::progress::TitleInfo) -> Self {
         let display_name = info
             .entry_display_name
-            .get(entry_title)
+            .get(&entry.title)
             .filter(|name| !name.is_empty())
             .map(String::as_str)
-            .unwrap_or(entry_title);
+            .unwrap_or(&entry.title);
         let book_display_name = if info.display_name.is_empty() {
-            book_title
+            &book.title
         } else {
             &info.display_name
         };
-        let cover_url = if err_msg.is_some() {
+        let cover_url = if entry.err_msg.is_some() {
             "/static/img/icons/icon_x192.png".to_string()
         } else {
             info.entry_cover_url
-                .get(entry_title)
+                .get(&entry.title)
                 .filter(|url| !url.is_empty())
                 .cloned()
-                .unwrap_or_else(|| format!("/api/cover/{}/{}", book_id, entry_id))
+                .unwrap_or_else(|| format!("/api/cover/{}/{}", book.id, entry.id))
         };
 
         Self {
-            id: entry_id.to_string(),
+            id: entry.id.clone(),
             is_entry: true,
             display_name: display_name.to_string(),
             cover_url,
-            book_id: book_id.to_string(),
+            book_id: book.id.clone(),
             book_display_name: book_display_name.to_string(),
-            pages,
+            pages: entry.pages,
             encoded_path: percent_encoding::percent_encode(
-                entry_path.as_bytes(),
+                entry.path.to_string_lossy().as_bytes(),
                 percent_encoding::NON_ALPHANUMERIC,
             )
             .to_string(),
             encoded_title: percent_encoding::percent_encode(
-                entry_title.as_bytes(),
+                entry.title.as_bytes(),
                 percent_encoding::NON_ALPHANUMERIC,
             )
             .to_string(),
             encoded_book_title: percent_encoding::percent_encode(
-                book_title.as_bytes(),
+                book.title.as_bytes(),
                 percent_encoding::NON_ALPHANUMERIC,
             )
             .to_string(),
-            err_msg: err_msg.map(str::to_string),
+            err_msg: entry.err_msg.clone(),
             content_label: String::new(),
             grouped_count: None,
-            title: Some(entry_title.to_string()),
-            sort_title: Some(entry_title.to_string()),
+            title: Some(entry.title.clone()),
+            sort_title: Some(entry.title.clone()),
         }
     }
 
@@ -331,16 +324,7 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                 cr_items.push((
                     last_read.unwrap_or(i64::MIN),
                     ContinueReadingItem {
-                        entry: HomeCardItem::from_entry(
-                            &entry.id,
-                            &entry.title,
-                            &title.id,
-                            &title.title,
-                            entry.pages,
-                            &entry.path.to_string_lossy(),
-                            entry.err_msg.as_deref(),
-                            &info,
-                        ),
+                        entry: HomeCardItem::from_entry(entry, title, &info),
                         percentage,
                     },
                 ));
@@ -390,7 +374,7 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
         cr_items.truncate(MAX_ITEMS);
 
         // Sort continue_reading by last_read (most recent first) and take top items
-        cr_items.sort_by(|a, b| b.0.cmp(&a.0));
+        cr_items.sort_by_key(|(last_read, _)| Reverse(*last_read));
         let continue_reading: Vec<ContinueReadingItem> = cr_items
             .into_iter()
             .take(MAX_ITEMS)
@@ -424,16 +408,7 @@ pub async fn home(State(state): State<AppState>, user: User) -> Result<Html<Stri
                         item.grouped_count = Some(group.grouped_count);
                         item
                     } else {
-                        HomeCardItem::from_entry(
-                            &entry.id,
-                            &entry.title,
-                            &title.id,
-                            &title.title,
-                            entry.pages,
-                            &entry.path.to_string_lossy(),
-                            entry.err_msg.as_deref(),
-                            &info,
-                        )
+                        HomeCardItem::from_entry(entry, title, &info)
                     };
 
                     RecentlyAddedItem {

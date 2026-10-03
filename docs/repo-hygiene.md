@@ -26,3 +26,10 @@ Branch: `repo-hygiene`. Preserve behavior and data contracts; use Crystal Mango 
 - Grouped recursive response formatting and traversal controls in a private `TitleResponseOptions` value. Request dependencies stay borrowed; each child inherits resolved sorting and formatting while decrementing only positive depth.
 - Removed the intermediate entry vector that wrapped sort titles in `Some` only to borrow them immediately afterward. Timestamp ordering uses `sort_by_key` with `Reverse`.
 - Verification: all 64 Rust tests and strict all-target Clippy passed. A disposable container using the rebuilt image exercised nested recursion, depths zero/one/unlimited, invalid-depth defaults, parent breadcrumbs, slim output, percentage alignment, and inherited descending sorting through HTTP.
+
+## Borrowed card model inputs
+
+- Home and book entry-card constructors now borrow `Entry`, `Title`, and progress metadata rather than accepting eight independent primitive arguments. Template-specific card fields and sort-title defaults remain distinct.
+- Continue-reading timestamp ordering uses `sort_by_key` with `Reverse`.
+- Verification: all 64 Rust tests and strict all-target Clippy passed. Rebuilt `mango-rust:local`, ran `./local-dev/run-local.sh`, signed into both apps, inspected home and matching book cards, and opened entry modals. Covers, titles, page counts, badges, and modal paths/actions rendered; the two comparison databases have different progress values, so their badges/home selections are not identical.
+- Comparison browser sessions use `127.0.0.1:9000` for Crystal and `localhost:9001` for Rust to isolate same-host cookies from the containers' internal port configuration.
