@@ -1,150 +1,24 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 #[derive(Clone, Debug)]
-struct Decimal {
-    digits: Vec<u8>,
-    scale: usize,
-}
-
-impl Decimal {
-    fn parse(integer: &str, fraction: &str) -> Option<Self> {
-        let mut digits: Vec<u8> = integer
-            .bytes()
-            .chain(fraction.bytes())
-            .map(|digit| digit - b'0')
-            .collect();
-        let mut scale = fraction.len();
-        if let Some(first_nonzero) = digits.iter().position(|digit| *digit != 0) {
-            digits.drain(..first_nonzero);
-            while scale > 0 && digits.last() == Some(&0) {
-                digits.pop();
-                scale -= 1;
-            }
-        } else {
-            digits.clear();
-            scale = 0;
-        }
-        Some(Self { digits, scale })
-    }
-
-    fn aligned_digits(&self, scale: usize) -> Vec<u8> {
-        let mut digits = self.digits.clone();
-        digits.resize(digits.len() + scale - self.scale, 0);
-        digits
-    }
-
-    fn integer_digits(&self) -> usize {
-        self.digits.len().saturating_sub(self.scale)
-    }
-
-    fn subtract(&self, other: &Self) -> Self {
-        let scale = self.scale.max(other.scale);
-        let left = self.aligned_digits(scale);
-        let right = other.aligned_digits(scale);
-        let mut result = vec![0; left.len().max(right.len())];
-        let mut borrow = 0i16;
-        for offset in 0..result.len() {
-            let left_digit = left
-                .len()
-                .checked_sub(offset + 1)
-                .map_or(0, |index| left[index] as i16);
-            let right_digit = right
-                .len()
-                .checked_sub(offset + 1)
-                .map_or(0, |index| right[index] as i16);
-            let mut digit = left_digit - right_digit - borrow;
-            if digit < 0 {
-                digit += 10;
-                borrow = 1;
-            } else {
-                borrow = 0;
-            }
-            let index = result.len() - offset - 1;
-            result[index] = digit as u8;
-        }
-        let mut result_scale = scale;
-        if let Some(first_nonzero) = result.iter().position(|digit| *digit != 0) {
-            result.drain(..first_nonzero);
-        } else {
-            result.clear();
-            result_scale = 0;
-        }
-        while result_scale > 0 && result.last() == Some(&0) {
-            result.pop();
-            result_scale -= 1;
-        }
-        Self {
-            digits: result,
-            scale: result_scale,
-        }
-    }
-}
-
-impl PartialEq for Decimal {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-
-impl Eq for Decimal {}
-
-impl PartialOrd for Decimal {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Decimal {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let left_integer = self.integer_digits();
-        let right_integer = other.integer_digits();
-        match left_integer.cmp(&right_integer) {
-            Ordering::Equal => {}
-            order => return order,
-        }
-        let scale = self.scale.max(other.scale);
-        let width = left_integer + scale;
-        for index in 0..width {
-            let left_offset = width - (self.digits.len() + scale - self.scale);
-            let right_offset = width - (other.digits.len() + scale - other.scale);
-            let left_digit = index
-                .checked_sub(left_offset)
-                .and_then(|digit_index| self.digits.get(digit_index))
-                .copied()
-                .unwrap_or(0);
-            let right_digit = index
-                .checked_sub(right_offset)
-                .and_then(|digit_index| other.digits.get(digit_index))
-                .copied()
-                .unwrap_or(0);
-            match left_digit.cmp(&right_digit) {
-                Ordering::Equal => {}
-                order => return order,
-            }
-        }
-        Ordering::Equal
-    }
-}
-
-#[derive(Clone, Debug)]
 struct KeyRange {
-    min: Decimal,
-    max: Decimal,
+    min: f64,
+    max: f64,
     count: usize,
 }
 
 impl KeyRange {
-    fn new(value: Decimal) -> Self {
+    fn new(value: f64) -> Self {
         Self {
-            min: value.clone(),
+            min: value,
             max: value,
             count: 1,
         }
     }
 
-    fn update(&mut self, value: Decimal) {
+    fn update(&mut self, value: f64) {
         if value < self.min {
-            self.min = value.clone();
+            self.min = value;
         }
         if value > self.max {
             self.max = value;
@@ -152,13 +26,13 @@ impl KeyRange {
         self.count += 1;
     }
 
-    fn range(&self) -> Decimal {
-        self.max.subtract(&self.min)
+    fn range(&self) -> f64 {
+        self.max - self.min
     }
 }
 
 #[derive(Clone, Debug)]
-struct SortItem(HashMap<String, Decimal>);
+struct SortItem(HashMap<String, f64>);
 
 impl SortItem {
     fn compare(&self, other: &Self, keys: &[String]) -> Ordering {
@@ -168,7 +42,7 @@ impl SortItem {
                 (None, Some(_)) => return Ordering::Greater,
                 (Some(_), None) => return Ordering::Less,
                 (Some(left), Some(right)) => {
-                    let order = left.cmp(right);
+                    let order = left.total_cmp(right);
                     if order != Ordering::Equal {
                         return order;
                     }
@@ -209,7 +83,7 @@ impl ChapterSorter {
             right
                 .count
                 .cmp(&left.count)
-                .then_with(|| right.range().cmp(&left.range()))
+                .then_with(|| right.range().total_cmp(&left.range()))
         });
         Self {
             keys: keys.into_iter().map(|(key, _)| key).collect(),
@@ -293,7 +167,7 @@ fn compare_integer_strings(left: &str, right: &str) -> Ordering {
 
 #[cfg(test)]
 mod numeric_sort_tests {
-    use super::{compare_numerically, Decimal};
+    use super::compare_numerically;
     use std::cmp::Ordering;
 
     #[test]
@@ -319,17 +193,9 @@ mod numeric_sort_tests {
             Ordering::Less
         );
     }
-    #[test]
-    fn decimal_comparison_preserves_leading_fractional_zeros() {
-        let hundredth = Decimal::parse("0", "01").unwrap();
-        let tenth = Decimal::parse("0", "1").unwrap();
-        let zero = Decimal::parse("0", "").unwrap();
-        assert!(zero < hundredth);
-        assert!(hundredth < tenth);
-    }
 }
 
-fn scan(name: &str) -> Vec<(String, Decimal)> {
+fn scan(name: &str) -> Vec<(String, f64)> {
     let bytes = name.as_bytes();
     let mut matches = Vec::new();
     let mut cursor = 0;
@@ -363,7 +229,7 @@ fn is_key_delimiter(byte: u8) -> bool {
     byte.is_ascii_digit() || matches!(byte, b' ' | b'\n' | b'\r')
 }
 
-fn parse_number(bytes: &[u8], start: usize) -> Option<(Decimal, usize)> {
+fn parse_number(bytes: &[u8], start: usize) -> Option<(f64, usize)> {
     let mut integer_end = start;
     while integer_end < bytes.len() && bytes[integer_end].is_ascii_digit() {
         integer_end += 1;
@@ -376,19 +242,21 @@ fn parse_number(bytes: &[u8], start: usize) -> Option<(Decimal, usize)> {
     while fraction_end < bytes.len() && bytes[fraction_end].is_ascii_digit() {
         fraction_end += 1;
     }
-    if fraction_end > dot_end {
-        let integer = std::str::from_utf8(&bytes[start..integer_end]).ok()?;
-        let fraction = std::str::from_utf8(&bytes[dot_end..fraction_end]).ok()?;
+    let end = if fraction_end > dot_end {
         if dot_end - integer_end > 1 {
             return None;
         }
-        return Some((Decimal::parse(integer, fraction)?, fraction_end));
-    }
-    if integer_end > start {
-        let integer = std::str::from_utf8(&bytes[start..integer_end]).ok()?;
-        return Some((Decimal::parse(integer, "")?, integer_end));
-    }
-    None
+        fraction_end
+    } else if integer_end > start {
+        integer_end
+    } else {
+        return None;
+    };
+    let value = std::str::from_utf8(&bytes[start..end])
+        .ok()?
+        .parse::<f64>()
+        .ok()?;
+    Some(((value * 100.0).round() / 100.0, end))
 }
 
 fn parse_item(name: &str) -> SortItem {
@@ -428,7 +296,25 @@ mod tests {
     }
 
     #[test]
-    fn equal_frequency_keys_use_exact_numeric_range_order() {
+    fn fractional_chapter_values_sort_numerically() {
+        let mut names = vec!["Chapter 0.1", "Chapter 0.01"];
+        let sorter = ChapterSorter::new(&names);
+        names.sort_by(|left, right| sorter.compare(left, right));
+        assert_eq!(names, ["Chapter 0.01", "Chapter 0.1"]);
+    }
+
+    #[test]
+    fn chapter_numbers_with_same_two_decimal_places_compare_equal() {
+        let names = ["Chapter 1.231", "Chapter 1.234"];
+        let sorter = ChapterSorter::new(&names);
+        assert_eq!(
+            sorter.compare(names[0], names[1]),
+            std::cmp::Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn keys_are_ordered_by_frequency_then_value_range() {
         let mut names = vec![
             "Vol. 1 Ch. 1",
             "Vol. 2 Ch. 2",
