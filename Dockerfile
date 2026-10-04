@@ -61,14 +61,4 @@ COPY --from=builder /build/static /app/static
 # Create config and data directories
 RUN mkdir -p /root/.config/mango /root/mango/library
 
-# Expose port
-EXPOSE 9000
-
-# Environment variables (can be overridden)
-ENV HOST=0.0.0.0
-ENV PORT=9000
-ENV DB_PATH=/root/mango/mango.db
-ENV LIBRARY_PATH=/root/mango/library
-ENV LOG_LEVEL=info
-
 CMD ["/usr/local/bin/mango-rust"]
