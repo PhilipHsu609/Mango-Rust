@@ -27,14 +27,6 @@
             <li><a href="/tags">Tags</a></li>
             {% if nav.is_admin %}
               <li><a href="/admin">Admin</a></li>
-              <li class="uk-parent">
-                <a href="#">Download</a>
-                <ul class="uk-nav-sub">
-                  <li><a href="/download/plugins">Plugins</a></li>
-                  <li><a href="/admin/downloads">Download Manager</a></li>
-                  <li><a href="/admin/subscriptions">Subscription Manager</a></li>
-                </ul>
-              </li>
             {% endif %}
             <hr uk-divider>
             <li><a onclick="toggleTheme()"><i class="fas fa-adjust"></i></a></li>
@@ -57,18 +49,6 @@
           <li{% if nav.tags_active %} class="uk-active"{% endif %}><a href="/tags">Tags</a></li>
           {% if nav.is_admin %}
             <li{% if nav.admin_active %} class="uk-active"{% endif %}><a href="/admin">Admin</a></li>
-            <li>
-              <a href="#">Download</a>
-              <div class="uk-navbar-dropdown">
-                <ul class="uk-nav uk-navbar-dropdown-nav">
-                  <li class="uk-nav-header">Source</li>
-                  <li><a href="/download/plugins">Plugins</a></li>
-                  <li class="uk-nav-divider"></li>
-                  <li><a href="/admin/downloads">Download Manager</a></li>
-                  <li><a href="/admin/subscriptions">Subscription Manager</a></li>
-                </ul>
-              </div>
-            </li>
           {% endif %}
         </ul>
       </div>
