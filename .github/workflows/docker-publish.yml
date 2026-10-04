@@ -32,6 +32,10 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # Serialize with cleanup to protect in-progress uploads and attestations.
+    concurrency:
+      group: ghcr-images
+      cancel-in-progress: false
     permissions:
       contents: write
       packages: write
