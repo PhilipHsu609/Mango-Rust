@@ -8,7 +8,7 @@ use axum::{
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
 
-use crate::{auth::AdminOnly, error::Result, util::render_error, AppState};
+use crate::{auth::AdminOnly, error::Result, routes::presentation::render_error, AppState};
 /// Query params for user edit page
 #[derive(Deserialize)]
 pub struct UserEditQuery {
@@ -23,7 +23,7 @@ pub async fn user_edit_page(
     axum::extract::Query(query): axum::extract::Query<UserEditQuery>,
 ) -> Result<Html<String>> {
     let template = UserEditTemplate {
-        nav: crate::util::NavigationState::admin().with_admin(true),
+        nav: crate::routes::presentation::NavigationState::admin().with_admin(true),
         new_user: query.username.is_none(),
         edit_username: query.username.unwrap_or_default(),
         is_admin: query.admin.unwrap_or(false),
@@ -146,7 +146,7 @@ pub async fn delete_user_api(
 #[derive(Template)]
 #[template(path = "users.html")]
 struct UsersTemplate {
-    nav: crate::util::NavigationState,
+    nav: crate::routes::presentation::NavigationState,
     username: String,
     users: Vec<UserResponse>,
 }
@@ -155,7 +155,7 @@ struct UsersTemplate {
 #[derive(Template)]
 #[template(path = "user-edit.html")]
 struct UserEditTemplate {
-    nav: crate::util::NavigationState,
+    nav: crate::routes::presentation::NavigationState,
     new_user: bool,
     edit_username: String,
     is_admin: bool,
@@ -175,7 +175,7 @@ pub async fn users_page(
         .collect();
 
     let template = UsersTemplate {
-        nav: crate::util::NavigationState::admin().with_admin(true),
+        nav: crate::routes::presentation::NavigationState::admin().with_admin(true),
         username,
         users,
     };

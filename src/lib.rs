@@ -1,13 +1,9 @@
-// Mango-Rust Library Root
-// Tier 1 MVP modules
-
 pub mod auth;
 pub mod config;
 pub mod library;
 pub mod routes;
 pub mod server;
 pub mod storage;
-pub mod util;
 
 // Re-exports
 pub use config::Config;

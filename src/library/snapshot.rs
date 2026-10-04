@@ -6,6 +6,7 @@ use arc_swap::ArcSwap;
 use tokio::sync::Mutex;
 
 use super::entry::Entry;
+use super::ordering::{sort_snapshot_titles, SortMethod, SortOptions};
 use super::title::Title;
 use crate::error::Result;
 use crate::Storage;
@@ -24,8 +25,8 @@ pub struct Library {
     /// Cache for sorted lists and library data
     pub(super) cache: Arc<Mutex<super::cache::Cache>>,
 
-    /// In-memory cache for progress data
-    pub(super) progress_cache: Arc<super::progress_cache::ProgressCache>,
+    /// Shared metadata persistence and immutable snapshots
+    pub(super) metadata: Arc<super::metadata::MetadataStore>,
 }
 
 impl Library {
@@ -36,7 +37,7 @@ impl Library {
             titles: Arc::new(HashMap::new()),
             storage,
             cache: Arc::new(Mutex::new(super::cache::Cache::new(config))),
-            progress_cache: Arc::new(super::progress_cache::ProgressCache::new()),
+            metadata: Arc::new(super::metadata::MetadataStore::new()),
         }
     }
 
@@ -72,8 +73,8 @@ impl Library {
                     entry_count
                 );
 
-                // Load progress cache for all titles
-                super::scan::load_progress_cache(self, None).await;
+                // Load metadata snapshots for all titles.
+                super::scan::load_metadata(self, None).await;
 
                 Ok(true)
             }
@@ -93,15 +94,7 @@ impl Library {
     pub fn get_titles_sorted(&self, method: SortMethod, ascending: bool) -> Vec<&Title> {
         let mut titles: Vec<&Title> = self.titles.values().map(Arc::as_ref).collect();
 
-        use super::{sort_by_mtime, sort_by_name};
-
-        match method {
-            SortMethod::TimeModified => sort_by_mtime(&mut titles, ascending),
-            SortMethod::Name | SortMethod::TimeAdded | SortMethod::Progress | SortMethod::Auto => {
-                // Mango falls back to title order when time_added is used for titles.
-                sort_by_name(&mut titles, ascending);
-            }
-        }
+        sort_snapshot_titles(&mut titles, SortOptions { method, ascending });
 
         titles
     }
@@ -219,9 +212,9 @@ impl Library {
         &self.cache
     }
 
-    /// Get progress cache reference for fast progress lookups
-    pub fn progress_cache(&self) -> &super::progress_cache::ProgressCache {
-        &self.progress_cache
+    /// Metadata persistence and cached access shared by scan snapshots.
+    pub fn metadata(&self) -> &super::metadata::MetadataStore {
+        &self.metadata
     }
 
     /// Get all titles as a HashMap
@@ -257,48 +250,6 @@ fn find_title<'a>(title: &'a Title, id: &str) -> Option<&'a Title> {
         .find_map(|nested| find_title(nested, id))
 }
 
-/// Sorting methods for titles and entries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SortMethod {
-    /// Sort alphabetically by name/title.
-    Name,
-    /// Sort by modification time.
-    TimeModified,
-    /// Sort by added time.
-    TimeAdded,
-    /// Sort by reading progress.
-    Progress,
-    /// Smart chapter detection.
-    #[default]
-    Auto,
-}
-
-impl SortMethod {
-    /// Parse from string parameter (for API routes)
-    /// Matches original Mango API: "title", "modified", "auto"
-    pub fn parse(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "title" | "name" => SortMethod::Name,
-            "modified" | "time" | "time_modified" => SortMethod::TimeModified,
-            "added" | "time_added" => SortMethod::TimeAdded,
-            "progress" => SortMethod::Progress,
-            "auto" => SortMethod::Auto,
-            _ => SortMethod::default(),
-        }
-    }
-
-    /// Parse sort method and ascend flag from query parameters
-    /// Returns (SortMethod, bool) where bool is true for ascending
-    pub fn from_params(sort: Option<&str>, ascend: Option<&str>) -> (Self, bool) {
-        let method = sort.map(Self::parse).unwrap_or_default();
-        let ascending = ascend
-            .and_then(|s| s.parse::<i32>().ok())
-            .map(|v| v != 0)
-            .unwrap_or(true); // Default to ascending
-        (method, ascending)
-    }
-}
-
 /// Library statistics
 #[derive(Debug, Clone)]
 pub struct LibraryStats {
@@ -309,14 +260,3 @@ pub struct LibraryStats {
 
 /// Shared application library, published as immutable snapshots for lock-free reads.
 pub type SharedLibrary = Arc<ArcSwap<Library>>;
-
-#[cfg(test)]
-mod sort_method_tests {
-    use super::SortMethod;
-
-    #[test]
-    fn parses_mango_date_added_sort_name() {
-        assert_eq!(SortMethod::parse("time_added"), SortMethod::TimeAdded);
-        assert_eq!(SortMethod::parse("added"), SortMethod::TimeAdded);
-    }
-}

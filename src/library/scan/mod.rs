@@ -44,7 +44,7 @@ async fn scan_inner(
     publisher: Option<&SharedLibrary>,
 ) -> Result<()> {
     if let Some(previous) = &previous {
-        library.progress_cache = Arc::clone(&previous.progress_cache);
+        library.metadata = Arc::clone(&previous.metadata);
     }
 
     let scan_start = std::time::Instant::now();
@@ -278,8 +278,8 @@ async fn scan_inner(
 
     library.titles = Arc::new(new_titles);
 
-    // Load progress cache for all titles
-    load_progress_cache(library, previous.as_deref()).await;
+    // Refresh metadata snapshots for all titles.
+    load_metadata(library, previous.as_deref()).await;
 
     // Mark items in database as unavailable if not found during scan
     ids::mark_unavailable(library).await?;
@@ -321,52 +321,54 @@ async fn save_to_cache_background(library: &Library) {
     });
 }
 
-/// Load progress data for all titles into the cache
-pub(super) async fn load_progress_cache(library: &Library, previous: Option<&Library>) {
+/// Refresh metadata while aligning changed title trees with Mango keys.
+pub(super) async fn load_metadata(library: &Library, previous: Option<&Library>) {
     let start = std::time::Instant::now();
     let mut loaded = 0;
     let mut errors = 0;
+    if let Err(error) = library.metadata.refresh(&library.path).await {
+        tracing::warn!("Failed to refresh library metadata: {}", error);
+        errors += 1;
+    }
 
     for (title_id, title) in library.titles.iter() {
-        if previous
+        let unchanged = previous
             .and_then(|library| library.titles.get(title_id))
             .is_some_and(|old| {
                 old.path == title.path && old.contents_signature == title.contents_signature
-            })
-        {
-            continue;
-        }
-        if let Err(error) = title.populate_date_added().await {
-            tracing::warn!(
-                "Failed to align info.json for title {}: {}",
-                title_id,
-                error
-            );
-            errors += 1;
+            });
+        if !unchanged {
+            if let Err(error) = library.metadata.populate_date_added(title).await {
+                tracing::warn!(
+                    "Failed to align info.json for title {}: {}",
+                    title_id,
+                    error
+                );
+                errors += 1;
+            }
         }
     }
 
-    // Distribute independent info.json reads across workers. A missing
-    // info.json returns without yielding, so sequential async reads make
-    // the scan pay filesystem latency once per title.
-    const PROGRESS_WORKERS: usize = 20;
+    // Refresh every directory, including nested and unchanged titles, with
+    // the existing worker concurrency. The store locks only individual paths.
+    const METADATA_WORKERS: usize = 20;
     let mut workers: Vec<Vec<(String, PathBuf)>> =
-        (0..PROGRESS_WORKERS).map(|_| Vec::new()).collect();
+        (0..METADATA_WORKERS).map(|_| Vec::new()).collect();
     for (index, title) in library.all_titles().into_iter().enumerate() {
-        workers[index % PROGRESS_WORKERS].push((title.id.clone(), title.path.clone()));
+        workers[index % METADATA_WORKERS].push((title.id.clone(), title.path.clone()));
     }
     let mut tasks = tokio::task::JoinSet::new();
     for titles in workers.into_iter().filter(|titles| !titles.is_empty()) {
-        let progress_cache = Arc::clone(&library.progress_cache);
+        let metadata = Arc::clone(&library.metadata);
         tasks.spawn(async move {
             let mut loaded = 0;
             let mut errors = 0;
             for (title_id, path) in titles {
-                match progress_cache.load_title(&title_id, &path).await {
-                    Ok(()) => loaded += 1,
+                match metadata.refresh(&path).await {
+                    Ok(_) => loaded += 1,
                     Err(error) => {
                         tracing::warn!(
-                            "Failed to load progress cache for title {}: {}",
+                            "Failed to refresh metadata for title {}: {}",
                             title_id,
                             error
                         );
@@ -384,14 +386,13 @@ pub(super) async fn load_progress_cache(library: &Library, previous: Option<&Lib
                 errors += worker_errors;
             }
             Err(error) => {
-                tracing::warn!("Progress cache worker failed: {}", error);
+                tracing::warn!("Metadata worker failed: {}", error);
                 errors += 1;
             }
         }
     }
-
     tracing::info!(
-        "Progress cache loaded: {} titles in {:.2}ms ({} errors)",
+        "Metadata refreshed: {} titles in {:.2}ms ({} errors)",
         loaded,
         start.elapsed().as_secs_f64() * 1000.0,
         errors
@@ -522,29 +523,23 @@ mod scan_regression_tests {
         assert_eq!(entry.pages, 0);
 
         // An out-of-band info.json edit must be visible after an unchanged scan.
-        let mut info = crate::library::progress::TitleInfo {
+        let mut info = crate::library::metadata::TitleInfo {
             display_name: "Updated series".to_string(),
             ..Default::default()
         };
         info.set_progress("reader", "Chapter 1", 4);
-        info.save(&title_path).await.unwrap();
+        tokio::fs::write(
+            title_path.join("info.json"),
+            serde_json::to_vec_pretty(&info).unwrap(),
+        )
+        .await
+        .unwrap();
         let rescanned = Arc::new(rescanned);
         let mut refreshed = Library::new(library_path.clone(), storage.clone(), &config);
         scan(&mut refreshed, Some(rescanned), None).await.unwrap();
-        assert_eq!(
-            refreshed
-                .progress_cache()
-                .get_display_name(&library.get_titles()[0].id),
-            Some("Updated series".to_string())
-        );
-        assert_eq!(
-            refreshed.progress_cache().get_progress(
-                &library.get_titles()[0].id,
-                "reader",
-                "Chapter 1"
-            ),
-            Some(4)
-        );
+        let refreshed_info = refreshed.metadata().cached(&title_path).unwrap();
+        assert_eq!(refreshed_info.display_name, "Updated series");
+        assert_eq!(refreshed_info.get_progress("reader", "Chapter 1"), Some(4));
 
         // Changes inside a nested directory must invalidate the parent title.
         let nested = title_path.join("Volume");

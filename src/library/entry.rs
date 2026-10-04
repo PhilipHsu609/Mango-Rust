@@ -37,23 +37,3 @@ pub struct Entry {
     #[serde(default)]
     pub err_msg: Option<String>,
 }
-
-impl super::Sortable for Entry {
-    fn sort_name(&self) -> &str {
-        &self.title
-    }
-
-    fn sort_mtime(&self) -> i64 {
-        self.mtime
-    }
-}
-
-impl super::Sortable for &Entry {
-    fn sort_name(&self) -> &str {
-        &self.title
-    }
-
-    fn sort_mtime(&self) -> i64 {
-        self.mtime
-    }
-}

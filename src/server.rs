@@ -20,20 +20,21 @@ use crate::{
     config::Config,
     error::Result,
     library::{scan::spawn_periodic_scanner, Library},
+    routes::presentation::NavigationState,
     routes::{
         admin::{cache, dashboard, maintenance, users},
         api::{catalog, media, metadata, reading, tags},
         book::get_book,
         login::{api_login, get_login, logout, post_login},
-        main::{
-            change_password_api, change_password_page, home, library as library_page,
-            list_tags_page, view_tag_page,
-        },
         opds::{opds_index, opds_title},
+        pages::{
+            account::{change_password_api, change_password_page},
+            catalog::{library as library_page, list_tags_page, view_tag_page},
+            home::home,
+        },
         reader::{reader, reader_continue},
         reference::{api_reference, openapi_spec, ApiDoc},
     },
-    util::NavigationState,
     Storage,
 };
 

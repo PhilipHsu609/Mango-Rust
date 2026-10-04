@@ -57,13 +57,13 @@ pub async fn opds_index(
 
     let mut opds_titles = Vec::with_capacity(titles.len());
     for title in titles {
-        let info = crate::library::TitleInfo::load(&title.path).await?;
+        let info = lib.metadata().read(&title.path).await?;
         opds_titles.push(OPDSTitleEntry {
             id: title.id.clone(),
             name: if info.display_name.is_empty() {
                 title.title.clone()
             } else {
-                info.display_name
+                info.display_name.clone()
             },
         });
     }
@@ -101,24 +101,24 @@ pub async fn opds_title(
         .get_title(&title_id)
         .ok_or_else(|| crate::error::Error::NotFound(format!("Title not found: {}", title_id)))?;
 
-    let info = crate::library::TitleInfo::load(&title.path).await?;
+    let info = lib.metadata().read(&title.path).await?;
     let opds_title = OPDSTitleInfo {
         id: title.id.clone(),
         name: if info.display_name.is_empty() {
             title.title.clone()
         } else {
-            info.display_name
+            info.display_name.clone()
         },
         titles: {
             let mut nested_titles = Vec::with_capacity(title.nested_titles.len());
             for nested in &title.nested_titles {
-                let nested_info = crate::library::TitleInfo::load(&nested.path).await?;
+                let nested_info = lib.metadata().read(&nested.path).await?;
                 nested_titles.push(OPDSTitleEntry {
                     id: nested.id.clone(),
                     name: if nested_info.display_name.is_empty() {
                         nested.title.clone()
                     } else {
-                        nested_info.display_name
+                        nested_info.display_name.clone()
                     },
                 });
             }

@@ -19,7 +19,11 @@ pub async fn api_reference(State(state): State<AppState>) -> Result<Html<String>
     let template = ApiReferenceTemplate {
         spec_url: format!("{}openapi.json", state.config.base_url),
     };
-    Ok(Html(template.render().map_err(crate::util::render_error)?))
+    Ok(Html(
+        template
+            .render()
+            .map_err(crate::routes::presentation::render_error)?,
+    ))
 }
 
 pub async fn openapi_spec(
@@ -96,7 +100,7 @@ All endpoints except `/api/login` require authentication. After logging in, the 
         crate::routes::api::reading::bulk_progress,
         crate::routes::admin::maintenance::thumbnail_progress,
         crate::routes::admin::maintenance::generate_thumbnails,
-        crate::routes::main::change_password_api
+        crate::routes::pages::account::change_password_api
     )
 )]
 pub struct ApiDoc;

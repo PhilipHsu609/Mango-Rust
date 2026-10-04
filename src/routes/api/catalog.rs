@@ -10,7 +10,11 @@ use super::media::join_base_url;
 use crate::{
     error::Result,
     library::{
-        chapter_sort::{compare_numerically, ChapterSorter},
+        ordering::{
+            compare_title_keys, sort_entries, EntryOrdering, SortOptions, TitleNameOrder,
+            TitleSortKey,
+        },
+        reading::{entry_progress_fraction, title_progress_fraction},
         Entry, SortMethod,
     },
     AppState,
@@ -25,8 +29,9 @@ pub async fn get_library(
     Query(params): Query<CatalogQuery>,
 ) -> axum::response::Response {
     let lib = state.library.load_full();
-    let cache = lib.progress_cache();
-    let library_info = crate::library::progress::TitleInfo::load(&state.config.library_path)
+    let cache = lib.metadata();
+    let library_info = cache
+        .read(&state.config.library_path)
         .await
         .unwrap_or_default();
     let (library_sort, library_ascending) = library_info
@@ -50,24 +55,29 @@ pub async fn get_library(
                 .into_response();
             }
         };
-        let info = cache.get_title_info(&title.id).unwrap_or_default();
-        let percentage = title_progress_percentage(title, cache, &username);
+        let info = cache.cached(&title.path).unwrap_or_default();
+        let percentage = title_progress_fraction(title, cache, &username);
         ordered_titles.push((title, sort_title, percentage, info));
     }
     ordered_titles.sort_by(
         |(left, left_sort, left_progress, _), (right, right_sort, right_progress, _)| {
-            match sort_method {
-                SortMethod::TimeModified => left
-                    .mtime
-                    .cmp(&right.mtime)
-                    .then_with(|| compare_numerically(left_sort, right_sort)),
-                SortMethod::Progress => left_progress
-                    .total_cmp(right_progress)
-                    .then_with(|| compare_numerically(left_sort, right_sort)),
-                SortMethod::Name | SortMethod::TimeAdded | SortMethod::Auto => {
-                    compare_numerically(left_sort, right_sort)
-                }
-            }
+            compare_title_keys(
+                TitleSortKey {
+                    name: left_sort,
+                    mtime: left.mtime,
+                    progress: *left_progress,
+                },
+                TitleSortKey {
+                    name: right_sort,
+                    mtime: right.mtime,
+                    progress: *right_progress,
+                },
+                SortOptions {
+                    method: sort_method,
+                    ascending: true,
+                },
+                TitleNameOrder::Numeric,
+            )
         },
     );
     if !ascending {
@@ -129,15 +139,12 @@ pub async fn get_title(
         )
             .into_response());
     };
-    let info = lib
-        .progress_cache()
-        .get_title_info(&title.id)
-        .unwrap_or_default();
+    let info = lib.metadata().cached(&title.path).unwrap_or_default();
     let response = match mango_title_response(
         &state,
         title,
         &info,
-        lib.progress_cache(),
+        lib.metadata(),
         &username,
         title_parent_summaries(&lib, title),
         TitleResponseOptions {
@@ -238,7 +245,7 @@ pub(super) async fn mango_entry_response(
     state: &AppState,
     title: &crate::library::Title,
     entry: &Entry,
-    info: &crate::library::progress::TitleInfo,
+    info: &crate::library::metadata::TitleInfo,
     sort_title_override: Option<&str>,
     slim: bool,
 ) -> Result<MangoEntry> {
@@ -298,7 +305,7 @@ pub(super) async fn mango_entry_response(
 pub(super) async fn mango_title_summary(
     state: &AppState,
     title: &crate::library::Title,
-    info: &crate::library::progress::TitleInfo,
+    info: &crate::library::metadata::TitleInfo,
     parents: Vec<MangoTitleParent>,
     slim: bool,
 ) -> Result<MangoTitleSummary> {
@@ -361,8 +368,8 @@ pub(super) struct TitleResponseOptions {
 pub(super) async fn mango_title_response(
     state: &AppState,
     title: &crate::library::Title,
-    info: &crate::library::progress::TitleInfo,
-    cache: &crate::library::ProgressCache,
+    info: &crate::library::metadata::TitleInfo,
+    cache: &crate::library::metadata::MetadataStore,
     username: &str,
     parents: Vec<MangoTitleParent>,
     options: TitleResponseOptions,
@@ -397,21 +404,28 @@ pub(super) async fn mango_title_response(
             .get_title_sort_title(&nested.id)
             .await?
             .unwrap_or_else(|| nested.title.clone());
-        let percentage = title_progress_percentage(nested, cache, username);
+        let percentage = title_progress_fraction(nested, cache, username);
         nested_order.push((nested, sort_title, percentage));
     }
     nested_order.sort_by(
-        |(left, left_sort, left_progress), (right, right_sort, right_progress)| match sort_method {
-            SortMethod::TimeModified => left
-                .mtime
-                .cmp(&right.mtime)
-                .then_with(|| compare_numerically(left_sort, right_sort)),
-            SortMethod::Progress => left_progress
-                .total_cmp(right_progress)
-                .then_with(|| compare_numerically(left_sort, right_sort)),
-            SortMethod::Name | SortMethod::TimeAdded | SortMethod::Auto => {
-                compare_numerically(left_sort, right_sort)
-            }
+        |(left, left_sort, left_progress), (right, right_sort, right_progress)| {
+            compare_title_keys(
+                TitleSortKey {
+                    name: left_sort,
+                    mtime: left.mtime,
+                    progress: *left_progress,
+                },
+                TitleSortKey {
+                    name: right_sort,
+                    mtime: right.mtime,
+                    progress: *right_progress,
+                },
+                SortOptions {
+                    method: sort_method,
+                    ascending: true,
+                },
+                TitleNameOrder::Numeric,
+            )
         },
     );
     if !ascending {
@@ -424,7 +438,7 @@ pub(super) async fn mango_title_response(
         id: title.id.clone(),
     });
     for (nested, _, percentage) in nested_order {
-        let nested_info = cache.get_title_info(&nested.id).unwrap_or_default();
+        let nested_info = cache.cached(&nested.path).unwrap_or_default();
         title_percentages.push(percentage);
         nested_titles.push(
             Box::pin(mango_title_response(
@@ -453,53 +467,21 @@ pub(super) async fn mango_title_response(
             .unwrap_or_else(|| entry.title.clone());
         entries_with_sort_title.push((entry, sort_title));
     }
-    let chapter_sorter = if matches!(sort_method, SortMethod::Auto) {
-        let sort_titles = entries_with_sort_title
-            .iter()
-            .map(|(_, sort_title)| sort_title.as_str())
-            .collect::<Vec<_>>();
-        Some(ChapterSorter::new(&sort_titles))
-    } else {
-        None
-    };
-    entries_with_sort_title.sort_by(|(left, left_sort), (right, right_sort)| match sort_method {
-        SortMethod::TimeModified => left
-            .mtime
-            .cmp(&right.mtime)
-            .then_with(|| compare_numerically(left_sort, right_sort)),
-        SortMethod::TimeAdded => info
-            .get_date_added(&left.title)
-            .unwrap_or_default()
-            .cmp(&info.get_date_added(&right.title).unwrap_or_default())
-            .then_with(|| compare_numerically(left_sort, right_sort)),
-        SortMethod::Progress => {
-            let left_progress = entry_progress_percentage(
-                info.get_progress(username, &left.title).unwrap_or(0),
-                left.pages,
-            );
-            let right_progress = entry_progress_percentage(
-                info.get_progress(username, &right.title).unwrap_or(0),
-                right.pages,
-            );
-            left_progress
-                .total_cmp(&right_progress)
-                .then_with(|| compare_numerically(left_sort, right_sort))
-        }
-        SortMethod::Name => compare_numerically(left_sort, right_sort),
-        SortMethod::Auto => chapter_sorter
-            .as_ref()
-            .expect("auto sorting builds a chapter sorter")
-            .compare(left_sort, right_sort)
-            .then_with(|| compare_numerically(left_sort, right_sort)),
-    });
-    if !ascending {
-        entries_with_sort_title.reverse();
-    }
+    sort_entries(
+        &mut entries_with_sort_title,
+        info,
+        username,
+        SortOptions {
+            method: sort_method,
+            ascending,
+        },
+        EntryOrdering::Catalog,
+    );
     let mut entries = Vec::with_capacity(title.entries.len());
     let mut entry_percentages = Vec::with_capacity(title.entries.len());
     for (entry, sort_title) in entries_with_sort_title {
         let progress = info.get_progress(username, &entry.title).unwrap_or(0);
-        entry_percentages.push(entry_progress_percentage(progress, entry.pages));
+        entry_percentages.push(entry_progress_fraction(progress, entry.pages));
         entries.push(
             mango_entry_response(state, title, entry, info, Some(sort_title.as_str()), slim)
                 .await?,
@@ -513,45 +495,4 @@ pub(super) async fn mango_title_response(
         title_percentages: include_percentages.then_some(title_percentages),
         entry_percentages: include_percentages.then_some(entry_percentages),
     })
-}
-
-pub(super) fn title_progress_percentage(
-    title: &crate::library::Title,
-    cache: &crate::library::ProgressCache,
-    username: &str,
-) -> f64 {
-    let mut total_pages = 0usize;
-    let mut read_pages = 0f64;
-    for nested in std::iter::once(title).chain(title.deep_titles()) {
-        let info = cache.get_title_info(&nested.id).unwrap_or_default();
-        for entry in &nested.entries {
-            total_pages += entry.pages;
-            read_pages += info
-                .get_progress(username, &entry.title)
-                .unwrap_or(0)
-                .clamp(0, entry.pages as i32) as f64;
-        }
-    }
-    if total_pages == 0 {
-        0.0
-    } else {
-        read_pages / total_pages as f64
-    }
-}
-
-pub(super) fn entry_progress_percentage(progress: i32, pages: usize) -> f64 {
-    if pages == 0 {
-        return 0.0;
-    }
-    progress.clamp(0, pages as i32) as f64 / pages as f64
-}
-
-#[cfg(test)]
-mod parity_contract_tests {
-    use super::entry_progress_percentage;
-
-    #[test]
-    fn progress_percentage_preserves_float64_precision() {
-        assert_eq!(entry_progress_percentage(1, 3), 1.0_f64 / 3.0);
-    }
 }

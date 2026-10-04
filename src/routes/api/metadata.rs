@@ -33,7 +33,7 @@ pub async fn get_sort_opt(
         state.config.library_path.clone()
     };
 
-    match crate::library::progress::TitleInfo::load(&dir).await {
+    match state.library.load_full().metadata().read(&dir).await {
         Ok(info) => {
             let (method, ascend) = info
                 .get_sort_by(&username)
@@ -77,29 +77,15 @@ pub async fn update_sort_opt(
     } else {
         state.config.library_path.clone()
     };
-    let mut info = match crate::library::progress::TitleInfo::load(&dir).await {
-        Ok(info) => info,
-        Err(error) => {
-            return Json(serde_json::json!({
-                "success": false,
-                "error": error.to_string()
-            }));
-        }
-    };
-    info.set_sort_by(&username, &request.sort, request.ascend);
-    match info.save(&dir).await {
-        Ok(()) => {
-            if let Some(title_id) = request.tid.as_deref() {
-                let lib = state.library.load_full();
-                if let Err(error) = lib.progress_cache().load_title(title_id, &dir).await {
-                    return Json(serde_json::json!({
-                        "success": false,
-                        "error": error.to_string()
-                    }));
-                }
-            }
-            Json(serde_json::json!({ "success": true }))
-        }
+    let lib = state.library.load_full();
+    match lib
+        .metadata()
+        .update(&dir, |info| {
+            info.set_sort_by(&username, &request.sort, request.ascend);
+        })
+        .await
+    {
+        Ok(_) => Json(serde_json::json!({ "success": true })),
         Err(error) => Json(serde_json::json!({
             "success": false,
             "error": error.to_string()
@@ -141,18 +127,17 @@ pub async fn update_display_name(
             (title.path.clone(), entry_title)
         };
 
-        let mut info = crate::library::progress::TitleInfo::load(&title_path).await?;
-        if let Some(entry_title) = entry_title {
-            info.entry_display_name.insert(entry_title, name);
-        } else {
-            info.display_name = name;
-        }
-        info.save(&title_path).await?;
         state
             .library
-            .load()
-            .progress_cache()
-            .load_title(&title_id, &title_path)
+            .load_full()
+            .metadata()
+            .update(&title_path, |info| {
+                if let Some(entry_title) = entry_title {
+                    info.entry_display_name.insert(entry_title, name);
+                } else {
+                    info.display_name = name;
+                }
+            })
             .await?;
         Ok(())
     }

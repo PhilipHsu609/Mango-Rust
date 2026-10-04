@@ -7,19 +7,17 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     catalog::{
-        entry_progress_percentage, mango_entry_response, mango_title_response, mango_title_summary,
-        title_parent_summaries, title_progress_percentage, MangoEntry, MangoTitleResponse,
-        MangoTitleSummary, TitleResponseOptions,
+        mango_entry_response, mango_title_response, mango_title_summary, title_parent_summaries,
+        MangoEntry, MangoTitleResponse, MangoTitleSummary, TitleResponseOptions,
     },
     success_response,
 };
-use crate::routes::recently_added::{group_recent_entries, RecentEntry, RECENT_ITEMS_LIMIT};
+use crate::library::reading::{
+    can_start_reading, continue_entry, entry_progress_fraction, group_recent_entries,
+    order_continue_candidates, title_progress_fraction, RecentEntry, StartReadingProfile,
+    RECENT_ITEMS_LIMIT,
+};
 use crate::{error::Result, AppState};
-
-fn order_continue_candidates<T>(entries: &mut Vec<(Option<i64>, T, f64)>) {
-    entries.truncate(8);
-    entries.sort_by_key(|entry| std::cmp::Reverse(entry.0));
-}
 
 /// API route: GET /api/library/continue_reading
 /// Returns the last 8 entries the user has read, sorted by last_read timestamp
@@ -29,11 +27,11 @@ pub async fn continue_reading(
     crate::auth::Username(username): crate::auth::Username,
 ) -> axum::response::Response {
     let lib = state.library.load_full();
-    let cache = lib.progress_cache();
+    let cache = lib.metadata();
     let mut entries_with_progress = Vec::new();
 
     for title in lib.all_titles() {
-        let info = cache.get_title_info(&title.id).unwrap_or_default();
+        let info = cache.cached(&title.path).unwrap_or_default();
         let mut sort_title_overrides = std::collections::HashMap::new();
         for entry in &title.entries {
             match state.storage.get_entry_sort_title(&entry.id).await {
@@ -51,13 +49,13 @@ pub async fn continue_reading(
             }
         }
         if let Some((entry, previous)) =
-            title.get_continue_reading_entry(&username, &info, &sort_title_overrides)
+            continue_entry(title, &username, &info, &sort_title_overrides)
         {
             let last_read = info
                 .get_last_read(&username, &entry.title)
                 .or_else(|| previous.and_then(|entry| info.get_last_read(&username, &entry.title)));
             let progress = info.get_progress(&username, &entry.title).unwrap_or(0);
-            let percentage = entry_progress_percentage(progress, entry.pages);
+            let percentage = entry_progress_fraction(progress, entry.pages);
             let entry_json =
                 match mango_entry_response(&state, title, entry, &info, None, false).await {
                     Ok(entry) => entry,
@@ -94,11 +92,15 @@ pub async fn start_reading(
     crate::auth::Username(username): crate::auth::Username,
 ) -> axum::response::Response {
     let lib = state.library.load_full();
-    let cache = lib.progress_cache();
+    let cache = lib.metadata();
     let mut unread_titles = Vec::new();
 
     for title in lib.get_titles_sorted(crate::library::SortMethod::Name, true) {
-        if title.total_pages() > 0 && title_progress_percentage(title, cache, &username) == 0.0 {
+        if can_start_reading(
+            title,
+            title_progress_fraction(title, cache, &username),
+            StartReadingProfile::Catalog,
+        ) {
             unread_titles.push(title);
         }
     }
@@ -109,7 +111,7 @@ pub async fn start_reading(
 
     let mut titles = Vec::with_capacity(unread_titles.len());
     for title in unread_titles {
-        let info = cache.get_title_info(&title.id).unwrap_or_default();
+        let info = cache.cached(&title.path).unwrap_or_default();
         match mango_title_response(
             &state,
             title,
@@ -152,7 +154,7 @@ pub async fn recently_added(
     crate::auth::Username(username): crate::auth::Username,
 ) -> axum::response::Response {
     let lib = state.library.load_full();
-    let cache = lib.progress_cache();
+    let cache = lib.metadata();
     let mut entries_with_dates = Vec::new();
     let one_month_ago = chrono::Utc::now()
         .checked_sub_months(chrono::Months::new(1))
@@ -160,7 +162,7 @@ pub async fn recently_added(
         .timestamp();
 
     for title in lib.all_titles() {
-        let info = cache.get_title_info(&title.id).unwrap_or_default();
+        let info = cache.cached(&title.path).unwrap_or_default();
         for entry in &title.entries {
             if let Some(date_added) = info.get_date_added(&entry.title) {
                 if date_added > one_month_ago {
@@ -168,7 +170,7 @@ pub async fn recently_added(
                     entries_with_dates.push(RecentEntry {
                         title_id: title.id.clone(),
                         date_added,
-                        percentage: entry_progress_percentage(progress, entry.pages),
+                        percentage: entry_progress_fraction(progress, entry.pages),
                         item: RecentEntryData {
                             entry_id: entry.id.clone(),
                         },
@@ -187,7 +189,7 @@ pub async fn recently_added(
             }))
             .into_response();
         };
-        let info = cache.get_title_info(&title.id).unwrap_or_default();
+        let info = cache.cached(&title.path).unwrap_or_default();
         let item = if group.grouped_count == 1 {
             let Some(entry) = lib.get_entry(&title.id, &group.item.entry_id) else {
                 return Json(serde_json::json!({
@@ -314,8 +316,8 @@ pub async fn update_progress(
             }));
         }
         if let Err(error) = lib
-            .progress_cache()
-            .save_progress(&title_id, &title.path, &username, &entry.title, page)
+            .metadata()
+            .save_progress(&title.path, &username, &entry.title, page)
             .await
         {
             return Json(serde_json::json!({
@@ -325,9 +327,9 @@ pub async fn update_progress(
         }
     } else {
         let result = if page == 0 {
-            title.unread_all(&username).await
+            lib.metadata().unread_all(title, &username).await
         } else {
-            title.read_all(&username).await
+            lib.metadata().read_all(title, &username).await
         };
         if let Err(error) = result {
             return Json(serde_json::json!({
@@ -395,8 +397,8 @@ pub async fn bulk_progress(
         })
         .collect();
     if let Err(error) = lib
-        .progress_cache()
-        .save_bulk_progress(&title_id, &title.path, &username, &updates)
+        .metadata()
+        .save_bulk_progress(&title.path, &username, &updates)
         .await
     {
         return Ok(Json(serde_json::json!({
@@ -417,26 +419,4 @@ pub async fn bulk_progress(
     Ok(Json(serde_json::json!({
         "success": true
     })))
-}
-
-#[cfg(test)]
-mod parity_contract_tests {
-    use super::order_continue_candidates;
-
-    #[test]
-    fn continue_reading_limits_candidates_before_sorting() {
-        let mut candidates: Vec<(Option<i64>, usize, f64)> = (0..10)
-            .map(|timestamp| (Some(timestamp), timestamp as usize, 0.0))
-            .collect();
-
-        order_continue_candidates(&mut candidates);
-
-        assert_eq!(
-            candidates
-                .iter()
-                .map(|(_, candidate_id, _)| *candidate_id)
-                .collect::<Vec<_>>(),
-            (0..8).rev().map(|id| id as usize).collect::<Vec<_>>()
-        );
-    }
 }

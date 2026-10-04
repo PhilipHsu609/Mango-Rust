@@ -15,7 +15,7 @@ use tower_sessions::Session;
 use crate::{
     auth::{SESSION_CALLBACK_KEY, SESSION_TOKEN_KEY, SESSION_USERNAME_KEY},
     error::{Error, Result},
-    util::render_error,
+    routes::presentation::render_error,
     AppState,
 };
 

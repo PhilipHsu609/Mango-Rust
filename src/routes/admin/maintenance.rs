@@ -11,7 +11,7 @@ use std::{
     time::Instant,
 };
 
-use crate::{auth::AdminOnly, error::Result, util::render_error, AppState};
+use crate::{auth::AdminOnly, error::Result, routes::presentation::render_error, AppState};
 
 /// Response for library scan endpoint
 #[derive(Serialize)]
@@ -199,13 +199,13 @@ pub async fn delete_all_missing_entries(
 #[derive(Template)]
 #[template(path = "missing-items.html")]
 struct MissingItemsTemplate {
-    nav: crate::util::NavigationState,
+    nav: crate::routes::presentation::NavigationState,
 }
 
 /// GET /admin/missing - Missing items management page.
 pub async fn missing_items_page(AdminOnly(_username): AdminOnly) -> Result<Html<String>> {
     let template = MissingItemsTemplate {
-        nav: crate::util::NavigationState::admin().with_admin(true),
+        nav: crate::routes::presentation::NavigationState::admin().with_admin(true),
     };
 
     Ok(Html(template.render().map_err(render_error)?))

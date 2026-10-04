@@ -506,18 +506,17 @@ pub async fn upload_cover(
         }
 
         let url = format!("/uploads/img/{stored_name}");
-        let mut info = crate::library::progress::TitleInfo::load(&title_path).await?;
-        if let Some(entry_title) = entry_title {
-            info.entry_cover_url.insert(entry_title, url);
-        } else {
-            info.cover_url = url;
-        }
-        info.save(&title_path).await?;
         state
             .library
-            .load()
-            .progress_cache()
-            .load_title(&query.tid, &title_path)
+            .load_full()
+            .metadata()
+            .update(&title_path, |info| {
+                if let Some(entry_title) = entry_title {
+                    info.entry_cover_url.insert(entry_title, url);
+                } else {
+                    info.cover_url = url;
+                }
+            })
             .await?;
         Ok(())
     }

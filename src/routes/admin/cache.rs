@@ -2,13 +2,13 @@ use askama::Template;
 use axum::{extract::State, response::Html, Json};
 use serde::Deserialize;
 
-use crate::{auth::AdminOnly, error::Result, util::render_error, AppState};
+use crate::{auth::AdminOnly, error::Result, routes::presentation::render_error, AppState};
 
 /// Cache debug template
 #[derive(Template)]
 #[template(path = "cache_debug.html")]
 struct CacheDebugTemplate {
-    nav: crate::util::NavigationState,
+    nav: crate::routes::presentation::NavigationState,
     stats: crate::library::cache::CacheStats,
     entries: Vec<crate::library::cache::CacheEntryInfo>,
     cache_file_path: String,
@@ -65,7 +65,7 @@ pub async fn cache_debug_page(
     drop(lib);
 
     let template = CacheDebugTemplate {
-        nav: crate::util::NavigationState::admin().with_admin(true),
+        nav: crate::routes::presentation::NavigationState::admin().with_admin(true),
         stats,
         entries,
         cache_file_path,

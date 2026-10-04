@@ -5,12 +5,18 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::HasProgress;
 use crate::{
     auth::User,
     error::{Error, Result},
-    library::{Entry, SortMethod, Title},
-    util::render_error,
+    library::{
+        ordering::{
+            compare_title_keys, sort_entries, EntryOrdering, SortOptions, TitleNameOrder,
+            TitleSortKey,
+        },
+        reading::{entry_progress_percent, title_progress_percent},
+        Entry, SortMethod, Title,
+    },
+    routes::presentation::render_error,
     AppState,
 };
 
@@ -86,7 +92,7 @@ struct BookCardItem {
 
 impl BookCardItem {
     /// Create a card item for an entry
-    fn from_entry(entry: &Entry, book: &Title, info: &crate::library::progress::TitleInfo) -> Self {
+    fn from_entry(entry: &Entry, book: &Title, info: &crate::library::metadata::TitleInfo) -> Self {
         let display_name = info
             .entry_display_name
             .get(&entry.title)
@@ -144,7 +150,7 @@ impl BookCardItem {
         entry_count: usize,
         first_entry_id: Option<&str>,
         first_entry_title: Option<&str>,
-        info: &crate::library::progress::TitleInfo,
+        info: &crate::library::metadata::TitleInfo,
     ) -> Self {
         let content_label = if entry_count == 1 {
             "1 entry".to_string()
@@ -195,17 +201,11 @@ struct BookItem {
     progress: f64,
 }
 
-impl HasProgress for BookItem {
-    fn progress(&self) -> f32 {
-        self.progress as f32
-    }
-}
-
 /// Book page template
 #[derive(Template)]
 #[template(path = "book.html")]
 struct BookTemplate {
-    nav: crate::util::NavigationState,
+    nav: crate::routes::presentation::NavigationState,
     title: TitleInfo,
     sort_options: Vec<(&'static str, &'static str)>,
     sort_opt: Option<SortOption>,
@@ -230,12 +230,17 @@ pub async fn get_book(
     };
 
     // Load/save sort preferences from title's info.json
-    let sort_params = crate::util::SortParams {
-        sort: params.sort.clone(),
-        ascend: params.ascend.clone(),
-    };
-    let (sort_method_str, ascending) =
-        crate::util::get_and_save_sort(&title_path, &user.username, &sort_params).await?;
+    let (sort_method_str, ascending) = state
+        .library
+        .load_full()
+        .metadata()
+        .get_and_save_sort(
+            &title_path,
+            &user.username,
+            params.sort.as_deref(),
+            params.ascend.as_deref(),
+        )
+        .await?;
 
     // Parse sort method from string
     let sort_method = SortMethod::parse(&sort_method_str);
@@ -248,21 +253,20 @@ pub async fn get_book(
         let title = lib
             .get_title(&title_id)
             .ok_or_else(|| Error::NotFound(format!("Title not found: {}", title_id)))?;
-        let info = crate::library::progress::TitleInfo::load(&title.path).await?;
+        let info = lib.metadata().read(&title.path).await?;
 
         // Build parent breadcrumb chain
         let mut parents = Vec::new();
         let mut current_parent_id = title.parent_id.clone();
         while let Some(pid) = current_parent_id {
             if let Some(parent_title) = lib.get_title(&pid) {
-                let parent_info =
-                    crate::library::progress::TitleInfo::load(&parent_title.path).await?;
+                let parent_info = lib.metadata().read(&parent_title.path).await?;
                 parents.push(ParentItem {
                     id: parent_title.id.clone(),
                     display_name: if parent_info.display_name.is_empty() {
                         parent_title.title.clone()
                     } else {
-                        parent_info.display_name
+                        parent_info.display_name.clone()
                     },
                 });
                 current_parent_id = parent_title.parent_id.clone();
@@ -351,23 +355,28 @@ pub async fn get_book(
                 .get_title_sort_title(&nested.id)
                 .await?
                 .unwrap_or_else(|| nested.title.clone());
-            let progress = nested.get_title_progress(&user.username).await?;
+            let progress = title_progress_percent(nested, lib.metadata(), &user.username).await?;
             nested_order.push((nested, sort_title, progress));
         }
         nested_order.sort_by(
             |(left, left_sort, left_progress), (right, right_sort, right_progress)| {
-                match sort_method {
-                    SortMethod::TimeModified => left
-                        .mtime
-                        .cmp(&right.mtime)
-                        .then_with(|| natord::compare(left_sort, right_sort)),
-                    SortMethod::Progress => left_progress
-                        .total_cmp(right_progress)
-                        .then_with(|| natord::compare(left_sort, right_sort)),
-                    SortMethod::Name | SortMethod::TimeAdded | SortMethod::Auto => {
-                        natord::compare(left_sort, right_sort)
-                    }
-                }
+                compare_title_keys(
+                    TitleSortKey {
+                        name: left_sort,
+                        mtime: left.mtime,
+                        progress: *left_progress as f64,
+                    },
+                    TitleSortKey {
+                        name: right_sort,
+                        mtime: right.mtime,
+                        progress: *right_progress as f64,
+                    },
+                    SortOptions {
+                        method: sort_method,
+                        ascending: true,
+                    },
+                    TitleNameOrder::Natural,
+                )
             },
         );
         if !ascending {
@@ -376,7 +385,7 @@ pub async fn get_book(
 
         let mut nested_title_items = Vec::with_capacity(nested_order.len());
         for (nested, sort_title, progress) in nested_order {
-            let nested_info = crate::library::progress::TitleInfo::load(&nested.path).await?;
+            let nested_info = lib.metadata().read(&nested.path).await?;
             let mut card = BookCardItem::from_title(
                 &nested.id,
                 &nested.title,
@@ -399,37 +408,21 @@ pub async fn get_book(
                 .get_entry_sort_title(&entry.id)
                 .await?
                 .unwrap_or_else(|| entry.title.clone());
-            let (progress, _) = title
-                .get_entry_progress(&user.username, &entry.id)
-                .await
-                .unwrap_or((0.0, 0));
-            entry_order.push((entry, sort_title, progress));
+            entry_order.push((entry, sort_title));
         }
-        entry_order.sort_by(
-            |(left, left_sort, left_progress), (right, right_sort, right_progress)| {
-                match sort_method {
-                    SortMethod::TimeModified => left
-                        .mtime
-                        .cmp(&right.mtime)
-                        .then_with(|| natord::compare(left_sort, right_sort)),
-                    SortMethod::TimeAdded => info
-                        .get_date_added(&left.title)
-                        .unwrap_or_default()
-                        .cmp(&info.get_date_added(&right.title).unwrap_or_default())
-                        .then_with(|| natord::compare(left_sort, right_sort)),
-                    SortMethod::Progress => left_progress
-                        .total_cmp(right_progress)
-                        .then_with(|| natord::compare(left_sort, right_sort)),
-                    SortMethod::Name | SortMethod::Auto => natord::compare(left_sort, right_sort),
-                }
+        sort_entries(
+            &mut entry_order,
+            &info,
+            &user.username,
+            SortOptions {
+                method: sort_method,
+                ascending,
             },
+            EntryOrdering::Book,
         );
-        if !ascending {
-            entry_order.reverse();
-        }
 
         let mut items = Vec::new();
-        for (entry, sort_title, progress_percentage) in entry_order {
+        for (entry, sort_title) in entry_order {
             if let Some(ref search) = params.search {
                 if !entry.title.to_lowercase().contains(&search.to_lowercase()) {
                     continue;
@@ -440,7 +433,10 @@ pub async fn get_book(
             card.sort_title = Some(sort_title);
             items.push(BookItem {
                 item: card,
-                progress: progress_percentage as f64,
+                progress: entry_progress_percent(
+                    info.get_progress(&user.username, &entry.title).unwrap_or(0),
+                    entry.pages,
+                ) as f64,
             });
         }
 
@@ -465,7 +461,7 @@ pub async fn get_book(
             .to_string();
 
     let template = BookTemplate {
-        nav: crate::util::NavigationState::library().with_admin(user.is_admin),
+        nav: crate::routes::presentation::NavigationState::library().with_admin(user.is_admin),
         title: title_info,
         sort_options,
         sort_opt,

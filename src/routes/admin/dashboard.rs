@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{extract::State, response::Html};
 
-use crate::{auth::AdminOnly, error::Result, util::render_error, AppState};
+use crate::{auth::AdminOnly, error::Result, routes::presentation::render_error, AppState};
 
 /// Application version from Cargo.toml
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -10,7 +10,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Template)]
 #[template(path = "admin.html")]
 struct AdminTemplate {
-    nav: crate::util::NavigationState,
+    nav: crate::routes::presentation::NavigationState,
     missing_count: usize,
     version: &'static str,
 }
@@ -29,7 +29,7 @@ pub async fn admin_dashboard(
     let missing_count = state.storage.get_missing_count().await?;
 
     let template = AdminTemplate {
-        nav: crate::util::NavigationState::admin().with_admin(true), // Admin pages are always accessed by admins
+        nav: crate::routes::presentation::NavigationState::admin().with_admin(true), // Admin pages are always accessed by admins
         missing_count,
         version: VERSION,
     };
