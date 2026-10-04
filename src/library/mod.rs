@@ -1,18 +1,18 @@
 pub mod cache;
 pub(crate) mod chapter_sort;
 pub mod entry;
+pub mod media;
 pub mod progress;
 pub mod progress_cache;
 pub mod title;
 
-// Library manager module
-mod manager;
+pub mod scan;
+mod snapshot;
 
 pub use entry::Entry;
-pub(crate) use manager::SCAN_LOCK;
-pub use manager::{spawn_periodic_scanner, Library, LibraryStats, SharedLibrary, SortMethod};
 pub use progress::TitleInfo;
 pub use progress_cache::ProgressCache;
+pub use snapshot::{Library, LibraryStats, SharedLibrary, SortMethod};
 pub use title::Title;
 
 /// Trait for types that can be sorted by name and modification time

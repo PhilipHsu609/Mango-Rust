@@ -40,3 +40,11 @@ Branch: `repo-hygiene`. Preserve behavior and data contracts; use Crystal Mango 
 - Removed an orphaned doc comment. The card template uses an inclusive range check for progress badges, preserving the zero/100 boundaries and hiding out-of-range values.
 - Verification: `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --all-targets` passed (64 tests). Rebuilt Docker image and local launcher succeeded; home/book badges and entry modals were visually inspected, and the cache debug page rendered.
 - Removed the throwaway scan/cache executable and disposable HTTP-smoke container/data after successful verification. Local Crystal and Rust comparison containers remain running.
+
+## Feature routes and scan/media ownership
+
+- `routes/admin/mod.rs` is composition only; dashboard, users, cache controls, and maintenance have explicit owners. Ordinary reading progress and catalog metadata/media mutations live in their feature modules, regardless of the handler's authorization requirement.
+- `routes/api/mod.rs` composes catalog, reading, metadata, media, and tags. Server registration and OpenAPI declarations use feature paths directly instead of flat handler re-export hubs.
+- `library/snapshot.rs` owns library snapshots and lookups. `library/scan/` owns discovery, filesystem fingerprints, ID reconciliation, unavailable records, incremental publication, and scheduling. `library/media/` owns archive extraction, supported formats, and thumbnail processing/persistence.
+- Removed old `manager.rs`, monolithic route `admin.rs`/`api.rs`, model scan/media methods, and an unused thumbnail-save method. No compatibility paths remain.
+- Verification: strict all-target Clippy and 64 Rust tests passed. An isolated running binary matched the prior Docker image's smoke outcomes for nested catalog responses, page bytes, generated/reused thumbnail bytes, dimensions, progress, metadata, sorting, tags, HTML reader/admin/cache pages, OPDS, reference documentation, and stable IDs after rescanning.

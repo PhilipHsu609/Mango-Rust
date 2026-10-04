@@ -1,9 +1,8 @@
-use std::path::{Path, PathBuf};
-use uuid::Uuid;
+use std::path::PathBuf;
 
 use super::chapter_sort::{compare_numerically, ChapterSorter};
 use super::entry::Entry;
-use super::manager::SortMethod;
+use super::SortMethod;
 use crate::error::Result;
 
 /// Represents a manga series (directory containing chapters/volumes)
@@ -38,96 +37,6 @@ pub struct Title {
 }
 
 impl Title {
-    /// Create a new Title by scanning a directory
-    pub async fn from_directory(path: PathBuf) -> Result<Self> {
-        let title = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("Unknown")
-            .to_string();
-        let id = Uuid::new_v4().to_string();
-        let mut mtime = tokio::fs::metadata(&path)
-            .await?
-            .modified()?
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        let mut archive_paths = Vec::new();
-        let mut child_paths = Vec::new();
-        let mut dir_entries = tokio::fs::read_dir(&path).await?;
-        while let Some(entry) = dir_entries.next_entry().await? {
-            let entry_path = entry.path();
-            if entry_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with('.'))
-            {
-                continue;
-            }
-            if entry_path.is_dir() {
-                child_paths.push(entry_path);
-            } else if is_archive(&entry_path) {
-                archive_paths.push(entry_path);
-            }
-        }
-
-        let entry_tasks: Vec<_> = archive_paths
-            .into_iter()
-            .map(|entry_path| {
-                tokio::spawn(async move {
-                    let mut entry = Entry::from_archive(entry_path).await?;
-                    entry.calculate_signature()?;
-                    Ok::<Entry, crate::error::Error>(entry)
-                })
-            })
-            .collect();
-
-        let mut entries = Vec::new();
-        for task in entry_tasks {
-            match task.await {
-                Ok(Ok(entry)) => entries.push(entry),
-                Ok(Err(error)) => tracing::warn!("Failed to process entry: {}", error),
-                Err(error) => tracing::warn!("Entry processing task failed: {}", error),
-            }
-        }
-
-        let mut nested_titles = Vec::new();
-        for child_path in child_paths {
-            let mut child_title = Box::pin(Self::from_directory(child_path.clone())).await?;
-            if !child_title.entries.is_empty() || !child_title.nested_titles.is_empty() {
-                child_title.parent_id = Some(id.clone());
-                mtime = mtime.max(child_title.mtime);
-                nested_titles.push(child_title);
-            }
-
-            if let Some(mut entry) = Entry::from_directory(child_path).await? {
-                entry.calculate_signature()?;
-                mtime = mtime.max(entry.mtime);
-                entries.push(entry);
-            }
-        }
-
-        entries.sort_by(|a, b| natord::compare(&a.title, &b.title));
-        nested_titles.sort_by(|a, b| natord::compare(&a.title, &b.title));
-        mtime = mtime.max(entries.iter().map(|entry| entry.mtime).max().unwrap_or(0));
-
-        let signature = calculate_dir_signature(&path)?;
-        let contents_signature = String::new();
-
-        Ok(Self {
-            id,
-            path,
-            title,
-            signature,
-            contents_signature,
-            mtime,
-            entries,
-            parent_id: None,
-            nested_titles,
-        })
-    }
-
     /// Get total number of pages across this title and nested titles.
     pub fn total_pages(&self) -> usize {
         self.entries.iter().map(|entry| entry.pages).sum::<usize>()
@@ -437,7 +346,7 @@ impl Title {
                 continue;
             }
 
-            match entry.date_added_timestamp().await {
+            match super::scan::date_added_timestamp(entry).await {
                 Ok(timestamp) if legacy_date.is_some() => {
                     info.set_date_added(&entry.title, timestamp);
                 }
@@ -464,76 +373,6 @@ impl Title {
         }
         Ok(())
     }
-}
-
-/// Check if a file is a supported archive format
-/// Only returns true for formats we can actually extract (currently ZIP/CBZ only)
-/// When adding new format support, update entry.rs extraction code first,
-/// then add extensions to util::EXTRACTABLE_ARCHIVE_EXTENSIONS
-fn is_archive(path: &Path) -> bool {
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        let ext_lower = ext.to_lowercase();
-        crate::util::EXTRACTABLE_ARCHIVE_EXTENSIONS.contains(&ext_lower.as_str())
-    } else {
-        false
-    }
-}
-
-/// Calculate directory signature (matches original Mango's Dir.signature behavior)
-/// This is now a simple wrapper around util::dir_signature for consistency
-fn calculate_dir_signature(path: &Path) -> Result<String> {
-    crate::util::dir_signature(path)
-}
-
-/// Fingerprint visible library contents without opening archives. Include the
-/// metadata of readable files so replacing an archive or changing loose pages
-/// invalidates the cached title even when the filename stays the same.
-pub(super) fn calculate_contents_signature(path: &Path) -> Result<String> {
-    use sha1::{Digest, Sha1};
-    use std::fs;
-
-    fn visit(path: &Path, hasher: &mut Sha1) -> Result<()> {
-        let mut children = fs::read_dir(path)?.collect::<std::io::Result<Vec<_>>>()?;
-        children.sort_by_key(|entry| entry.file_name());
-        for child in children {
-            let name = child.file_name();
-            if name.to_string_lossy().starts_with('.') {
-                continue;
-            }
-            let child_path = child.path();
-            let metadata = fs::metadata(&child_path)?;
-            if metadata.is_dir() {
-                hasher.update(b"d");
-                hasher.update(name.as_encoded_bytes());
-                hasher.update([0]);
-                visit(&child_path, hasher)?;
-                hasher.update(b"e");
-            } else if metadata.is_file() && crate::util::is_supported_file(&child_path) {
-                hasher.update(b"f");
-                hasher.update(name.as_encoded_bytes());
-                hasher.update([0]);
-                hasher.update(metadata.len().to_le_bytes());
-                let modified = metadata
-                    .modified()?
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default();
-                hasher.update(modified.as_secs().to_le_bytes());
-                hasher.update(modified.subsec_nanos().to_le_bytes());
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::MetadataExt;
-                    hasher.update(metadata.ino().to_le_bytes());
-                    hasher.update(metadata.ctime().to_le_bytes());
-                    hasher.update(metadata.ctime_nsec().to_le_bytes());
-                }
-            }
-        }
-        Ok(())
-    }
-
-    let mut hasher = Sha1::new();
-    visit(path, &mut hasher)?;
-    Ok(format!("v2:{:x}", hasher.finalize()))
 }
 
 impl super::Sortable for Title {
@@ -625,29 +464,6 @@ mod tests {
         assert_eq!(info.get_date_added("Existing"), Some(1_600_000_000));
         assert_eq!(info.get_date_added("Migrated"), Some(1_700_000_002));
         assert!(!info.date_added.contains_key("legacy-uuid"));
-    }
-    #[tokio::test]
-    async fn scans_nested_titles_and_loose_image_entries() {
-        let library = tempfile::tempdir().unwrap();
-        let root = library.path().join("Series");
-        let chapter = root.join("Volume 1/Chapters/Chapter 1");
-        std::fs::create_dir_all(&chapter).unwrap();
-        std::fs::write(chapter.join("001.png"), b"page").unwrap();
-
-        let title = Title::from_directory(root).await.unwrap();
-        assert_eq!(title.nested_titles.len(), 1);
-        let volume = &title.nested_titles[0];
-        assert_eq!(volume.parent_id.as_deref(), Some(title.id.as_str()));
-        assert_eq!(volume.nested_titles.len(), 1);
-        let chapters = &volume.nested_titles[0];
-        assert_eq!(chapters.parent_id.as_deref(), Some(volume.id.as_str()));
-        assert_eq!(chapters.entries.len(), 1);
-
-        let entry = &chapters.entries[0];
-        assert_eq!(entry.title, "Chapter 1");
-        assert_eq!(entry.pages, 1);
-        assert_eq!(entry.size_bytes, 4);
-        assert_eq!(entry.get_page(0).await.unwrap(), b"page");
     }
 
     fn continue_reading_title() -> Title {

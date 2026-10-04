@@ -9,28 +9,6 @@ pub mod reference;
 
 mod recently_added;
 
-pub use admin::{
-    admin_dashboard, bulk_progress, cache_clear_api, cache_debug_page, cache_invalidate_api,
-    cache_load_library_api, cache_save_library_api, create_user, delete_all_missing_entries,
-    delete_all_missing_titles, delete_missing_entry, delete_missing_title, delete_user,
-    delete_user_api, generate_thumbnails, get_missing_entries, get_missing_titles, get_users,
-    missing_items_page, scan_library, thumbnail_progress, update_display_name, update_sort_title,
-    update_user, upload_cover, user_edit_page, user_edit_post, user_edit_post_existing, users_page,
-};
-pub use api::{
-    add_tag, continue_reading, delete_tag, download_entry, get_cover, get_dimensions, get_library,
-    get_page, get_sort_opt, get_title, get_title_tags, list_tags, recently_added, start_reading,
-    update_progress, update_sort_opt,
-};
-pub use book::get_book;
-pub use login::{api_login, get_login, logout, post_login};
-pub use main::{
-    change_password_api, change_password_page, home, library, list_tags_page, view_tag_page,
-};
-pub use opds::{opds_index, opds_title};
-pub use reader::{reader, reader_continue};
-
-pub use reference::{api_reference, openapi_spec, ApiDoc};
 /// Trait for types that have a progress field (as f32 percentage)
 pub trait HasProgress {
     fn progress(&self) -> f32;

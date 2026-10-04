@@ -261,7 +261,9 @@ mod tests {
         };
 
         let mut library = Library::new(path, storage, &config);
-        library.scan().await.unwrap();
+        crate::library::scan::scan(&mut library, None, None)
+            .await
+            .unwrap();
         library
     }
 

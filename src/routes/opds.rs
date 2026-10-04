@@ -5,7 +5,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use super::api::join_base_url;
+use super::api::media::join_base_url;
 use crate::{error::Result, AppState};
 
 /// Template for OPDS main catalog feed
