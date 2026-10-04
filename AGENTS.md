@@ -16,15 +16,7 @@ Mango-Rust's migration from Crystal is mostly complete: all important features h
 - Seek logical equivalence with Mango rather than identical implementation details.
 - Avoid unnecessary dependencies. If a dependency is needed, prefer a small, well-maintained crate with a permissive license.
 - Avoid reinventing the wheel. Prefer existing crates over custom implementations, unless the crate is unmaintained or has a restrictive license.
-
-## Repository hygiene task
-
-- Work on the `repo-hygiene` branch.
-- Identify and implement evidence-backed refactoring and cleanup opportunities; keep behavior unchanged unless a change is explicitly agreed.
-- Redesign data structures where it simplifies the code. Make module boundaries, ownership, mutation, and shared state explicit; prefer clear ownership over unnecessary cloning or synchronization.
-- Follow idiomatic Rust and the Rust Style Guide. Use `rustfmt` for formatting and Clippy to identify actionable issues; prefer existing repository conventions where they are idiomatic.
-- Keep refactors focused and verify affected behavior, not just compilation.
-- Optionally maintain one task-specific note under `docs/` for findings, design decisions, verification, and handoff context. Keep it current rather than creating multiple overlapping notes.
+- For each substantial change—such as a new feature, repository-wide cleanup, or performance optimization—maintain one note under `docs/` recording findings, decisions, verification, and handoff context. Update the same note when continuing the work. Small, isolated fixes and routine edits do not require a note.
 
 ## Local comparison workflow
 
