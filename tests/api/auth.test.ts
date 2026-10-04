@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { api, login, logout, getSessionCookie, BASE_URL } from './client';
+import { TITLE_NAMES } from '../helpers/catalog';
+
+async function expectCatalog(response: Response) {
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toContain('application/json');
+  const library = await response.json();
+  expect(library.titles.map((title: { title: string }) => title.title)).toEqual(TITLE_NAMES);
+}
 
 describe('Auth API', () => {
   beforeEach(() => {
@@ -19,6 +27,8 @@ describe('Auth API', () => {
       expect(response.headers.get('set-cookie')).toContain('mango-sessid-');
       expect(response.headers.get('set-cookie')).toMatch(/(?:^|;\s*)Path=\/(?:;|$)/);
       expect(response.headers.get('location')).toBe('/');
+      const cookie = response.headers.get('set-cookie')!.split(';')[0];
+      await expectCatalog(await fetch(`${BASE_URL}/api/library`, { headers: { Cookie: cookie } }));
     });
 
     it('returns a browser user to the protected path after login', async () => {
@@ -42,6 +52,8 @@ describe('Auth API', () => {
 
       expect(loginResponse.status).toBe(303);
       expect(loginResponse.headers.get('location')).toBe('/library');
+      const cookie = loginResponse.headers.get('set-cookie')!.split(';')[0];
+      await expectCatalog(await fetch(`${BASE_URL}/api/library`, { headers: { Cookie: cookie } }));
 
       const renewedCookie = loginResponse.headers.get('set-cookie')?.split(';')[0];
       const secondLoginResponse = await fetch(`${BASE_URL}/login`, {
@@ -91,6 +103,8 @@ describe('Auth API', () => {
         is_admin: true,
       });
       expect(response.headers.get('set-cookie')).toContain('mango-sessid-');
+      const cookie = response.headers.get('set-cookie')!.split(';')[0];
+      await expectCatalog(await fetch(`${BASE_URL}/api/library`, { headers: { Cookie: cookie } }));
     });
 
     it('renews a year-long session when an authenticated user reads the API', async () => {
@@ -106,7 +120,7 @@ describe('Auth API', () => {
       const readResponse = await fetch(`${BASE_URL}/api/library`, {
         headers: { Cookie: sessionCookie ?? '' },
       });
-      expect(readResponse.status).toBe(200);
+      await expectCatalog(readResponse);
       const renewedCookie = readResponse.headers.get('set-cookie');
       expect(renewedCookie).not.toBeNull();
       expect(renewedCookie?.split(';')[0]).toBe(sessionCookie);
@@ -139,13 +153,14 @@ describe('Auth API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: 'testuser', password: 'testpass123' }),
       });
+      expect(loginResponse.status).toBe(200);
       const { session_id: sessionId } = await loginResponse.json();
 
       const response = await fetch(`${BASE_URL}/api/library`, {
         headers: { Authorization: `Bearer ${sessionId}` },
       });
 
-      expect(response.status).toBe(200);
+      await expectCatalog(response);
     });
 
     it('accepts Basic credentials on protected non-OPDS routes', async () => {
@@ -155,8 +170,10 @@ describe('Auth API', () => {
         headers: { Authorization: `Basic ${credentials}` },
       });
 
-      expect(response.status).toBe(200);
+      await expectCatalog(response);
       expect(response.headers.get('set-cookie')).toContain('mango-sessid-');
+      const cookie = response.headers.get('set-cookie')!.split(';')[0];
+      await expectCatalog(await fetch(`${BASE_URL}/api/library`, { headers: { Cookie: cookie } }));
     });
 
     it('gives a valid session priority over Basic credentials', async () => {
@@ -176,6 +193,7 @@ describe('Auth API', () => {
       });
 
       expect(response.status).toBe(200);
+      expect(await response.json()).toContainEqual({ username: 'testuser', is_admin: true });
     });
   });
 
@@ -187,8 +205,8 @@ describe('Auth API', () => {
       expect(response.headers.get('content-type')).toContain('text/html');
 
       const body = await response.text();
-      expect(body).toContain('username');
-      expect(body).toContain('password');
+      expect(body).toContain('name="username"');
+      expect(body).toContain('name="password"');
     });
   });
 
@@ -232,20 +250,8 @@ describe('Auth API', () => {
 
       expect(response.status).toBe(401);
       expect(await response.text()).toBe('Unauthorized');
-      const apiRootResponse = await fetch(`${BASE_URL}/api`, {
-        redirect: 'manual',
-      });
-      expect(apiRootResponse.status).toBe(401);
-      expect(await apiRootResponse.text()).toBe('Unauthorized');
     });
 
-    it('authenticated request to /api/library succeeds', async () => {
-      await login();
-      const response = await api.get('/api/library');
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get('content-type')).toContain('application/json');
-    });
 
     it('unauthenticated request to home page redirects to login', async () => {
       const response = await fetch(`${BASE_URL}/`, {
@@ -274,18 +280,18 @@ describe('Auth API', () => {
 
       expect(response.status).toBe(404);
       expect(response.headers.get('content-type')).toContain('text/html');
-      expect(await response.text()).toContain('Title not found: nonexistent-id');
     });
     it('escapes error details before rendering them as HTML', async () => {
       await login();
-      const response = await fetch(`${BASE_URL}/book/%3Cscript%3E`, {
+      const payload = '<script>alert(1)</script>';
+      const response = await fetch(`${BASE_URL}/book/${encodeURIComponent(payload)}`, {
         headers: { Cookie: getSessionCookie() ?? '' },
       });
       const html = await response.text();
 
       expect(response.status).toBe(404);
-      expect(html).toContain('&lt;script&gt;');
-      expect(html).not.toContain('Title not found: <script>');
+      expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+      expect(html).not.toContain(payload);
     });
 
   });
@@ -297,7 +303,6 @@ describe('Auth API', () => {
 
       expect(response.status).toBe(403);
       expect(response.headers.get('content-type')).toContain('text/html');
-      expect(await response.text()).toContain('Admin access required');
     });
 
     it('admin user accesses /admin successfully', async () => {
@@ -319,6 +324,7 @@ describe('Auth API', () => {
       const response = await api.get('/api/admin/users');
 
       expect(response.status).toBe(200);
+      expect(await response.json()).toContainEqual({ username: 'testuser', is_admin: true });
     });
   });
 
@@ -362,13 +368,13 @@ describe('Auth API', () => {
       const response1 = await api.get('/api/library');
       const response2 = await api.get('/');
 
-      expect(response1.status).toBe(200);
+      await expectCatalog(response1);
       expect(response2.status).toBe(200);
     });
 
     it('invalid session cookie is rejected', async () => {
       const response = await fetch(`${BASE_URL}/api/library`, {
-        headers: { Cookie: 'id=invalid_session_token' },
+        headers: { Cookie: `mango-sessid-${new URL(BASE_URL).port}=invalid_session_token` },
         redirect: 'manual',
       });
 

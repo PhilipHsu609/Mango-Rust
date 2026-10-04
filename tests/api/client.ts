@@ -1,7 +1,7 @@
-// Use explicit port to avoid vitest/vite import.meta.env.BASE_URL conflicts
-const SERVER_PORT = 9000;
-const SERVER_HOST = 'localhost';
-const BASE_URL = `http://${SERVER_HOST}:${SERVER_PORT}`;
+import { inject } from 'vitest';
+import { TEST_USER } from '../helpers/test-users';
+
+const BASE_URL = inject('baseUrl');
 
 export interface ApiClient {
   get: (path: string) => Promise<Response>;
@@ -11,13 +11,17 @@ export interface ApiClient {
 
 let sessionCookie: string | null = null;
 
-export async function login(username = 'testuser', password = 'testpass123'): Promise<void> {
+export async function login(username = TEST_USER.username, password = TEST_USER.password): Promise<void> {
+  sessionCookie = null;
   const response = await fetch(`${BASE_URL}/api/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   });
 
+  if (response.status !== 200) {
+    throw new Error(`Login failed for user '${username}': HTTP ${response.status}`);
+  }
   const setCookie = response.headers.get('set-cookie');
   if (setCookie) {
     sessionCookie = setCookie.split(';')[0];
@@ -50,13 +54,13 @@ export const api: ApiClient = {
   post: (path: string, body?: unknown) => fetch(`${BASE_URL}${path}`, {
     method: 'POST',
     headers: getHeaders(),
-    body: body ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : JSON.stringify(body),
   }),
 
   put: (path: string, body?: unknown) => fetch(`${BASE_URL}${path}`, {
     method: 'PUT',
     headers: getHeaders(),
-    body: body ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : JSON.stringify(body),
   }),
 
 };

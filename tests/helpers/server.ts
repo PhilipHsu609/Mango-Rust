@@ -1,200 +1,134 @@
-import { spawn, ChildProcess } from 'child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { REGULAR_USER, TEST_USER } from './test-users';
 
-/**
- * Server management utilities for integration tests
- * Handles starting, stopping, and health checking the Mango server
- */
+const execute = promisify(execFile);
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const BINARY = path.join(ROOT, 'target/debug/mango-rust');
 
-let serverProcess: ChildProcess | null = null;
-
-interface ServerConfig {
-  port: number;
-  host: string;
-  maxStartupTime: number; // milliseconds
-  pollInterval: number; // milliseconds
-  args: string[];
+export async function runCli(...args: string[]): Promise<string> {
+  const { stdout } = await execute(BINARY, args, { cwd: ROOT, timeout: 15000 });
+  return stdout;
 }
 
-const defaultConfig: ServerConfig = {
-  port: 9000,
-  host: 'localhost',
-  maxStartupTime: 30000, // 30 seconds
-  pollInterval: 500, // 500ms
-  args: [],
-};
+export interface TestServer {
+  url: string;
+  configPath: string;
+  close(): Promise<void>;
+}
 
-/**
- * Start the Mango server using cargo run
- * @param config - Optional server configuration
- * @returns Promise that resolves when server is ready
- */
-export async function startServer(
-  config: Partial<ServerConfig> = {},
-  envOverrides: NodeJS.ProcessEnv = {},
-): Promise<void> {
-  const cfg = { ...defaultConfig, ...config };
+interface ServerOptions {
+  libraryPath?: string;
+  settings?: Record<string, string | number | boolean>;
+  configArgs?: (configPath: string) => string[];
+  env?: NodeJS.ProcessEnv;
+}
 
-  if (serverProcess) {
-    console.log('Server already running, skipping startup');
-    return;
-  }
+async function availablePort(): Promise<number> {
+  const socket = createServer();
+  const ready = Promise.withResolvers<void>();
+  socket.once('error', ready.reject);
+  socket.listen(0, '127.0.0.1', ready.resolve);
+  await ready.promise;
+  const address = socket.address();
+  if (!address || typeof address === 'string') throw new Error('Missing test listener address');
+  const closed = Promise.withResolvers<void>();
+  socket.close(error => error ? closed.reject(error) : closed.resolve());
+  await closed.promise;
+  return address.port;
+}
 
-  console.log('Starting Mango server...');
-
-  // Use isolated test directory for all test data
-  const testDataDir = process.env.HOME + '/test-manga-library';
-
-  // Spawn cargo run process
-  serverProcess = spawn('cargo', ['run', '--release', '--', ...cfg.args], {
-    cwd: process.cwd().replace('/tests', ''), // Run from project root
-    env: {
-      ...process.env,
-      RUST_LOG: 'info',
-      PORT: cfg.port.toString(),
-      HOST: cfg.host,
-      // All test data in test library directory
-      LIBRARY_PATH: testDataDir,
-      DB_PATH: `${testDataDir}/mango-test.db`,
-      LIBRARY_CACHE_PATH: `${testDataDir}/mango-test-cache.bin`,
-      CONFIG_PATH: `${testDataDir}/config-test.yml`,
-      ...envOverrides,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  // Capture server logs for debugging
-  const logs: string[] = [];
-  serverProcess.stdout?.on('data', (data: Buffer) => {
-    const line = data.toString().trim();
-    logs.push(line);
-    if (process.env.DEBUG) {
-      console.log(`[Server] ${line}`);
+/** Each handle owns its process, configuration, database, and temporary paths. */
+export async function startServer(options: ServerOptions = {}): Promise<TestServer> {
+  const directory = await mkdtemp(path.join(tmpdir(), 'mango-test-server-'));
+  let process: ChildProcess | undefined;
+  let exited: Promise<void> | undefined;
+  let closing: Promise<void> | undefined;
+  const close = (): Promise<void> => closing ??= (async () => {
+    try {
+      if (process?.pid && process.exitCode === null && process.signalCode === null) {
+        const force = setTimeout(() => process?.kill('SIGKILL'), 5000);
+        try {
+          process.kill('SIGTERM');
+          await exited;
+        } finally {
+          clearTimeout(force);
+        }
+      } else {
+        await exited;
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
     }
-  });
+  })();
 
-  serverProcess.stderr?.on('data', (data: Buffer) => {
-    const line = data.toString().trim();
-    logs.push(`[ERROR] ${line}`);
-    if (process.env.DEBUG) {
-      console.error(`[Server Error] ${line}`);
-    }
-  });
-
-  serverProcess.on('error', (error) => {
-    console.error('Failed to start server process:', error.message);
-    throw new Error(`Server startup failed: ${error.message}`);
-  });
-
-  serverProcess.on('exit', (code) => {
-    if (code !== null && code !== 0) {
-      console.error(`Server exited with code ${code}`);
-      console.error('Recent logs:', logs.slice(-10).join('\n'));
-    }
-    serverProcess = null;
-  });
-
-  // Wait for server to be ready
   try {
-    await waitForServerReady(cfg);
-    console.log('Server started successfully');
-  } catch (error) {
-    // If startup fails, kill the process and clean up
-    if (serverProcess) {
-      serverProcess.kill('SIGTERM');
-      serverProcess = null;
+    const port = await availablePort();
+    const url = `http://127.0.0.1:${port}`;
+    const libraryPath = options.libraryPath ?? path.join(directory, 'library');
+    if (!options.libraryPath) await mkdir(libraryPath);
+    const configPath = path.join(directory, 'config.yml');
+    const settings = {
+      host: '127.0.0.1',
+      port,
+      library_path: libraryPath,
+      db_path: path.join(directory, 'mango.db'),
+      queue_db_path: path.join(directory, 'queue.db'),
+      library_cache_path: path.join(directory, 'cache.bin'),
+      upload_path: path.join(directory, 'uploads'),
+      plugin_path: path.join(directory, 'plugins'),
+      scan_interval_minutes: 0,
+      thumbnail_generation_interval_hours: 0,
+      ...options.settings,
+      log_level: 'info',
+    };
+    await writeFile(configPath, Object.entries(settings)
+      .map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n') + '\n');
+    for (const [credentials, admin] of [[TEST_USER, true], [REGULAR_USER, false]] as const) {
+      await runCli('--config', configPath, 'admin', 'user', 'add',
+        '--username', credentials.username, '--password', credentials.password,
+        ...(admin ? ['--admin'] : []));
     }
-    console.error('Server startup failed:', error);
-    console.error('Recent logs:', logs.slice(-20).join('\n'));
+
+    process = spawn(BINARY, options.configArgs?.(configPath) ?? ['--config', configPath], {
+      cwd: ROOT,
+      env: { ...globalThis.process.env, ...options.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    let failure: Error | undefined;
+    const stopped = Promise.withResolvers<void>();
+    exited = stopped.promise;
+    process.once('close', stopped.resolve);
+    process.once('error', error => { failure = error; });
+    const capture = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-16000); };
+    process.stdout?.on('data', capture);
+    process.stderr?.on('data', capture);
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      if (failure || process.exitCode !== null || process.signalCode !== null) {
+        throw new Error(`Test server exited during startup: ${failure?.message ?? process.exitCode}\n${output}`);
+      }
+      // Require our child's successful bind, not a response from an unrelated app.
+      if (output.includes(`Server listening on 127.0.0.1:${port}`)) {
+        try {
+          const response = await fetch(`${url}/login`, { signal: AbortSignal.timeout(500), redirect: 'manual' });
+          if (response.status === 200) return { url, configPath, close };
+        } catch {
+          // The listener can bind before its first request is accepted.
+        }
+      }
+      await delay(50);
+    }
+    throw new Error(`Test server did not become ready at ${url}\n${output}`);
+  } catch (error) {
+    await close();
     throw error;
   }
-}
-
-/**
- * Wait for the server to become ready by polling the base URL
- * Uses exponential backoff for polling
- * @param config - Server configuration
- */
-export async function waitForServerReady(config: Partial<ServerConfig> = {}): Promise<void> {
-  const cfg = { ...defaultConfig, ...config };
-  const baseUrl = `http://${cfg.host}:${cfg.port}`;
-  const startTime = Date.now();
-  let attempt = 0;
-
-  while (Date.now() - startTime < cfg.maxStartupTime) {
-    attempt++;
-
-    try {
-      // Try to fetch the root URL
-      const response = await fetch(baseUrl, {
-        method: 'GET',
-        signal: AbortSignal.timeout(2000), // 2 second timeout per request
-      });
-
-      // If we get any response (even 404), server is up
-      if (response.status) {
-        console.log(`Server ready after ${Date.now() - startTime}ms (${attempt} attempts)`);
-        return;
-      }
-    } catch (error) {
-      // Server not ready yet, continue polling
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (process.env.DEBUG) {
-        console.log(`Attempt ${attempt}: Server not ready (${errorMessage})`);
-      }
-    }
-
-    // Exponential backoff: 500ms, 1000ms, 1500ms, 2000ms (max)
-    const backoff = Math.min(cfg.pollInterval * attempt, 2000);
-    await sleep(backoff);
-  }
-
-  throw new Error(
-    `Server failed to start within ${cfg.maxStartupTime}ms after ${attempt} attempts`
-  );
-}
-
-/**
- * Stop the Mango server gracefully
- * Sends SIGTERM and waits for process to exit
- */
-export async function stopServer(): Promise<void> {
-  if (!serverProcess) {
-    console.log('No server process to stop');
-    return;
-  }
-
-  console.log('Stopping Mango server...');
-
-  return new Promise((resolve, reject) => {
-    if (!serverProcess) {
-      resolve();
-      return;
-    }
-
-    const timeout = setTimeout(() => {
-      console.warn('Server did not stop gracefully, forcing kill');
-      if (serverProcess) {
-        serverProcess.kill('SIGKILL');
-      }
-      reject(new Error('Server shutdown timeout'));
-    }, 10000); // 10 second timeout
-
-    serverProcess.on('exit', () => {
-      clearTimeout(timeout);
-      serverProcess = null;
-      console.log('Server stopped successfully');
-      resolve();
-    });
-
-    // Send SIGTERM for graceful shutdown
-    serverProcess.kill('SIGTERM');
-  });
-}
-
-
-/**
- * Sleep utility
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
