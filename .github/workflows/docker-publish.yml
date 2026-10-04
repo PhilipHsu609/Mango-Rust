@@ -91,6 +91,16 @@ jobs:
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Install Cargo version editor
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2
+        with:
+          tool: cargo-edit@0.13.13
+
+      - name: Set Cargo package version
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: cargo set-version "${RELEASE_VERSION#v}"
+
       - name: Create and push git tag
         run: |
           git config user.name "github-actions[bot]"
