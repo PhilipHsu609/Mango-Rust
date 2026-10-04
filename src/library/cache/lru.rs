@@ -274,18 +274,11 @@ mod tests {
     fn test_basic_get_set() {
         let mut cache = LruCache::new(1000, false);
 
+        assert_eq!(cache.get::<Vec<i32>>("key"), None);
         cache.set("key".to_string(), vec![1, 2, 3]);
         let result: Option<Vec<i32>> = cache.get("key");
 
         assert_eq!(result, Some(vec![1, 2, 3]));
-    }
-
-    #[test]
-    fn test_cache_miss() {
-        let mut cache = LruCache::new(1000, false);
-        let result: Option<Vec<i32>> = cache.get("nonexistent");
-
-        assert_eq!(result, None);
     }
 
     #[test]
@@ -303,12 +296,7 @@ mod tests {
         // Insert C - should evict B (least recently accessed), not A
         cache.set("C".to_string(), vec![0u8; 20]);
 
-        // Verify eviction happened
-        let stats = cache.stats();
-        assert!(
-            stats.eviction_count > 0,
-            "Should have evicted at least one entry"
-        );
+        assert_eq!(cache.stats().eviction_count, 1);
 
         // A should survive (was recently accessed)
         assert!(
@@ -391,6 +379,7 @@ mod tests {
 
         cache.set("a".to_string(), vec![0u8; 100]);
         cache.set("b".to_string(), vec![0u8; 100]);
+        assert_eq!(cache.get::<Vec<u8>>("a"), Some(vec![0u8; 100]));
 
         let hits_before = cache.stats().hit_count;
 
@@ -400,6 +389,8 @@ mod tests {
         assert_eq!(stats.size_bytes, 0, "Size should be zero after clear");
         assert_eq!(stats.entry_count, 0, "Entry count should be zero");
         assert_eq!(stats.hit_count, hits_before, "Hit count should persist");
+        assert_eq!(cache.get::<Vec<u8>>("a"), None);
+        assert_eq!(cache.get::<Vec<u8>>("b"), None);
     }
 
     #[test]
@@ -407,15 +398,10 @@ mod tests {
         let mut cache = LruCache::new(1000, false);
 
         cache.set("key".to_string(), vec![0u8; 100]);
-        let size_before = cache.stats().size_bytes;
-
         cache.invalidate("key");
-        let size_after = cache.stats().size_bytes;
 
-        assert!(
-            size_after < size_before,
-            "Size should decrease after invalidation"
-        );
+        assert_eq!(cache.get::<Vec<u8>>("key"), None);
+        assert_eq!(cache.stats().size_bytes, 0);
         assert_eq!(cache.stats().entry_count, 0);
     }
 
@@ -426,7 +412,7 @@ mod tests {
 
         cache.invalidate("does_not_exist"); // Should not panic
 
-        assert_eq!(cache.stats().entry_count, 1, "Existing entry should remain");
+        assert_eq!(cache.get::<Vec<u8>>("exists"), Some(vec![0u8; 50]));
     }
 
     #[test]
@@ -449,8 +435,8 @@ mod tests {
         assert_eq!(after.hit_count, before.hit_count);
         assert_eq!(after.miss_count, before.miss_count);
         assert_eq!(after.eviction_count, before.eviction_count);
-        assert!(!cache.entries.contains_key("user:a"));
-        assert!(!cache.entries.contains_key("user:b"));
+        assert_eq!(cache.get::<Vec<u8>>("user:a"), None);
+        assert_eq!(cache.get::<Vec<u8>>("user:b"), None);
         assert_eq!(cache.get::<Vec<u8>>("users:a"), Some(value.clone()));
 
         // Freed bytes must be available without evicting the surviving entry.
@@ -458,7 +444,7 @@ mod tests {
         cache.set("new:b".to_string(), &value);
         assert_eq!(cache.stats().size_bytes, value_size * 3);
         assert_eq!(cache.stats().eviction_count, before.eviction_count);
-        assert!(cache.entries.contains_key("users:a"));
+        assert_eq!(cache.get::<Vec<u8>>("users:a"), Some(value));
     }
 
     #[test]

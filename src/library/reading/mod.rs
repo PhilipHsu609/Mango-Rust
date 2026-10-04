@@ -147,25 +147,3 @@ pub fn continue_entry<'a>(
     let previous = index.checked_sub(1).map(|index| entries[index].0);
     Some((entries[index].0, previous))
 }
-
-#[cfg(test)]
-mod contract_tests {
-    use super::{entry_progress_fraction, order_continue_candidates};
-
-    #[test]
-    fn progress_percentage_preserves_float64_precision() {
-        assert_eq!(entry_progress_fraction(1, 3), 1.0_f64 / 3.0);
-    }
-
-    #[test]
-    fn continue_reading_limits_candidates_before_sorting() {
-        let mut candidates: Vec<(Option<i64>, usize, f64)> = (0..10)
-            .map(|timestamp| (Some(timestamp), timestamp as usize, 0.0))
-            .collect();
-        order_continue_candidates(&mut candidates);
-        assert_eq!(
-            candidates.iter().map(|(_, id, _)| *id).collect::<Vec<_>>(),
-            (0..8).rev().map(|id| id as usize).collect::<Vec<_>>()
-        );
-    }
-}

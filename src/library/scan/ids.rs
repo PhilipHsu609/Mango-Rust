@@ -387,18 +387,3 @@ fn path_component_similarity(left: &str, right: &str) -> f64 {
         .count();
     matching_components as f64 / component_count as f64
 }
-
-#[cfg(test)]
-mod path_similarity_tests {
-    use super::path_component_similarity;
-
-    #[test]
-    fn moved_path_prefers_matching_trailing_components() {
-        let moved_chapter =
-            path_component_similarity("old/volume-1/chapter-2.cbz", "new/volume-1/chapter-2.cbz");
-        let other_chapter =
-            path_component_similarity("old/chapter-2/chapter-2.cbz", "new/volume-1/chapter-2.cbz");
-
-        assert!(moved_chapter > other_chapter);
-    }
-}

@@ -167,16 +167,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_new() {
-        let config = create_test_config();
-        let cache = Cache::new(&config);
-
-        let stats = cache.stats();
-        assert_eq!(stats.size_limit, 100 * 1024 * 1024);
-        assert_eq!(stats.entry_count, 0);
-    }
-
-    #[test]
     fn test_cache_disabled() {
         let mut config = create_test_config();
         config.cache_enabled = false;
@@ -186,25 +176,34 @@ mod tests {
         // Set should be no-op when disabled
         cache.set_sorted_titles("key".to_string(), vec!["id1".to_string()]);
         assert!(cache.get_sorted_titles("key").is_none());
-
-        // Invalidation should be no-op
-        cache.invalidate_progress("user1");
-        cache.clear();
     }
 
     #[test]
-    fn test_sorted_titles_cache() {
-        let config = create_test_config();
-        let mut cache = Cache::new(&config);
+    fn sorted_titles_are_isolated_by_user_sort_direction_and_input() {
+        let mut cache = Cache::new(&create_test_config());
+        let ids = vec!["title1".to_string(), "title2".to_string()];
+        let reversed_ids = vec!["title2".to_string(), "title1".to_string()];
+        let cases = [
+            ("reader", ids.as_slice(), "name", true),
+            ("other", ids.as_slice(), "name", true),
+            ("reader", ids.as_slice(), "progress", true),
+            ("reader", ids.as_slice(), "name", false),
+            ("reader", reversed_ids.as_slice(), "name", true),
+            ("reader", &ids[..1], "name", true),
+        ];
 
-        let title_ids = vec!["id1".to_string(), "id2".to_string()];
-
-        // Cache miss
-        assert!(cache.get_sorted_titles("key1").is_none());
-
-        // Cache hit after set
-        cache.set_sorted_titles("key1".to_string(), title_ids.clone());
-        assert_eq!(cache.get_sorted_titles("key1"), Some(title_ids));
+        for (index, (user, input, method, ascending)) in cases.iter().enumerate() {
+            let key = key::sorted_titles_key(user, input, method, *ascending);
+            assert!(cache.get_sorted_titles(&key).is_none());
+            cache.set_sorted_titles(key, vec![format!("result-{index}")]);
+        }
+        for (index, (user, input, method, ascending)) in cases.iter().enumerate() {
+            let key = key::sorted_titles_key(user, input, method, *ascending);
+            assert_eq!(
+                cache.get_sorted_titles(&key),
+                Some(vec![format!("result-{index}")])
+            );
+        }
     }
 
     #[test]
@@ -240,29 +239,5 @@ mod tests {
 
         assert_eq!(cache.stats().entry_count, 0);
         assert!(cache.get_sorted_titles("key1").is_none());
-    }
-
-    #[test]
-    fn test_stats() {
-        let config = create_test_config();
-        let mut cache = Cache::new(&config);
-
-        let stats_before = cache.stats();
-        assert_eq!(stats_before.entry_count, 0);
-        assert_eq!(stats_before.hit_count, 0);
-        assert_eq!(stats_before.miss_count, 0);
-
-        // Add entry
-        cache.set_sorted_titles("key1".to_string(), vec!["t1".to_string()]);
-
-        // Hit
-        let _ = cache.get_sorted_titles("key1");
-        // Miss
-        let _ = cache.get_sorted_titles("key2");
-
-        let stats_after = cache.stats();
-        assert_eq!(stats_after.entry_count, 1);
-        assert_eq!(stats_after.hit_count, 1);
-        assert_eq!(stats_after.miss_count, 1);
     }
 }

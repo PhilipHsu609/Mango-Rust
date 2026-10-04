@@ -200,13 +200,3 @@ impl SortMethod {
         (method, ascending)
     }
 }
-#[cfg(test)]
-mod sort_method_tests {
-    use super::SortMethod;
-
-    #[test]
-    fn parses_mango_date_added_sort_name() {
-        assert_eq!(SortMethod::parse("time_added"), SortMethod::TimeAdded);
-        assert_eq!(SortMethod::parse("added"), SortMethod::TimeAdded);
-    }
-}

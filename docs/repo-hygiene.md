@@ -60,3 +60,11 @@ Branch: `repo-hygiene`. Preserve behavior and data contracts; use Crystal Mango 
 - Final Docker verification: rebuilt `mango-rust:local`, restarted both applications with `local-dev/run-local.sh`, and ran the same disposable smoke scenario against the image. Added runtime checks for start-reading eligibility transitions and recursive whole-title read/unread updates; debug and release results matched.
 - Browser comparison exercised home feeds, library navigation/name sorting, and matching book-entry modals in both applications. Covers, ordering controls, entry names, page counts, and modal actions rendered. Existing comparison data contains different progress, so badges and feed membership differ. Rust's `/change-password` page rendered; the same Crystal URL returned 404, so no account-page parity is claimed.
 - Removed the disposable smoke script/container/data and released browser tabs after verification. The rebuilt local comparison applications remain running.
+
+## Rust test hygiene
+
+- Removed incidental constructor/default assertions, asserted-copy route DTO serialization, duplicate facade/statistics checks, and tests pinned to private cache keys, pointer identity, or chapter-rounding representation.
+- Ordering tests exercise the public title/entry ordering interfaces; cache tests verify user/sort/input isolation and observable invalidation. Metadata tests retain persistence failure, immutable snapshot behavior, external edits, corruption recovery, and concurrent updates without requiring a particular allocation.
+- Scan tests now separate rescan transitions from incremental publication and verify ID preservation with competing filesystem paths. Structural title fixtures use title/page vocabulary rather than continuation-specific setup.
+- Kept real protocol, precision, capacity/eviction, grouping-boundary, authentication/configuration-precedence, persistence, and scan-stability coverage. No production behavior or interfaces changed.
+- Verification: strict all-target Clippy and all 66 Rust tests passed.

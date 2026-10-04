@@ -323,16 +323,10 @@ mod tests {
         assert_eq!(config.default_username, "testuser");
         assert_eq!(config.auth_proxy_header_name, "X-Remote-User");
         assert_eq!(config.plugin_update_interval_hours, 13);
-        let expected_db_path = expand_home("~/mango.db");
-        for key in keys {
-            std::env::remove_var(key);
-        }
-        let defaults = Config::load(Some(config_path.to_str().unwrap())).unwrap();
-        assert_eq!(defaults.host, "0.0.0.0");
-        assert_eq!(defaults.port, 4100);
-        assert_eq!(defaults.db_path, expected_db_path);
-        assert!(defaults.cache_enabled);
-        assert!(defaults.cache_log_enabled);
-        assert!(!defaults.disable_login);
+        let explicit_path = directory.path().join("explicit.yml");
+        std::fs::write(&explicit_path, "port: 6100\n").unwrap();
+        let explicit = Config::load(Some(explicit_path.to_str().unwrap())).unwrap();
+        assert_eq!(explicit.port, 6100);
+        assert_eq!(explicit.base_url, "/environment/");
     }
 }

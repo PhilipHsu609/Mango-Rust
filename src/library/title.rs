@@ -78,24 +78,25 @@ mod tests {
     use super::Title;
     use crate::library::entry::Entry;
 
-    fn continue_reading_title() -> Title {
-        let dir = std::env::temp_dir();
+    fn title_with_pages(id: &str, pages: &[usize]) -> Title {
         Title {
-            id: "title".to_string(),
-            path: dir,
-            title: "Title".to_string(),
+            id: id.to_string(),
+            path: std::path::PathBuf::new(),
+            title: id.to_string(),
             signature: String::new(),
             contents_signature: String::new(),
             mtime: 0,
-            entries: (1..=3)
-                .map(|number| Entry {
-                    id: format!("entry-{number}"),
+            entries: pages
+                .iter()
+                .enumerate()
+                .map(|(index, &pages)| Entry {
+                    id: format!("{id}-{index}"),
                     path: std::path::PathBuf::new(),
-                    title: format!("Volume {number}"),
+                    title: format!("Chapter {}", index + 1),
                     signature: String::new(),
                     mtime: 0,
                     ctime: 0,
-                    pages: 10,
+                    pages,
                     image_files: Vec::new(),
                     size_bytes: 0,
                     err_msg: None,
@@ -108,21 +109,16 @@ mod tests {
 
     #[test]
     fn recursive_traversal_preserves_depth_first_order_and_page_totals() {
-        let make_title = |id: &str, pages: &[usize]| {
-            let mut title = continue_reading_title();
-            title.id = id.to_string();
-            title.entries.truncate(pages.len());
-            for (index, (entry, &pages)) in title.entries.iter_mut().zip(pages).enumerate() {
-                entry.id = format!("{id}-{index}");
-                entry.pages = pages;
-            }
-            title
-        };
-
-        let mut root = make_title("root", &[1, 2]);
-        let mut child = make_title("child", &[3]);
-        child.nested_titles.push(make_title("grandchild", &[4]));
-        root.nested_titles = vec![child, make_title("empty", &[]), make_title("sibling", &[5])];
+        let mut root = title_with_pages("root", &[1, 2]);
+        let mut child = title_with_pages("child", &[3]);
+        child
+            .nested_titles
+            .push(title_with_pages("grandchild", &[4]));
+        root.nested_titles = vec![
+            child,
+            title_with_pages("empty", &[]),
+            title_with_pages("sibling", &[5]),
+        ];
 
         assert_eq!(
             root.deep_entries()
@@ -140,7 +136,7 @@ mod tests {
         );
         assert_eq!(root.total_pages(), 15);
 
-        let empty = make_title("empty", &[]);
+        let empty = title_with_pages("empty", &[]);
         assert!(empty.deep_entries().is_empty());
         assert!(empty.deep_titles().is_empty());
         assert_eq!(empty.total_pages(), 0);

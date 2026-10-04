@@ -538,8 +538,11 @@ mod parity_contract_tests {
 
     #[test]
     fn reader_pages_are_one_based() {
+        assert_eq!(page_index(i32::MIN), None);
+        assert_eq!(page_index(-1), None);
         assert_eq!(page_index(0), None);
         assert_eq!(page_index(1), Some(0));
         assert_eq!(page_index(12), Some(11));
+        assert_eq!(page_index(i32::MAX), Some(i32::MAX as usize - 1));
     }
 }
