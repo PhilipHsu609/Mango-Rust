@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
-pub(super) const RECENT_ITEMS_LIMIT: usize = 8;
+pub(crate) const RECENT_ITEMS_LIMIT: usize = 8;
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 
-pub(super) struct RecentEntry<T> {
+pub(crate) struct RecentEntry<T> {
     pub title_id: String,
     pub date_added: i64,
     pub percentage: f64,
     pub item: T,
 }
 
-pub(super) struct GroupedRecentEntry<T> {
+pub(crate) struct GroupedRecentEntry<T> {
     pub title_id: String,
     pub date_added: i64,
     pub percentage: f64,
@@ -18,7 +18,7 @@ pub(super) struct GroupedRecentEntry<T> {
     pub item: T,
 }
 
-pub(super) fn group_recent_entries<T>(
+pub(crate) fn group_recent_entries<T>(
     mut entries: Vec<RecentEntry<T>>,
     limit: usize,
 ) -> Vec<GroupedRecentEntry<T>> {

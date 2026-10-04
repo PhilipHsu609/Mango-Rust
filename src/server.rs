@@ -19,23 +19,22 @@ use crate::{
     auth::{require_auth, SESSION_TOKEN_KEY},
     config::Config,
     error::Result,
-    library::{spawn_periodic_scanner, Library},
+    library::{scan::spawn_periodic_scanner, Library},
+    routes::presentation::NavigationState,
     routes::{
-        add_tag, admin_dashboard, api_login, api_reference, bulk_progress, cache_clear_api,
-        cache_debug_page, cache_invalidate_api, cache_load_library_api, cache_save_library_api,
-        change_password_api, change_password_page, continue_reading, create_user,
-        delete_all_missing_entries, delete_all_missing_titles, delete_missing_entry,
-        delete_missing_title, delete_tag, delete_user, delete_user_api, download_entry,
-        generate_thumbnails, get_book, get_cover, get_dimensions, get_library, get_login,
-        get_missing_entries, get_missing_titles, get_page, get_sort_opt, get_title, get_title_tags,
-        get_users, home, library as library_page, list_tags, list_tags_page, logout,
-        missing_items_page, opds_index, opds_title, openapi_spec, post_login, reader,
-        reader_continue, recently_added, scan_library, start_reading, thumbnail_progress,
-        update_display_name, update_progress, update_sort_opt, update_sort_title, update_user,
-        upload_cover, user_edit_page, user_edit_post, user_edit_post_existing, users_page,
-        view_tag_page, ApiDoc,
+        admin::{cache, dashboard, maintenance, users},
+        api::{catalog, media, metadata, reading, tags},
+        book::get_book,
+        login::{api_login, get_login, logout, post_login},
+        opds::{opds_index, opds_title},
+        pages::{
+            account::{change_password_api, change_password_page},
+            catalog::{library as library_page, list_tags_page, view_tag_page},
+            home::home,
+        },
+        reader::{reader, reader_continue},
+        reference::{api_reference, openapi_spec, ApiDoc},
     },
-    util::NavigationState,
     Storage,
 };
 
@@ -204,15 +203,14 @@ pub async fn run(config: Config) -> Result<()> {
         let config_clone = config.clone();
         tokio::spawn(async move {
             let start = std::time::Instant::now();
-            let _scan_guard = crate::library::SCAN_LOCK.lock().await;
+            let _scan_guard = crate::library::scan::SCAN_LOCK.lock().await;
             // Build new library instance in background
             let mut new_lib = Library::new(
                 config_clone.library_path.clone(),
                 storage_clone,
                 &config_clone,
             );
-            match new_lib
-                .scan_with_previous_and_publish(None, Arc::clone(&library_clone))
+            match crate::library::scan::scan(&mut new_lib, None, Some(Arc::clone(&library_clone)))
                 .await
             {
                 Ok(_) => {
@@ -293,84 +291,123 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/tags", get(list_tags_page))
         .route("/tags/:tag", get(view_tag_page))
         // Admin routes (requires admin access)
-        .route("/admin", get(admin_dashboard))
-        .route("/admin/missing", get(missing_items_page))
-        .route("/admin/user", get(users_page))
-        .route("/admin/user/edit", get(user_edit_page).post(user_edit_post))
-        .route("/admin/user/edit/:username", post(user_edit_post_existing))
+        .route("/admin", get(dashboard::admin_dashboard))
+        .route("/admin/missing", get(maintenance::missing_items_page))
+        .route("/admin/user", get(users::users_page))
+        .route(
+            "/admin/user/edit",
+            get(users::user_edit_page).post(users::user_edit_post),
+        )
+        .route(
+            "/admin/user/edit/:username",
+            post(users::user_edit_post_existing),
+        )
         // Cache debug route
-        .route("/debug/cache", get(cache_debug_page))
+        .route("/debug/cache", get(cache::cache_debug_page))
         // Admin API routes
-        .route("/api/admin/scan", post(scan_library))
+        .route("/api/admin/scan", post(maintenance::scan_library))
         // Cache API routes
-        .route("/api/cache/clear", post(cache_clear_api))
-        .route("/api/cache/save-library", post(cache_save_library_api))
-        .route("/api/cache/load-library", post(cache_load_library_api))
-        .route("/api/cache/invalidate", post(cache_invalidate_api))
+        .route("/api/cache/clear", post(cache::cache_clear_api))
+        .route(
+            "/api/cache/save-library",
+            post(cache::cache_save_library_api),
+        )
+        .route(
+            "/api/cache/load-library",
+            post(cache::cache_load_library_api),
+        )
+        .route("/api/cache/invalidate", post(cache::cache_invalidate_api))
         .route(
             "/api/admin/titles/missing",
-            get(get_missing_titles).delete(delete_all_missing_titles),
+            get(maintenance::get_missing_titles).delete(maintenance::delete_all_missing_titles),
         )
         .route(
             "/api/admin/titles/missing/:id",
-            delete(delete_missing_title),
+            delete(maintenance::delete_missing_title),
         )
         .route(
             "/api/admin/entries/missing",
-            get(get_missing_entries).delete(delete_all_missing_entries),
+            get(maintenance::get_missing_entries).delete(maintenance::delete_all_missing_entries),
         )
         .route(
             "/api/admin/entries/missing/:id",
-            delete(delete_missing_entry),
+            delete(maintenance::delete_missing_entry),
         )
-        .route("/api/admin/users", get(get_users).post(create_user))
+        .route(
+            "/api/admin/users",
+            get(users::get_users).post(users::create_user),
+        )
         .route(
             "/api/admin/users/:username",
-            patch(update_user).delete(delete_user),
+            patch(users::update_user).delete(users::delete_user),
         )
-        .route("/api/admin/user/delete/:username", delete(delete_user_api))
+        .route(
+            "/api/admin/user/delete/:username",
+            delete(users::delete_user_api),
+        )
         // Reader routes
         .route("/reader/:tid/:eid", get(reader_continue))
         .route("/reader/:tid/:eid/:page", get(reader))
         // API routes
-        .route("/api/library", get(get_library))
-        .route("/api/book/:tid", get(get_title))
-        .route("/api/sort_opt", get(get_sort_opt).put(update_sort_opt))
-        .route("/api/page/:tid/:eid/:page", get(get_page))
-        .route("/api/cover/:tid/:eid", get(get_cover))
-        .route("/api/download/:tid/:eid", get(download_entry))
+        .route("/api/library", get(catalog::get_library))
+        .route("/api/book/:tid", get(catalog::get_title))
+        .route(
+            "/api/sort_opt",
+            get(metadata::get_sort_opt).put(metadata::update_sort_opt),
+        )
+        .route("/api/page/:tid/:eid/:page", get(media::get_page))
+        .route("/api/cover/:tid/:eid", get(media::get_cover))
+        .route("/api/download/:tid/:eid", get(media::download_entry))
         // OPDS catalog routes
         .route("/opds", get(opds_index))
         .route("/opds/book/:title_id", get(opds_title))
         // Tags API routes
-        .route("/api/tags", get(list_tags))
-        .route("/api/tags/:tid", get(get_title_tags))
-        .route("/api/admin/tags/:tid/:tag", put(add_tag).delete(delete_tag))
+        .route("/api/tags", get(tags::list_tags))
+        .route("/api/tags/:tid", get(tags::get_title_tags))
+        .route(
+            "/api/admin/tags/:tid/:tag",
+            put(tags::add_tag).delete(tags::delete_tag),
+        )
         // Home page API routes
-        .route("/api/library/continue_reading", get(continue_reading))
-        .route("/api/library/start_reading", get(start_reading))
-        .route("/api/library/recently_added", get(recently_added))
+        .route(
+            "/api/library/continue_reading",
+            get(reading::continue_reading),
+        )
+        .route("/api/library/start_reading", get(reading::start_reading))
+        .route("/api/library/recently_added", get(reading::recently_added))
         // Progress API
-        .route("/api/progress/:tid/:page", put(update_progress))
+        .route("/api/progress/:tid/:page", put(reading::update_progress))
         // Dimensions API (for reader)
-        .route("/api/dimensions/:tid/:eid", get(get_dimensions))
+        .route("/api/dimensions/:tid/:eid", get(media::get_dimensions))
         // User API
         .route("/api/user/change-password", post(change_password_api))
         // Admin metadata API
-        .route("/api/admin/sort_title/:tid", put(update_sort_title))
+        .route(
+            "/api/admin/sort_title/:tid",
+            put(metadata::update_sort_title),
+        )
         .route(
             "/api/admin/display_name/:tid/:name",
-            put(update_display_name),
+            put(metadata::update_display_name),
         )
         .route(
             "/api/admin/upload/cover",
-            post(upload_cover).layer(axum::extract::DefaultBodyLimit::disable()),
+            post(media::upload_cover).layer(axum::extract::DefaultBodyLimit::disable()),
         )
         // Bulk progress API
-        .route("/api/bulk_progress/:action/:tid", put(bulk_progress))
+        .route(
+            "/api/bulk_progress/:action/:tid",
+            put(reading::bulk_progress),
+        )
         // Thumbnail generation API
-        .route("/api/admin/thumbnail_progress", get(thumbnail_progress))
-        .route("/api/admin/generate_thumbnails", post(generate_thumbnails))
+        .route(
+            "/api/admin/thumbnail_progress",
+            get(maintenance::thumbnail_progress),
+        )
+        .route(
+            "/api/admin/generate_thumbnails",
+            post(maintenance::generate_thumbnails),
+        )
         // Add state and middleware
         .layer(axum::Extension(api_document))
         .layer(middleware::from_fn_with_state(

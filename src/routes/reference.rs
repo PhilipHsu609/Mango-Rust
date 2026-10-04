@@ -19,7 +19,11 @@ pub async fn api_reference(State(state): State<AppState>) -> Result<Html<String>
     let template = ApiReferenceTemplate {
         spec_url: format!("{}openapi.json", state.config.base_url),
     };
-    Ok(Html(template.render().map_err(crate::util::render_error)?))
+    Ok(Html(
+        template
+            .render()
+            .map_err(crate::routes::presentation::render_error)?,
+    ))
 }
 
 pub async fn openapi_spec(
@@ -58,45 +62,45 @@ All endpoints except `/api/login` require authentication. After logging in, the 
     ),
     paths(
         crate::routes::login::api_login,
-        crate::routes::api::get_library,
-        crate::routes::api::get_title,
-        crate::routes::api::get_sort_opt,
-        crate::routes::api::update_sort_opt,
-        crate::routes::api::get_page,
-        crate::routes::api::get_cover,
-        crate::routes::api::continue_reading,
-        crate::routes::api::start_reading,
-        crate::routes::api::recently_added,
-        crate::routes::api::list_tags,
-        crate::routes::api::get_title_tags,
-        crate::routes::api::add_tag,
-        crate::routes::api::delete_tag,
-        crate::routes::api::download_entry,
-        crate::routes::api::get_dimensions,
-        crate::routes::api::update_progress,
-        crate::routes::admin::scan_library,
-        crate::routes::admin::cache_clear_api,
-        crate::routes::admin::cache_save_library_api,
-        crate::routes::admin::cache_load_library_api,
-        crate::routes::admin::cache_invalidate_api,
-        crate::routes::admin::get_missing_titles,
-        crate::routes::admin::delete_all_missing_titles,
-        crate::routes::admin::delete_missing_title,
-        crate::routes::admin::get_missing_entries,
-        crate::routes::admin::delete_all_missing_entries,
-        crate::routes::admin::delete_missing_entry,
+        crate::routes::api::catalog::get_library,
+        crate::routes::api::catalog::get_title,
+        crate::routes::api::metadata::get_sort_opt,
+        crate::routes::api::metadata::update_sort_opt,
+        crate::routes::api::media::get_page,
+        crate::routes::api::media::get_cover,
+        crate::routes::api::reading::continue_reading,
+        crate::routes::api::reading::start_reading,
+        crate::routes::api::reading::recently_added,
+        crate::routes::api::tags::list_tags,
+        crate::routes::api::tags::get_title_tags,
+        crate::routes::api::tags::add_tag,
+        crate::routes::api::tags::delete_tag,
+        crate::routes::api::media::download_entry,
+        crate::routes::api::media::get_dimensions,
+        crate::routes::api::reading::update_progress,
+        crate::routes::admin::maintenance::scan_library,
+        crate::routes::admin::cache::cache_clear_api,
+        crate::routes::admin::cache::cache_save_library_api,
+        crate::routes::admin::cache::cache_load_library_api,
+        crate::routes::admin::cache::cache_invalidate_api,
+        crate::routes::admin::maintenance::get_missing_titles,
+        crate::routes::admin::maintenance::delete_all_missing_titles,
+        crate::routes::admin::maintenance::delete_missing_title,
+        crate::routes::admin::maintenance::get_missing_entries,
+        crate::routes::admin::maintenance::delete_all_missing_entries,
+        crate::routes::admin::maintenance::delete_missing_entry,
         crate::routes::admin::users::get_users,
         crate::routes::admin::users::create_user,
         crate::routes::admin::users::update_user,
         crate::routes::admin::users::delete_user,
         crate::routes::admin::users::delete_user_api,
-        crate::routes::admin::update_display_name,
-        crate::routes::admin::update_sort_title,
-        crate::routes::admin::upload_cover,
-        crate::routes::admin::bulk_progress,
-        crate::routes::admin::thumbnail_progress,
-        crate::routes::admin::generate_thumbnails,
-        crate::routes::main::change_password_api
+        crate::routes::api::metadata::update_display_name,
+        crate::routes::api::metadata::update_sort_title,
+        crate::routes::api::media::upload_cover,
+        crate::routes::api::reading::bulk_progress,
+        crate::routes::admin::maintenance::thumbnail_progress,
+        crate::routes::admin::maintenance::generate_thumbnails,
+        crate::routes::pages::account::change_password_api
     )
 )]
 pub struct ApiDoc;

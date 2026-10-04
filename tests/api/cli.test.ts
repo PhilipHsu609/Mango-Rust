@@ -1,57 +1,39 @@
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { runCli, startServer, type TestServer } from '../helpers/server';
 
-const BINARY = fileURLToPath(new URL('../../target/release/mango-rust', import.meta.url));
-let testDir: string;
-let configPath: string;
+let server: TestServer;
 
-function runCli(...args: string[]): string {
-  return execFileSync(BINARY, args, { encoding: 'utf-8', timeout: 30000 });
+beforeAll(async () => { server = await startServer(); });
+afterAll(async () => { await server?.close(); });
+
+async function authenticate(username: string, password: string, expectedStatus = 200) {
+  const response = await fetch(`${server.url}/api/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  expect(response.status).toBe(expectedStatus);
+  return response.json();
 }
 
-beforeAll(() => {
-  testDir = mkdtempSync(path.join(os.tmpdir(), 'mango-rust-cli-'));
-  configPath = path.join(testDir, 'config.yml');
-  writeFileSync(
-    configPath,
-    `db_path: ${path.join(testDir, 'mango.db')}\nlog_level: warn\n`,
-    'utf-8',
-  );
-});
-
-afterAll(() => {
-  rmSync(testDir, { recursive: true, force: true });
-});
-
-describe('Mango user management CLI', () => {
-  it('shows nested user command help', () => {
-    const help = runCli('admin', 'user');
-
-    expect(help).toContain('add');
-    expect(help).toContain('delete');
-    expect(help).toContain('update');
-    expect(help).toContain('list');
-  });
-
-  it('adds, lists, updates, and deletes users with global config options', () => {
-    runCli('--config', configPath, 'admin', 'user', 'add', '-u', 'cli-user', '-p', 'first-pass', '-a');
-
-    const addedUsers = runCli('admin', 'user', 'list', `--config=${configPath}`);
+describe('user management CLI', () => {
+  it('adds, renames, changes credentials and roles, and deletes users with global config options', async () => {
+    await runCli('--config', server.configPath, 'admin', 'user', 'add', '-u', 'cli-user', '-p', 'first-pass', '-a');
+    const addedUsers = await runCli('admin', 'user', 'list', `--config=${server.configPath}`);
     expect(addedUsers).toMatch(/cli-user\s+true/);
+    expect(await authenticate('cli-user', 'first-pass')).toMatchObject({ success: true, is_admin: true });
 
-    runCli('admin', 'user', '-c', configPath, 'update', 'cli-user', '-u', 'renamed-user', '-p', 'second-pass');
-
-    const updatedUsers = runCli('admin', 'user', 'list', '--config', configPath);
+    await runCli('admin', 'user', '-c', server.configPath, 'update', 'cli-user', '-u', 'renamed-user', '-p', 'second-pass');
+    const updatedUsers = await runCli('admin', 'user', 'list', '--config', server.configPath);
     expect(updatedUsers).toMatch(/renamed-user\s+false/);
     expect(updatedUsers).not.toContain('cli-user');
+    expect(await authenticate('cli-user', 'first-pass', 403)).toMatchObject({ success: false });
+    expect(await authenticate('renamed-user', 'first-pass', 403)).toMatchObject({ success: false });
+    expect(await authenticate('renamed-user', 'second-pass')).toMatchObject({ success: true, is_admin: false });
 
-    runCli('admin', 'user', 'delete', 'renamed-user', '-c', configPath);
-
-    const deletedUsers = runCli('admin', 'user', 'list', '--config', configPath);
+    await runCli('admin', 'user', 'delete', 'renamed-user', '-c', server.configPath);
+    const deletedUsers = await runCli('admin', 'user', 'list', '--config', server.configPath);
     expect(deletedUsers).not.toContain('renamed-user');
+    expect(await authenticate('renamed-user', 'second-pass', 403)).toMatchObject({ success: false });
   });
 });

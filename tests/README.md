@@ -1,34 +1,26 @@
 # Mango-Rust tests
 
-## Suites
+Requires Rust, Node.js 22+, `zip`, and the application's libarchive/pkg-config development dependencies.
 
-- Rust unit and library tests: `cargo test` from the repository root.
-- HTTP/API contract tests: `tests/api/*.test.ts` with Vitest. Vitest starts and stops the Rust server; invalid form logins redirect to `/login` as in Mango.
-- Archive fixtures: `tests/fixtures/setup-test-library.sh`.
+## Run
 
-## Running
+From the repository root:
 
-Install application and test dependencies from the repository root:
-
-```bash
-npm ci
-npm run build
-(cd tests && npm ci)
+```sh
+cargo test --all-targets
+npm --prefix tests ci
+npm --prefix tests run typecheck
+npm --prefix tests test
 ```
 
-Run the suites using disposable test data and retain the installed Rust toolchain/cache paths:
+Filter HTTP tests with `npm --prefix tests test -- api/progress.test.ts`.
 
-```bash
-ORIGINAL_HOME="$HOME"
-export CARGO_HOME="${CARGO_HOME:-$ORIGINAL_HOME/.cargo}"
-export RUSTUP_HOME="${RUSTUP_HOME:-$ORIGINAL_HOME/.rustup}"
-TEST_HOME="$(mktemp -d)"
-trap 'rm -rf "$TEST_HOME"' EXIT
-export HOME="$TEST_HOME"
+## Ownership and isolation
 
-bash tests/fixtures/setup-test-library.sh
-cargo test
-(cd tests && CI=true npm test)
-```
+- Rust tests live with their library modules and exercise behavior at the owning module's interface.
+- HTTP tests in `api/` are grouped by feature: users, metadata, maintenance, catalog, sorting, tags, reading progress, authentication, CORS, OPDS, CLI, and reference authorization.
+- `global-setup.ts` owns suite startup/teardown; `helpers/server.ts` owns individual server processes, CLI execution, and temporary configuration/database paths. `helpers/catalog.ts` resolves named fixtures through HTTP.
+- `npm test` builds the actual Rust binary, creates seven deterministic titles with five ten-page ZIP entries each, seeds users through the CLI, waits for the initial scan, and cleans up afterward. No manual fixture setup or `HOME` changes are needed.
+- Servers use private loopback ports. Shared mutation tests restore their state; authentication modes, CLI mutations, and cover uploads use private servers. Test files remain sequential because the main server is shared.
 
-CI builds the Rust binary and runs the API tests. It does not run Rust unit tests; run `cargo test` separately.
+CI runs both the Rust and HTTP suites, plus TypeScript checking. Application assets are built by the workflow.

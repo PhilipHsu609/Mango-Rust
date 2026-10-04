@@ -7,8 +7,11 @@ use axum::{
 use crate::{
     auth::Username,
     error::{Error, Result},
-    library::{Entry, SortMethod, Title, TitleInfo},
-    util::render_error,
+    library::{
+        ordering::{sort_entries, EntryOrdering, SortOptions},
+        Entry, SortMethod, Title, TitleInfo,
+    },
+    routes::presentation::render_error,
     AppState,
 };
 
@@ -38,7 +41,7 @@ struct ReaderTemplate {
 #[derive(Template)]
 #[template(path = "reader-error.html")]
 struct ReaderErrorTemplate {
-    nav: crate::util::NavigationState,
+    nav: crate::routes::presentation::NavigationState,
     entry_path: String,
     err_msg: String,
     next_entry_url: Option<String>,
@@ -64,42 +67,16 @@ async fn ordered_entries<'a>(
             .unwrap_or_else(|| item.title.clone());
         ordered_entries.push((item, sort_title));
     }
-    ordered_entries.sort_by(|(left, left_title), (right, right_title)| {
-        let name_order = || natord::compare(left_title, right_title);
-        match sort_method {
-            SortMethod::TimeModified => left.mtime.cmp(&right.mtime).then_with(name_order),
-            SortMethod::TimeAdded => info
-                .get_date_added(&left.title)
-                .unwrap_or_default()
-                .cmp(&info.get_date_added(&right.title).unwrap_or_default())
-                .then_with(name_order),
-            SortMethod::Progress => {
-                let left_progress = if left.pages == 0 {
-                    0.0
-                } else {
-                    info.get_progress(username, &left.title)
-                        .unwrap_or(0)
-                        .clamp(0, left.pages as i32) as f32
-                        / left.pages as f32
-                };
-                let right_progress = if right.pages == 0 {
-                    0.0
-                } else {
-                    info.get_progress(username, &right.title)
-                        .unwrap_or(0)
-                        .clamp(0, right.pages as i32) as f32
-                        / right.pages as f32
-                };
-                left_progress
-                    .total_cmp(&right_progress)
-                    .then_with(name_order)
-            }
-            SortMethod::Name | SortMethod::Auto => name_order(),
-        }
-    });
-    if !ascending {
-        ordered_entries.reverse();
-    }
+    sort_entries(
+        &mut ordered_entries,
+        info,
+        username,
+        SortOptions {
+            method: sort_method,
+            ascending,
+        },
+        EntryOrdering::Reader,
+    );
     Ok(ordered_entries)
 }
 
@@ -133,7 +110,7 @@ pub async fn reader(
         )));
     }
 
-    let info = TitleInfo::load(&title.path).await?;
+    let info = lib.metadata().read(&title.path).await?;
     let ordered_entries = ordered_entries(&state, title, &info, &username).await?;
 
     let entries: Vec<EntryOption> = ordered_entries
@@ -206,7 +183,7 @@ pub async fn reader_continue(
         .ok_or_else(|| Error::NotFound(format!("Entry not found: {}", entry_id)))?;
 
     if let Some(err_msg) = &entry.err_msg {
-        let info = TitleInfo::load(&title.path).await?;
+        let info = lib.metadata().read(&title.path).await?;
         let ordered = ordered_entries(&state, title, &info, &username).await?;
         let next_entry_url = ordered
             .iter()
@@ -214,7 +191,7 @@ pub async fn reader_continue(
             .and_then(|index| ordered.get(index + 1))
             .map(|(item, _)| format!("/reader/{}/{}", title_id, item.id));
         let template = ReaderErrorTemplate {
-            nav: crate::util::NavigationState {
+            nav: crate::routes::presentation::NavigationState {
                 home_active: false,
                 library_active: false,
                 tags_active: false,
@@ -232,8 +209,8 @@ pub async fn reader_continue(
     let total_pages = entry.pages;
 
     // Load the user's progress
-    let progress_page = match title.load_entry_progress(&username, &entry_id).await {
-        Ok(page) => page,
+    let progress_page = match lib.metadata().read(&title.path).await {
+        Ok(info) => info.get_progress(&username, &entry.title).unwrap_or(0),
         Err(e) => {
             tracing::error!(
                 "Failed to load progress for user '{}' entry '{}': {}. Starting from beginning.",

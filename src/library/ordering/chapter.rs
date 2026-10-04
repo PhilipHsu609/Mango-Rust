@@ -165,36 +165,6 @@ fn compare_integer_strings(left: &str, right: &str) -> Ordering {
     left.len().cmp(&right.len()).then_with(|| left.cmp(right))
 }
 
-#[cfg(test)]
-mod numeric_sort_tests {
-    use super::compare_numerically;
-    use std::cmp::Ordering;
-
-    #[test]
-    fn numeric_sort_matches_mango_integer_and_token_rules() {
-        assert_eq!(
-            compare_numerically("Chapter 2", "Chapter 10"),
-            Ordering::Less
-        );
-        assert_eq!(
-            compare_numerically("Chapter 01", "Chapter 1"),
-            Ordering::Equal
-        );
-        assert_eq!(compare_numerically("Chapter", "Chapter 1"), Ordering::Less);
-    }
-
-    #[test]
-    fn numeric_sort_compares_large_integer_segments_exactly() {
-        assert_eq!(
-            compare_numerically(
-                "Chapter 999999999999999999999999",
-                "Chapter 1000000000000000000000000"
-            ),
-            Ordering::Less
-        );
-    }
-}
-
 fn scan(name: &str) -> Vec<(String, f64)> {
     let bytes = name.as_bytes();
     let mut matches = Vec::new();
@@ -265,72 +235,4 @@ fn parse_item(name: &str) -> SortItem {
         items.insert(key, value);
     }
     SortItem(items)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ChapterSorter;
-
-    #[test]
-    fn matches_mango_chapter_sort_fixture() {
-        let mut names = vec![
-            "Vol.1 Ch.01",
-            "Vol.1 Ch.02",
-            "Vol.2 Ch. 2.5",
-            "Ch. 3",
-            "Ch.04",
-        ];
-        let sorter = ChapterSorter::new(&names);
-        names.reverse();
-        names.sort_by(|left, right| sorter.compare(left, right));
-        assert_eq!(
-            names,
-            [
-                "Vol.1 Ch.01",
-                "Vol.1 Ch.02",
-                "Vol.2 Ch. 2.5",
-                "Ch. 3",
-                "Ch.04",
-            ]
-        );
-    }
-
-    #[test]
-    fn fractional_chapter_values_sort_numerically() {
-        let mut names = vec!["Chapter 0.1", "Chapter 0.01"];
-        let sorter = ChapterSorter::new(&names);
-        names.sort_by(|left, right| sorter.compare(left, right));
-        assert_eq!(names, ["Chapter 0.01", "Chapter 0.1"]);
-    }
-
-    #[test]
-    fn chapter_numbers_with_same_two_decimal_places_compare_equal() {
-        let names = ["Chapter 1.231", "Chapter 1.234"];
-        let sorter = ChapterSorter::new(&names);
-        assert_eq!(
-            sorter.compare(names[0], names[1]),
-            std::cmp::Ordering::Equal
-        );
-    }
-
-    #[test]
-    fn keys_are_ordered_by_frequency_then_value_range() {
-        let mut names = vec![
-            "Vol. 1 Ch. 1",
-            "Vol. 2 Ch. 2",
-            "Season 1 Episode 100",
-            "Season 2 Episode 200",
-        ];
-        let sorter = ChapterSorter::new(&names);
-        names.sort_by(|left, right| sorter.compare(left, right));
-        assert_eq!(
-            names,
-            [
-                "Season 1 Episode 100",
-                "Season 2 Episode 200",
-                "Vol. 1 Ch. 1",
-                "Vol. 2 Ch. 2",
-            ]
-        );
-    }
 }

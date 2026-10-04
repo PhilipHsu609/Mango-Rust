@@ -231,6 +231,9 @@ mod tests {
         tokio::fs::write(chapter.join("001.png"), b"page")
             .await
             .unwrap();
+        tokio::fs::write(path.join("Test Manga/Broken.cbz"), b"not an archive")
+            .await
+            .unwrap();
 
         let db_path = path.join("test.db");
         tokio::fs::File::create(&db_path).await.unwrap();
@@ -238,7 +241,7 @@ mod tests {
         let storage = Storage::new(&db_url).await.unwrap();
         let config = crate::Config {
             host: "0.0.0.0".to_string(),
-            port: 9000,
+            port: 0,
             base_url: "/".to_string(),
             session_secret: "test".to_string(),
             library_path: path.clone(),
@@ -251,8 +254,8 @@ mod tests {
             plugin_path: path.join("plugins"),
             download_timeout_seconds: 30,
             library_cache_path: path.join("library-cache.bin"),
-            cache_enabled: true,
-            cache_size_mbs: 100,
+            cache_enabled: false,
+            cache_size_mbs: 0,
             cache_log_enabled: false,
             disable_login: false,
             default_username: String::new(),
@@ -261,7 +264,9 @@ mod tests {
         };
 
         let mut library = Library::new(path, storage, &config);
-        library.scan().await.unwrap();
+        crate::library::scan::scan(&mut library, None, None)
+            .await
+            .unwrap();
         library
     }
 
@@ -290,18 +295,16 @@ mod tests {
 
         let loaded_data = loaded.unwrap();
         assert_eq!(loaded_data.path, library_path);
-        assert_eq!(loaded_data.titles.len(), library.titles().len());
-        let cached_title = loaded_data
-            .titles
-            .values()
-            .find(|title| title.title == "Test Manga")
-            .expect("cache should preserve the populated title");
-        let original_title = library
-            .titles()
-            .values()
-            .find(|title| title.title == "Test Manga")
-            .expect("fixture should contain the populated title");
-        assert_eq!(cached_title.title, original_title.title);
+        assert_eq!(loaded_data.titles.len(), 1);
+        let original_title = library.get_titles()[0];
+        let cached_title = loaded_data.titles.get(&original_title.id).unwrap();
+        assert_eq!(cached_title.title, "Test Manga");
+        assert_eq!(cached_title.path, original_title.path);
+        let original_error = &original_title.entries[0];
+        let cached_error = &cached_title.entries[0];
+        assert_eq!(cached_error.id, original_error.id);
+        assert_eq!(cached_error.err_msg, original_error.err_msg);
+        assert!(cached_error.err_msg.is_some());
 
         let cached_entry = cached_title
             .deep_titles()
@@ -310,6 +313,19 @@ mod tests {
             .find(|entry| entry.title == "Chapter 1")
             .unwrap();
         assert_eq!(cached_entry.pages, 1);
+        let original_entry = original_title
+            .deep_entries()
+            .into_iter()
+            .find(|entry| entry.title == "Chapter 1")
+            .unwrap();
+        assert_eq!(cached_entry.id, original_entry.id);
+        assert_eq!(cached_entry.path, original_entry.path);
+        assert_eq!(
+            crate::library::media::get_page(cached_entry, 0)
+                .await
+                .unwrap(),
+            b"page"
+        );
     }
 
     #[tokio::test]
