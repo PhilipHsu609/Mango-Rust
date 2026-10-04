@@ -1,12 +1,27 @@
-# ===== Stage 1: Build binary with dynamic system libraries =====
-FROM rust:1.91-alpine AS builder
+# ===== Build base shared by dependency planning and compilation =====
+FROM rust:1.91-alpine AS chef
 
 # Install musl-dev and build tools, including libarchive headers
 RUN apk add --no-cache musl-dev sqlite-dev nodejs npm libarchive-dev pkgconfig
+RUN cargo install cargo-chef --version 0.1.78 --locked
 
 WORKDIR /build
 
-# Install frontend dependencies before source changes to preserve the npm cache.
+# Use dynamic musl linking for runtime libarchive in both dependency and application builds.
+ENV RUSTFLAGS='-C target-feature=-crt-static'
+
+FROM chef AS planner
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /build/recipe.json recipe.json
+# Keep dependency artifacts in this layer so the external GHA cache can restore them.
+RUN cargo chef cook --release --target x86_64-unknown-linux-musl --recipe-path recipe.json
+
+# Install frontend dependencies before application source changes.
 COPY package.json package-lock.json ./
 RUN npm ci
 
@@ -24,14 +39,8 @@ COPY .sqlx ./.sqlx
 # Build frontend assets
 RUN npm run build
 
-# Use dynamic musl linking for runtime libarchive
-ENV RUSTFLAGS='-C target-feature=-crt-static'
-
 # Build binary
-RUN --mount=type=cache,id=mango-rust-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=mango-rust-git,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=mango-rust-target-x86_64-unknown-linux-musl,target=/build/target,sharing=locked \
-    cargo build --release --target x86_64-unknown-linux-musl \
+RUN cargo build --release --target x86_64-unknown-linux-musl \
     && cp /build/target/x86_64-unknown-linux-musl/release/mango-rust /build/mango-rust
 
 # ===== Stage 2: Runtime image =====
