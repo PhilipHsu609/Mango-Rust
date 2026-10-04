@@ -1,0 +1,33 @@
+name: Clean Up GHCR Images
+
+on:
+  schedule:
+    # Sunday at 03:17 UTC.
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview deletions without removing images'
+        type: boolean
+        default: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    # Serialize with publishing so in-progress uploads cannot be removed.
+    concurrency:
+      group: ghcr-images
+      cancel-in-progress: false
+    steps:
+      - name: Retain the five newest published builds
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1
+        with:
+          package: mango-rust
+          delete-tags: 'v*'
+          keep-n-tagged: 5
+          # The action preserves platform manifests and attestations of retained builds.
+          delete-untagged: true
+          delete-orphaned-images: true
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}

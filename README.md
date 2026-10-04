@@ -13,6 +13,12 @@ docker run -d --name mango-rust -p 9000:9000 \
 
 Open <http://localhost:9000>. On a fresh database, the server creates an `admin` account and prints its random password in `docker logs mango-rust`.
 
+### Image retention
+
+GHCR cleanup runs every Sunday at 03:17 UTC and retains the five newest version-tagged builds, including their platform manifests and attestations. Older image versions are removed; Git tags and GitHub Actions build caches are unaffected.
+
+The **Clean Up GHCR Images** workflow also supports manual runs. Its `dry_run` option defaults to a preview; disable it to apply cleanup.
+
 ## Features
 
 - Multi-user reading, progress tracking, search, sorting, and tags
