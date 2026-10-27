@@ -23,7 +23,7 @@
             <td>Title</td>
             <td x-text="title.path"></td>
             <td x-text="title.id.replace(/-/g, '')"></td>
-            <td><a @click="rm($event)" uk-icon="trash"></a></td>
+            <td><a href="#" @click.prevent="rm($event)" uk-icon="trash" aria-label="Delete"></a></td>
           </tr>
         </template>
         <template x-for="entry in entries" :key="entry">
@@ -31,7 +31,7 @@
             <td>Entry</td>
             <td x-text="entry.path"></td>
             <td x-text="entry.id.replace(/-/g, '')"></td>
-            <td><a @click="rm($event)" uk-icon="trash"></a></td>
+            <td><a href="#" @click.prevent="rm($event)" uk-icon="trash" aria-label="Delete"></a></td>
           </tr>
         </template>
       </tbody>
