@@ -95,6 +95,15 @@
 	.uk-description-list > dt {
 		color: #555;
 	}
+	// UIkit keeps the progress track near-white; on dark pages an empty bar looked full.
+	// Firefox paints the track with the element background, WebKit/Blink with the pseudo-element.
+	.uk-progress {
+		background-color: rgba(255, 255, 255, 0.15);
+
+		&::-webkit-progress-bar {
+			background-color: rgba(255, 255, 255, 0.15);
+		}
+	}
 }
 
 // Alpine magic
