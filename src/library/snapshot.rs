@@ -27,6 +27,9 @@ pub struct Library {
 
     /// Shared metadata persistence and immutable snapshots
     pub(super) metadata: Arc<super::metadata::MetadataStore>,
+
+    /// Frozen storage accounting from the last completed scan (or stale cache).
+    pub(super) storage_report: Option<Arc<super::storage::StorageReport>>,
 }
 
 impl Library {
@@ -38,6 +41,7 @@ impl Library {
             storage,
             cache: Arc::new(Mutex::new(super::cache::Cache::new(config))),
             metadata: Arc::new(super::metadata::MetadataStore::new()),
+            storage_report: None,
         }
     }
 
@@ -65,6 +69,13 @@ impl Library {
                         .map(|(id, title)| (id, Arc::new(title)))
                         .collect(),
                 );
+                self.storage_report = Some(Arc::new(super::storage::aggregate(
+                    &self.path,
+                    &self.titles,
+                    None,
+                    true,
+                    cached_data.storage_issues,
+                )));
                 let entry_count: usize = self.titles.values().map(|t| t.entries.len()).sum();
 
                 tracing::info!(
@@ -201,6 +212,11 @@ impl Library {
     /// Get library root path
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Return the completed storage observation without inspecting the filesystem.
+    pub fn storage_report(&self) -> Option<Arc<super::storage::StorageReport>> {
+        self.storage_report.as_ref().map(Arc::clone)
     }
 
     /// Invalidate progress-dependent title sorting for a user.

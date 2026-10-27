@@ -79,6 +79,8 @@ All endpoints except `/api/login` require authentication. After logging in, the 
         crate::routes::api::media::get_dimensions,
         crate::routes::api::reading::update_progress,
         crate::routes::admin::maintenance::scan_library,
+        crate::routes::admin::maintenance::scan_progress,
+        crate::routes::admin::storage::get_storage,
         crate::routes::admin::cache::cache_clear_api,
         crate::routes::admin::cache::cache_save_library_api,
         crate::routes::admin::cache::cache_load_library_api,
@@ -101,6 +103,11 @@ All endpoints except `/api/login` require authentication. After logging in, the 
         crate::routes::admin::maintenance::thumbnail_progress,
         crate::routes::admin::maintenance::generate_thumbnails,
         crate::routes::pages::account::change_password_api
-    )
+    ),
+    components(schemas(
+        crate::library::storage::StorageReport,
+        crate::library::storage::StorageTitle,
+        crate::library::storage::StorageIssue
+    ))
 )]
 pub struct ApiDoc;

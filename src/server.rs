@@ -22,7 +22,7 @@ use crate::{
     library::{scan::spawn_periodic_scanner, Library},
     routes::presentation::NavigationState,
     routes::{
-        admin::{cache, dashboard, maintenance, users},
+        admin::{cache, dashboard, maintenance, storage, users},
         api::{catalog, media, metadata, reading, tags},
         book::get_book,
         login::{api_login, get_login, logout, post_login},
@@ -292,6 +292,7 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/tags/:tag", get(view_tag_page))
         // Admin routes (requires admin access)
         .route("/admin", get(dashboard::admin_dashboard))
+        .route("/admin/storage", get(storage::storage_page))
         .route("/admin/missing", get(maintenance::missing_items_page))
         .route("/admin/user", get(users::users_page))
         .route(
@@ -306,6 +307,8 @@ pub async fn run(config: Config) -> Result<()> {
         .route("/debug/cache", get(cache::cache_debug_page))
         // Admin API routes
         .route("/api/admin/scan", post(maintenance::scan_library))
+        .route("/api/admin/scan_progress", get(maintenance::scan_progress))
+        .route("/api/admin/storage", get(storage::get_storage))
         // Cache API routes
         .route("/api/cache/clear", post(cache::cache_clear_api))
         .route(

@@ -36,4 +36,13 @@ pub struct Entry {
     /// Archive validation failure, if the entry cannot be read.
     #[serde(default)]
     pub err_msg: Option<String>,
+
+    /// Whether size_bytes was observed by the scanner, including a genuine zero.
+    /// Older cache entries lack this field and must not invent a zero measurement.
+    #[serde(default)]
+    pub size_known: bool,
+
+    /// Scanner-observed payload kind; directory names may have archive extensions.
+    #[serde(default)]
+    pub is_directory: bool,
 }
