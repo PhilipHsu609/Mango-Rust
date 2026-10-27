@@ -8,6 +8,7 @@ pub mod title;
 
 pub mod scan;
 mod snapshot;
+pub mod storage;
 
 pub use entry::Entry;
 pub use metadata::{MetadataStore, TitleInfo};

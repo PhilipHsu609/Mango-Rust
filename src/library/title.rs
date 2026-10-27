@@ -100,6 +100,8 @@ mod tests {
                     image_files: Vec::new(),
                     size_bytes: 0,
                     err_msg: None,
+                    size_known: false,
+                    is_directory: false,
                 })
                 .collect(),
             parent_id: None,

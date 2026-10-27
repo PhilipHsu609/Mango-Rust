@@ -25,12 +25,15 @@ pub struct CacheFileManager {
 pub struct CachedLibraryData {
     pub path: PathBuf,
     pub titles: std::collections::HashMap<String, crate::library::Title>,
+    #[serde(default)]
+    pub storage_issues: Vec<crate::library::storage::StorageIssue>,
 }
 
 #[derive(serde::Serialize)]
 struct BorrowedLibraryData<'a> {
     path: &'a PathBuf,
     titles: &'a std::collections::HashMap<String, std::sync::Arc<crate::library::Title>>,
+    storage_issues: &'a [crate::library::storage::StorageIssue],
 }
 
 impl CacheFileManager {
@@ -42,7 +45,12 @@ impl CacheFileManager {
     /// Save library to cache file (MessagePack + gzip)
     pub async fn save(&self, library: &Library) -> Result<()> {
         let path = library.path().to_path_buf();
-        self.save_shared(&path, library.titles()).await
+        let report = library.storage_report();
+        let issues = report
+            .as_ref()
+            .map(|report| report.issues.as_slice())
+            .unwrap_or_default();
+        self.save_shared(&path, library.titles(), issues).await
     }
 
     /// Save an immutable title snapshot without cloning the entire library.
@@ -50,12 +58,17 @@ impl CacheFileManager {
         &self,
         path: &PathBuf,
         titles: &std::collections::HashMap<String, std::sync::Arc<crate::library::Title>>,
+        storage_issues: &[crate::library::storage::StorageIssue],
     ) -> Result<()> {
         use flate2::write::GzEncoder;
         use flate2::Compression;
         use std::io::Write;
 
-        let cached_data = BorrowedLibraryData { path, titles };
+        let cached_data = BorrowedLibraryData {
+            path,
+            titles,
+            storage_issues,
+        };
 
         // Serialize to MessagePack
         let serialized = rmp_serde::to_vec(&cached_data)
@@ -282,7 +295,7 @@ mod tests {
         // Save to cache
         let manager = CacheFileManager::new(cache_path.clone());
         manager
-            .save_shared(&library_path, library.titles())
+            .save_shared(&library_path, library.titles(), &[])
             .await
             .unwrap();
 

@@ -6,7 +6,10 @@ use crate::error::Result;
 use crate::library::{media, Entry, Title};
 
 /// Create a new Title by scanning a directory
-pub(super) async fn title_from_directory(path: PathBuf) -> Result<Title> {
+pub(super) async fn title_from_directory(
+    path: PathBuf,
+    issues: &mut Vec<(PathBuf, String)>,
+) -> Result<Title> {
     let title = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -42,36 +45,52 @@ pub(super) async fn title_from_directory(path: PathBuf) -> Result<Title> {
     let entry_tasks: Vec<_> = archive_paths
         .into_iter()
         .map(|entry_path| {
-            tokio::spawn(async move {
-                let mut entry = entry_from_archive(entry_path).await?;
-                calculate_entry_signature(&mut entry)?;
-                Ok::<Entry, crate::error::Error>(entry)
-            })
+            let error_path = entry_path.clone();
+            (
+                error_path,
+                tokio::spawn(async move {
+                    let mut entry = entry_from_archive(entry_path).await?;
+                    calculate_entry_signature(&mut entry)?;
+                    Ok::<Entry, crate::error::Error>(entry)
+                }),
+            )
         })
         .collect();
 
     let mut entries = Vec::new();
-    for task in entry_tasks {
+    for (entry_path, task) in entry_tasks {
         match task.await {
             Ok(Ok(entry)) => entries.push(entry),
-            Ok(Err(error)) => tracing::warn!("Failed to process entry: {}", error),
-            Err(error) => tracing::warn!("Entry processing task failed: {}", error),
+            Ok(Err(error)) => issues.push((entry_path, error.to_string())),
+            Err(error) => {
+                issues.push((entry_path, format!("Entry processing task failed: {error}")))
+            }
         }
     }
 
     let mut nested_titles = Vec::new();
     for child_path in child_paths {
-        let mut child_title = Box::pin(title_from_directory(child_path.clone())).await?;
-        if !child_title.entries.is_empty() || !child_title.nested_titles.is_empty() {
-            child_title.parent_id = Some(id.clone());
-            mtime = mtime.max(child_title.mtime);
-            nested_titles.push(child_title);
+        match Box::pin(title_from_directory(child_path.clone(), issues)).await {
+            Ok(mut child_title) => {
+                if !child_title.entries.is_empty() || !child_title.nested_titles.is_empty() {
+                    child_title.parent_id = Some(id.clone());
+                    mtime = mtime.max(child_title.mtime);
+                    nested_titles.push(child_title);
+                }
+            }
+            Err(error) => issues.push((child_path.clone(), error.to_string())),
         }
 
-        if let Some(mut entry) = entry_from_directory(child_path).await? {
-            calculate_entry_signature(&mut entry)?;
-            mtime = mtime.max(entry.mtime);
-            entries.push(entry);
+        match entry_from_directory(child_path.clone()).await {
+            Ok(Some(mut entry)) => match calculate_entry_signature(&mut entry) {
+                Ok(()) => {
+                    mtime = mtime.max(entry.mtime);
+                    entries.push(entry);
+                }
+                Err(error) => issues.push((child_path, error.to_string())),
+            },
+            Ok(None) => {}
+            Err(error) => issues.push((child_path, error.to_string())),
         }
     }
 
@@ -143,6 +162,8 @@ pub(super) async fn entry_from_archive(path: PathBuf) -> Result<Entry> {
         pages,
         image_files,
         size_bytes: metadata.len(),
+        size_known: true,
+        is_directory: false,
         err_msg,
     })
 }
@@ -205,6 +226,8 @@ pub(super) async fn entry_from_directory(path: PathBuf) -> Result<Option<Entry>>
         pages: image_files.len(),
         image_files,
         size_bytes,
+        size_known: true,
+        is_directory: true,
         err_msg: None,
     }))
 }
@@ -238,7 +261,7 @@ mod tests {
         std::fs::create_dir_all(&chapter).unwrap();
         std::fs::write(chapter.join("001.png"), b"page").unwrap();
 
-        let title = title_from_directory(root).await.unwrap();
+        let title = title_from_directory(root, &mut Vec::new()).await.unwrap();
         assert_eq!(title.nested_titles.len(), 1);
         let volume = &title.nested_titles[0];
         assert_eq!(volume.parent_id.as_deref(), Some(title.id.as_str()));

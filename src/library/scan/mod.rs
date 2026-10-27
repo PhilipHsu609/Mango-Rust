@@ -6,17 +6,57 @@ pub(crate) use filesystem::date_added_timestamp;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
 use crate::error::Result;
+use crate::library::storage::{self, StorageIssue};
 use crate::library::{Library, SharedLibrary, Title};
 use crate::Storage;
 use ids::{IdIndex, PendingIds};
 
 /// Serialize scan-and-swap cycles so an older scan cannot replace a newer one.
 pub(crate) static SCAN_LOCK: Mutex<()> = Mutex::const_new(());
+
+static SCAN_ACTIVE: AtomicBool = AtomicBool::new(false);
+static SCAN_ROOTS_DONE: AtomicUsize = AtomicUsize::new(0);
+static SCAN_ROOTS_TOTAL: AtomicUsize = AtomicUsize::new(0);
+
+/// Root-directory progress of the scan that currently holds `SCAN_LOCK`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScanProgress {
+    pub scanning: bool,
+    pub completed: usize,
+    pub total: usize,
+}
+
+pub fn scan_progress() -> ScanProgress {
+    ScanProgress {
+        scanning: SCAN_ACTIVE.load(Ordering::Relaxed),
+        completed: SCAN_ROOTS_DONE.load(Ordering::Relaxed),
+        total: SCAN_ROOTS_TOTAL.load(Ordering::Relaxed),
+    }
+}
+
+/// Marks a scan as running until dropped, including when its future is cancelled.
+struct ActiveScan;
+
+impl ActiveScan {
+    fn begin() -> Self {
+        SCAN_ROOTS_DONE.store(0, Ordering::Relaxed);
+        SCAN_ROOTS_TOTAL.store(0, Ordering::Relaxed);
+        SCAN_ACTIVE.store(true, Ordering::Relaxed);
+        Self
+    }
+}
+
+impl Drop for ActiveScan {
+    fn drop(&mut self) {
+        SCAN_ACTIVE.store(false, Ordering::Relaxed);
+    }
+}
 
 /// Scan a replacement snapshot, optionally publishing completed roots incrementally.
 /// Callers serialize scan-and-swap cycles with `SCAN_LOCK`. A failed scan restores
@@ -26,12 +66,32 @@ pub async fn scan(
     previous: Option<Arc<Library>>,
     publisher: Option<SharedLibrary>,
 ) -> Result<()> {
+    let _active = ActiveScan::begin();
     let original = publisher.as_ref().map(|publisher| publisher.load_full());
+    if let Some(previous) = previous.as_ref().or(original.as_ref()) {
+        library.storage_report = previous.storage_report();
+    }
     match scan_inner(library, previous, publisher.as_ref()).await {
         Ok(()) => Ok(()),
         Err(error) => {
+            if let Some(report) = library.storage_report() {
+                let mut report = report.as_ref().clone();
+                report.stale = true;
+                // Repeated failures replace the previous notice instead of piling up.
+                report
+                    .issues
+                    .retain(|issue| !issue.message.starts_with("Refresh failed"));
+                report.issues.push(StorageIssue::new(
+                    &library.path,
+                    &library.path,
+                    format!("Refresh failed; retaining the previous observation: {error}"),
+                ));
+                library.storage_report = Some(Arc::new(report));
+            }
             if let (Some(publisher), Some(original)) = (publisher, original) {
-                publisher.store(original);
+                let mut restored = original.as_ref().clone();
+                restored.storage_report = library.storage_report();
+                publisher.store(Arc::new(restored));
             }
             Err(error)
         }
@@ -52,6 +112,7 @@ async fn scan_inner(
 
     // Collect all directory paths first
     let mut title_paths = Vec::new();
+    let mut scan_issues = Vec::new();
     let mut dir_entries = tokio::fs::read_dir(&library.path).await?;
     while let Some(entry) = dir_entries.next_entry().await? {
         let entry_path = entry.path();
@@ -89,6 +150,7 @@ async fn scan_inner(
 
     let root_paths: HashSet<PathBuf> = title_paths.iter().cloned().collect();
     let root_count = title_paths.len();
+    SCAN_ROOTS_TOTAL.store(root_count, Ordering::Relaxed);
     let publish_batch = root_count.div_ceil(20).max(1);
     let mut tasks = tokio::task::JoinSet::new();
     for title_path in title_paths {
@@ -103,6 +165,7 @@ async fn scan_inner(
 
         tasks.spawn(async move {
             let _permit = sem.acquire().await.unwrap();
+            let mut observed = Vec::new();
 
             let fingerprint_path = title_path.clone();
             let fingerprint = match tokio::task::spawn_blocking(move || {
@@ -113,7 +176,11 @@ async fn scan_inner(
                 Ok(Ok(signature)) => signature,
                 Ok(Err(error)) => {
                     tracing::warn!("Failed to fingerprint {}: {}", title_path.display(), error);
-                    return None;
+                    observed.push((
+                        title_path.clone(),
+                        format!("Unable to scan region: {error}"),
+                    ));
+                    return (None, observed);
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -121,27 +188,46 @@ async fn scan_inner(
                         title_path.display(),
                         error
                     );
-                    return None;
+                    observed.push((
+                        title_path.clone(),
+                        format!("Fingerprint task failed: {error}"),
+                    ));
+                    return (None, observed);
                 }
             };
             if let (Some(prior), Some(id)) = (prior, old_id) {
                 if let Some(old_title) = prior.titles.get(&id) {
-                    if old_title.contents_signature == fingerprint {
-                        return Some((Arc::clone(old_title), PendingIds::default()));
+                    if old_title.contents_signature == fingerprint
+                        && old_title
+                            .deep_entries()
+                            .iter()
+                            .all(|entry| entry.size_known)
+                    {
+                        return (
+                            Some((Arc::clone(old_title), PendingIds::default())),
+                            observed,
+                        );
                     }
                 }
             }
 
-            let mut title = match discovery::title_from_directory(title_path.clone()).await {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::warn!("Failed to scan title at {}: {}", title_path.display(), e);
-                    return None;
-                }
+            let mut title =
+                match discovery::title_from_directory(title_path.clone(), &mut observed).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::warn!("Failed to scan title at {}: {}", title_path.display(), e);
+                        observed.push((title_path.clone(), format!("Unable to scan region: {e}")));
+                        return (None, observed);
+                    }
+                };
+            // Do not silently erase skipped-entry errors on an unchanged rescan.
+            title.contents_signature = if observed.is_empty() {
+                fingerprint
+            } else {
+                String::new()
             };
-            title.contents_signature = fingerprint;
             if title.entries.is_empty() && title.nested_titles.is_empty() {
-                return None;
+                return (None, observed);
             }
 
             let (title_index, entry_index) = match indexes
@@ -156,7 +242,11 @@ async fn scan_inner(
                 Ok(indexes) => indexes,
                 Err(error) => {
                     tracing::warn!("Failed to load ID index: {}", error);
-                    return None;
+                    observed.push((
+                        title_path.clone(),
+                        format!("Failed to load ID index: {error}"),
+                    ));
+                    return (None, observed);
                 }
             };
             let mut pending_ids = PendingIds::default();
@@ -176,10 +266,11 @@ async fn scan_inner(
                     title_path.display(),
                     error
                 );
-                return None;
+                observed.push((title_path.clone(), format!("Failed to assign IDs: {error}")));
+                return (None, observed);
             }
 
-            Some((Arc::new(title), pending_ids))
+            (Some((Arc::new(title), pending_ids)), observed)
         });
     }
 
@@ -199,15 +290,21 @@ async fn scan_inner(
                     break;
                 };
                 completed_roots += 1;
+                SCAN_ROOTS_DONE.store(completed_roots, Ordering::Relaxed);
                 match joined {
-                    Ok(Some((title, ids))) => {
-                        pending_ids.titles.extend(ids.titles);
-                        pending_ids.entries.extend(ids.entries);
-                        new_titles.insert(title.id.clone(), title);
+                    Ok((result, observed)) => {
+                        scan_issues.extend(observed.into_iter().map(|(path, message)| {
+                            StorageIssue::new(&library.path, &path, message)
+                        }));
+                        if let Some((title, ids)) = result {
+                            pending_ids.titles.extend(ids.titles);
+                            pending_ids.entries.extend(ids.entries);
+                            new_titles.insert(title.id.clone(), title);
+                        }
                     }
-                    Ok(None) => {}
                     Err(error) => {
                         tracing::warn!("Library scan task failed: {}", error);
+                        scan_issues.push(StorageIssue::new(&library.path, &library.path, format!("Library scan task failed: {error}")));
                     }
                 }
             }
@@ -283,6 +380,23 @@ async fn scan_inner(
 
     // Mark items in database as unavailable if not found during scan
     ids::mark_unavailable(library).await?;
+    scan_issues.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then(left.message.cmp(&right.message))
+    });
+    scan_issues.dedup_by(|left, right| left.path == right.path && left.message == right.message);
+    let measured_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    library.storage_report = Some(Arc::new(storage::aggregate(
+        &library.path,
+        &library.titles,
+        Some(measured_at),
+        false,
+        scan_issues,
+    )));
     if let Some(publisher) = publisher {
         library.cache.lock().await.clear();
         publisher.store(Arc::new(library.clone()));
@@ -313,8 +427,13 @@ async fn save_to_cache_background(library: &Library) {
     };
     let path = library.path.clone();
     let titles = Arc::clone(&library.titles);
+    let report = library.storage_report();
     tokio::spawn(async move {
-        match file_manager.save_shared(&path, &titles).await {
+        let issues = report
+            .as_ref()
+            .map(|report| report.issues.as_slice())
+            .unwrap_or_default();
+        match file_manager.save_shared(&path, &titles, issues).await {
             Ok(_) => tracing::info!("Library cache saved successfully in background"),
             Err(e) => tracing::warn!("Failed to save library cache in background: {}", e),
         }

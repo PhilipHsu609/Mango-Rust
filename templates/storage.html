@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Storage{% endblock %}
+{% block head %}
+<style>
+  [x-cloak] { display: none !important; }
+  .storage-total { font-size: 2rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .storage-table { table-layout: fixed; width: 100%; }
+  .storage-table th:last-child, .storage-table td:last-child { width: 9.5rem; text-align: right; }
+  .storage-table td { vertical-align: top; overflow-wrap: anywhere; }
+  .storage-size { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .storage-bar { height: 4px; margin: .35rem 0 0; border-radius: 2px; overflow: hidden; background: rgba(128, 128, 128, .25); }
+  .storage-bar-fill { height: 100%; min-width: 2px; background: #1e87f0; }
+  .storage-toggle { display: inline-block; width: 1.25rem; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; text-align: left; }
+  .storage-sort { padding: 0; border: 0; background: none; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; cursor: pointer; }
+  .storage-toggle { flex: none; }
+  .storage-table summary { cursor: pointer; }
+  @media (max-width: 639px) {
+    .storage-table th, .storage-table td { padding-left: 6px; padding-right: 6px; }
+    .storage-table th:last-child, .storage-table td:last-child { width: 6.5rem; }
+    .storage-total { font-size: 1.6rem; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<section x-data="storageComponent()" x-init="init()" x-cloak>
+  <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+    <div class="uk-width-expand">
+      <div class="storage-total" x-text="totalSize()"></div>
+      <div class="uk-text-meta" :title="measuredAt()" x-text="summary()"></div>
+    </div>
+    <button type="button" class="uk-button uk-button-primary uk-flex-none uk-margin-small-left" style="white-space: nowrap" @click="refresh()" :disabled="refreshing || loading" x-text="refreshLabel()">Refresh</button>
+  </div>
+  <p class="uk-text-meta uk-margin-remove-top">Size of indexed archives and image folders. Metadata, covers and unsupported files are not counted.</p>
+
+  <div x-show="error" class="uk-alert-danger" uk-alert><p x-text="error"></p></div>
+  <div x-show="report && report.stale && !error" class="uk-alert-warning" uk-alert><p>This is a previous measurement. Refresh to update it.</p></div>
+  <p x-show="loading" class="uk-text-meta">Loading…</p>
+  <p x-show="!loading && !report" class="uk-text-center uk-text-lead">Not measured yet. Press Refresh to scan the library.</p>
+
+  <details x-show="report && report.issues.length" class="uk-margin-small-bottom">
+    <summary class="uk-text-warning" x-text="report ? problemSummary(report.issues) : ''"></summary>
+    <ul class="uk-list uk-list-divider uk-text-small">
+      <template x-for="(issue, index) in report ? report.issues : []" :key="index">
+        <li>
+          <strong x-text="describeIssue(issue).label"></strong>
+          <span class="uk-text-meta" x-text="describeIssue(issue).path"></span>
+          <div class="uk-text-meta" x-text="issue.message"></div>
+        </li>
+      </template>
+    </ul>
+  </details>
+
+  <div x-show="report && report.titles.length">
+    <div class="uk-flex uk-margin-small-bottom">
+      <input class="uk-input uk-width-expand" type="search" x-model="search" placeholder="Search titles or folders" aria-label="Search titles or folders">
+      <button type="button" class="uk-button uk-button-default uk-flex-none uk-margin-small-left" style="white-space: nowrap" x-show="hasNested()" @click="toggleAll()" x-text="allExpanded() ? 'Collapse all' : 'Expand all'"></button>
+    </div>
+    <p x-show="!rows().length" class="uk-text-meta">No matching titles.</p>
+    <table class="uk-table uk-table-divider uk-table-middle storage-table" x-show="rows().length">
+      <thead><tr>
+        <th :aria-sort="sortKey === 'name' ? (descending ? 'descending' : 'ascending') : 'none'"><button type="button" class="storage-sort" @click="sort('name')" x-text="sortLabel('Title', 'name')">Title</button></th>
+        <th :aria-sort="sortKey === 'size' ? (descending ? 'descending' : 'ascending') : 'none'"><button type="button" class="storage-sort" @click="sort('size')" x-text="sortLabel('Size', 'size')">Size</button></th>
+      </tr></thead>
+      <tbody>
+        <template x-for="row in visibleRows()" :key="row.title.id">
+          <tr>
+            <td>
+              <div class="uk-flex" :style="`padding-left: ${Math.min(row.depth, 4) * 1.25}rem`">
+                <button type="button" class="storage-toggle" @click="toggle(row.title.id)" x-show="row.title.children.length" :aria-expanded="isExpanded(row.title.id) ? 'true' : 'false'" :aria-label="`${isExpanded(row.title.id) ? 'Collapse' : 'Expand'} ${row.title.name}`" x-text="isExpanded(row.title.id) ? '▾' : '▸'"></button>
+                <span class="storage-toggle" x-show="!row.title.children.length"></span>
+                <div>
+                  <a :href="bookUrl(row.title.id)" x-text="row.title.name"></a>
+                  <div class="uk-text-meta" x-text="subline(row.title)"></div>
+                  <details class="uk-text-small" x-show="row.title.issues.length">
+                    <summary class="uk-text-warning" x-text="problemSummary(row.title.issues)"></summary>
+                    <ul class="uk-list">
+                      <template x-for="(issue, index) in row.title.issues" :key="index">
+                        <li>
+                          <strong x-text="describeIssue(issue).label"></strong>
+                          <span class="uk-text-meta" x-text="describeIssue(issue).path"></span>
+                          <div class="uk-text-meta" x-text="issue.message"></div>
+                        </li>
+                      </template>
+                    </ul>
+                  </details>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="storage-size" x-text="titleSize(row.title)"></div>
+              <div class="storage-bar" aria-hidden="true" x-show="share(row.title) !== null"><div class="storage-bar-fill" :style="`width: ${share(row.title)}%`"></div></div>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <div class="uk-text-center uk-margin" x-show="hiddenRows() > 0">
+      <button type="button" class="uk-button uk-button-default" @click="showMore()" x-text="`Show ${Math.min(pageSize, hiddenRows())} more (${hiddenRows()} hidden)`"></button>
+    </div>
+  </div>
+  <p x-show="report && !report.titles.length && !loading" class="uk-text-center uk-text-lead">The library has no indexed titles.</p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/storage.js"></script>
+{% endblock %}

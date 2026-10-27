@@ -234,6 +234,17 @@ pub async fn thumbnail_progress(
     })))
 }
 
+/// GET /api/admin/scan_progress - Root directories completed by the running library scan
+#[utoipa::path(get, path = "/api/admin/scan_progress", tag = "admin", summary = "Get scan progress", responses((status = 200, description = "Scan progress returned")))]
+pub async fn scan_progress(AdminOnly(_username): AdminOnly) -> Json<serde_json::Value> {
+    let progress = crate::library::scan::scan_progress();
+    Json(serde_json::json!({
+        "scanning": progress.scanning,
+        "completed": progress.completed,
+        "total": progress.total,
+    }))
+}
+
 /// POST /api/admin/generate_thumbnails - Start thumbnail generation
 #[utoipa::path(post, path = "/api/admin/generate_thumbnails", tag = "admin", summary = "Generate thumbnails", responses((status = 200, description = "Thumbnail generation started")))]
 pub async fn generate_thumbnails(
