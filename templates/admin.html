@@ -14,7 +14,7 @@
     {% endif %}
   </li>
   <li>
-    <a class="uk-link-reset" @click="scan()">
+    <a class="uk-link-reset" href="#" @click.prevent="scan()">
       <span :style="`${scanning ? 'color:grey' : ''}`">Scan Library Files</span>
       <div class="uk-align-right">
         <div uk-spinner x-show="scanning"></div>
@@ -23,7 +23,7 @@
     </a>
   </li>
   <li>
-    <a class="uk-link-reset" @click="generateThumbnails()">
+    <a class="uk-link-reset" href="#" @click.prevent="generateThumbnails()">
       <span :style="`${generating ? 'color:grey' : ''}`">Generate Thumbnails</span>
       <div class="uk-align-right">
         <span x-show="generating && progress > 0" x-text="`${(progress * 100).toFixed(2)}%`"></span>
