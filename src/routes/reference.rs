@@ -91,6 +91,8 @@ All endpoints except `/api/login` require authentication. After logging in, the 
         crate::routes::admin::maintenance::get_missing_entries,
         crate::routes::admin::maintenance::delete_all_missing_entries,
         crate::routes::admin::maintenance::delete_missing_entry,
+        crate::routes::admin::entries::delete_preview,
+        crate::routes::admin::entries::delete_entry,
         crate::routes::admin::users::get_users,
         crate::routes::admin::users::create_user,
         crate::routes::admin::users::update_user,
@@ -107,7 +109,8 @@ All endpoints except `/api/login` require authentication. After logging in, the 
     components(schemas(
         crate::library::storage::StorageReport,
         crate::library::storage::StorageTitle,
-        crate::library::storage::StorageIssue
+        crate::library::storage::StorageIssue,
+        crate::library::entry_delete::DeletePreview
     ))
 )]
 pub struct ApiDoc;

@@ -62,4 +62,17 @@ describe('Mango CORS and preflight contract', () => {
       expect(response.headers.has('access-control-allow-origin')).toBe(false);
     }
   });
+
+  it('gives the archive entry delete routes no CORS, so other sites cannot send a delete', async () => {
+    const preflight = await fetch(`${BASE_URL}/api/admin/entry-delete/title/entry`, {
+      method: 'OPTIONS',
+      headers: { Origin: origin, 'Access-Control-Request-Method': 'DELETE' },
+    });
+    expect(preflight.headers.has('access-control-allow-origin')).toBe(false);
+    const missing = await fetch(`${BASE_URL}/api/admin/entries/missing`, {
+      method: 'OPTIONS',
+      headers: { Origin: origin, 'Access-Control-Request-Method': 'DELETE' },
+    });
+    expectMangoCors(missing);
+  });
 });

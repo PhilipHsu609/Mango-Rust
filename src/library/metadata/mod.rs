@@ -127,6 +127,13 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Remove one entry's keys from the title folder's `info.json`.
+    pub async fn remove_entry(&self, path: &Path, entry_title: &str) -> Result<()> {
+        self.update(path, |info| info.remove_entry(entry_title))
+            .await
+            .map(|_| ())
+    }
+
     pub async fn read_all(&self, title: &Title, username: &str) -> Result<()> {
         for title in std::iter::once(title).chain(title.deep_titles()) {
             self.update(&title.path, |info| {

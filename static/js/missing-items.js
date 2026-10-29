@@ -26,7 +26,7 @@ const component = () => {
 			});
 		},
 		rmAll() {
-			UIkit.modal.confirm('Are you sure? All metadata associated with these items, including their tags and thumbnails, will be deleted from the database.', {
+			UIkit.modal.confirm('Are you sure? All metadata associated with these items, including their tags and thumbnails, will be deleted from the database. This removes database records only, never files.', {
 				labels: {
 					ok: 'Yes, delete them',
 					cancel: 'Cancel'

@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod entry;
+pub mod entry_delete;
 pub mod media;
 pub mod metadata;
 pub mod ordering;

@@ -3,11 +3,23 @@
 
 {% macro render_card(item, progress, page, is_admin) %}
 <div class="item"{% if item.is_entry %} id="{{ item.id }}"{% endif %}>
-  <div class="acard{% if item.is_entry && item.err_msg.is_none() %} is_entry{% endif %}"
+  {# Admins on title pages open the entry modal for broken entries too, so they can delete them. #}
+  <div class="acard{% if item.is_entry && (item.err_msg.is_none() || (is_admin && page == "title")) %} is_entry{% endif %}"
     {% if item.is_entry %}
       {% match item.err_msg %}
         {% when Some with (err) %}
+        {% if is_admin && page == "title" %}
+        data-encoded-path="{{ item.encoded_path }}"
+        data-pages="{{ item.pages }}"
+        data-progress="{{ progress|fmt("{:.1}") }}"
+        data-encoded-book-title="{{ item.encoded_book_title }}"
+        data-encoded-title="{{ item.encoded_title }}"
+        data-book-id="{{ item.book_id }}"
+        data-id="{{ item.id }}"
+        data-error="{{ err }}"
+        {% else %}
         onclick="location='/reader/{{ item.book_id }}/{{ item.id }}'"
+        {% endif %}
         {% when None %}
         data-encoded-path="{{ item.encoded_path }}"
         data-pages="{{ item.pages }}"

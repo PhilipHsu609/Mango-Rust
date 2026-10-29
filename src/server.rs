@@ -22,7 +22,7 @@ use crate::{
     library::{scan::spawn_periodic_scanner, Library},
     routes::presentation::NavigationState,
     routes::{
-        admin::{cache, dashboard, maintenance, storage, users},
+        admin::{cache, dashboard, entries, maintenance, storage, users},
         api::{catalog, media, metadata, reading, tags},
         book::get_book,
         login::{api_login, get_login, logout, post_login},
@@ -57,6 +57,11 @@ fn preflight_path(path: &str) -> bool {
 
 async fn mango_cors(request: Request<Body>, next: Next) -> Response {
     let path = request.uri().path();
+    // Deleting library files is not part of Mango's API. Without CORS headers,
+    // browsers refuse cross-site DELETE preflights in every auth mode.
+    if path.starts_with("/api/admin/entry-delete/") {
+        return next.run(request).await;
+    }
     let preflight = request.method() == Method::OPTIONS && preflight_path(path);
     let api_path = path.starts_with("/api");
     let mut response = if preflight {
@@ -331,6 +336,10 @@ pub async fn run(config: Config) -> Result<()> {
         .route(
             "/api/admin/entries/missing/:id",
             delete(maintenance::delete_missing_entry),
+        )
+        .route(
+            "/api/admin/entry-delete/:tid/:eid",
+            get(entries::delete_preview).delete(entries::delete_entry),
         )
         .route(
             "/api/admin/users",
