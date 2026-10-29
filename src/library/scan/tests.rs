@@ -479,3 +479,25 @@ async fn rescan_and_publish_replaces_the_shared_snapshot() {
     assert_eq!(stats.entries, 1);
     assert_eq!(shared.load().get_titles().len(), 1);
 }
+
+#[tokio::test]
+async fn rescans_set_a_malformed_info_json_aside_and_keep_the_title() {
+    let (_temp, config, storage) = scan_config(false).await;
+    let title = config.library_path.join("Series");
+    std::fs::create_dir(&title).unwrap();
+    std::fs::write(title.join("1.cbz"), b"archive").unwrap();
+    std::fs::write(title.join("info.json"), "not json").unwrap();
+    let mut library = Library::new(config.library_path.clone(), storage, &config);
+    scan(&mut library, None, None).await.unwrap();
+    assert_eq!(library.get_titles().len(), 1);
+    let backups: Vec<_> = std::fs::read_dir(&title)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("info.json.malformed-"))
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(title.join(&backups[0])).unwrap(),
+        "not json"
+    );
+}

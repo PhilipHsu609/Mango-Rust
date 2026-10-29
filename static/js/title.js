@@ -14,18 +14,23 @@ const setupAcard = () => {
 			$(card).attr('data-encoded-book-title'),
 			$(card).attr('data-encoded-title'),
 			$(card).attr('data-book-id'),
-			$(card).attr('data-id')
+			$(card).attr('data-id'),
+			$(card).attr('data-error')
 		);
 	});
 };
 
-function showModal(encodedPath, pages, percentage, encodedeTitle, encodedEntryTitle, titleID, entryID) {
+function showModal(encodedPath, pages, percentage, encodedeTitle, encodedEntryTitle, titleID, entryID, error) {
 	const zipPath = decodeURIComponent(encodedPath);
 	const title = decodeURIComponent(encodedeTitle);
 	const entry = decodeURIComponent(encodedEntryTitle);
 	$('#modal button, #modal a').each(function() {
 		$(this).removeAttr('hidden');
 	});
+	// Broken archives cannot be read; the modal only offers Edit, Download, and Delete.
+	const broken = Boolean(error);
+	$('#modal-read-section, #modal-progress-section, #pages-text').prop('hidden', broken);
+	$('#error-text').prop('hidden', !broken).text(error || '');
 	if (percentage === 0) {
 		$('#continue-btn').attr('hidden', '');
 		$('#unread-btn').attr('hidden', '');
@@ -54,6 +59,7 @@ function showModal(encodedPath, pages, percentage, encodedeTitle, encodedEntryTi
 	});
 
 	$('#modal-edit-btn').attr('onclick', `edit("${entryID}")`);
+	$('#modal-delete-btn').attr('onclick', `deleteEntry("${titleID}", "${entryID}"); return false;`);
 
 	$('#modal-download-btn').attr('href', `${base_url}api/download/${titleID}/${entryID}`);
 
@@ -64,6 +70,86 @@ UIkit.util.on(document, 'hidden', '#modal', () => {
 	$('#read-btn').off('click');
 	$('#unread-btn').off('click');
 });
+
+const escapeHTML = (text) => String(text)
+	.replace(/&/g, '&amp;')
+	.replace(/</g, '&lt;')
+	.replace(/>/g, '&gt;')
+	.replace(/"/g, '&quot;')
+	.replace(/'/g, '&#39;');
+
+// Handler errors are JSON; auth and extractor rejections are plain text.
+const responseError = (jqXHR) => {
+	if (jqXHR.responseJSON && jqXHR.responseJSON.error) return jqXHR.responseJSON.error;
+	if (jqXHR.responseText) return jqXHR.responseText;
+	return `[${jqXHR.status}] ${jqXHR.statusText}`;
+};
+
+const deleteEntry = (titleID, entryID) => {
+	const url = `${base_url}api/admin/entry-delete/${titleID}/${entryID}`;
+	$.ajax({
+			method: 'GET',
+			url: url,
+			dataType: 'json'
+		})
+		.done(preview => {
+			const lines = [
+				`<p>Permanently delete <strong>${escapeHTML(preview.entry_name)}</strong> (${escapeHTML(preview.size_label)})?</p>`,
+				'<p>Reading progress for all users will be lost.</p>'
+			];
+			if (preview.removes_title)
+				lines.push('<p>This is the last entry; the title will disappear from the library.</p>');
+			UIkit.modal.confirm(lines.join(''), {
+				labels: {
+					ok: 'Delete file',
+					cancel: 'Cancel'
+				}
+			}).then(() => sendDelete(url, preview), () => {});
+		})
+		.fail(jqXHR => {
+			UIkit.modal.alert(escapeHTML(responseError(jqXHR)));
+		});
+};
+
+const sendDelete = (url, preview) => {
+	// Cannot be dismissed, so the admin cannot submit twice while it waits.
+	const waiting = UIkit.modal.dialog('<p class="uk-modal-body">Deleting… (waits for any running scan)</p>', {
+		bgClose: false,
+		escClose: false
+	});
+	const query = $.param({
+		size: preview.size_bytes,
+		mtime_ns: preview.mtime_ns
+	});
+	$.ajax({
+			method: 'DELETE',
+			url: `${url}?${query}`,
+			dataType: 'json'
+		})
+		.done(result => {
+			waiting.hide();
+			const leave = () => {
+				if (result.removes_title)
+					location.href = base_url + result.redirect.replace(/^\//, '');
+				else
+					location.reload();
+			};
+			if (result.warnings.length > 0)
+				UIkit.modal.alert(result.warnings.map(warning => `<p>${escapeHTML(warning)}</p>`).join('')).then(leave);
+			else
+				leave();
+		})
+		.fail(jqXHR => {
+			waiting.hide();
+			if (jqXHR.status === 0) {
+				UIkit.modal.alert('The request did not finish. The delete may have completed; reload to check.');
+				return;
+			}
+			const shown = UIkit.modal.alert(escapeHTML(responseError(jqXHR)));
+			if (jqXHR.status === 404)
+				shown.then(() => location.reload());
+		});
+};
 
 const updateProgress = (tid, eid, page) => {
 	let url = `${base_url}api/progress/${tid}/${page}`

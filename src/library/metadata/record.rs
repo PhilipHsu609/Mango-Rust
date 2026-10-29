@@ -182,6 +182,24 @@ impl TitleInfo {
         self.date_added.retain(|key, _| !is_orphan(key));
     }
 
+    /// Drop every key stored for one entry: all users' progress and last-read
+    /// times, its display name, cover, and date added.
+    pub fn remove_entry(&mut self, entry_title: &str) {
+        for user_progress in self.progress.values_mut() {
+            user_progress.remove(entry_title);
+        }
+        self.progress
+            .retain(|_, user_progress| !user_progress.is_empty());
+        for user_last_read in self.last_read.values_mut() {
+            user_last_read.remove(entry_title);
+        }
+        self.last_read
+            .retain(|_, user_last_read| !user_last_read.is_empty());
+        self.entry_display_name.remove(entry_title);
+        self.entry_cover_url.remove(entry_title);
+        self.date_added.remove(entry_title);
+    }
+
     /// Normalize persisted timestamps to Mango's UTC RFC 3339 representation.
     pub fn normalize_entry_timestamps(&mut self) {
         for user_last_read in self.last_read.values_mut() {
@@ -244,6 +262,52 @@ fn move_entry_key<T>(values: &mut HashMap<String, T>, old_key: &str, new_key: &s
 #[cfg(test)]
 mod tests {
     use super::TitleInfo;
+
+    #[test]
+    fn remove_entry_clears_every_key_for_that_entry_only() {
+        let mut info = TitleInfo::default();
+        for user in ["alice", "bob"] {
+            info.progress.insert(
+                user.to_string(),
+                [("Vol 1".to_string(), 3), ("Vol 2".to_string(), 5)]
+                    .into_iter()
+                    .collect(),
+            );
+            info.last_read.insert(
+                user.to_string(),
+                [("Vol 1".to_string(), "then".to_string())]
+                    .into_iter()
+                    .collect(),
+            );
+        }
+        // carol has only the removed entry, so her maps become empty.
+        info.progress.insert(
+            "carol".to_string(),
+            [("Vol 1".to_string(), 1)].into_iter().collect(),
+        );
+        for (key, value) in [("Vol 1", "one"), ("Vol 2", "two")] {
+            info.entry_display_name
+                .insert(key.to_string(), value.to_string());
+            info.entry_cover_url
+                .insert(key.to_string(), value.to_string());
+            info.date_added.insert(key.to_string(), value.to_string());
+        }
+
+        info.remove_entry("Vol 1");
+
+        for user in ["alice", "bob"] {
+            assert_eq!(info.progress[user].get("Vol 1"), None);
+            assert_eq!(info.progress[user]["Vol 2"], 5);
+        }
+        assert!(!info.progress.contains_key("carol"));
+        assert!(info.last_read.is_empty());
+        assert_eq!(
+            info.entry_display_name.keys().collect::<Vec<_>>(),
+            ["Vol 2"]
+        );
+        assert_eq!(info.entry_cover_url.keys().collect::<Vec<_>>(), ["Vol 2"]);
+        assert_eq!(info.date_added.keys().collect::<Vec<_>>(), ["Vol 2"]);
+    }
 
     #[test]
     fn migrate_entry_id_to_title_preserves_title_values_and_returns_legacy_date() {
