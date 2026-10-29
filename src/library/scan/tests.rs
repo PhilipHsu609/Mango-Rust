@@ -1,46 +1,11 @@
 use super::{scan, Library};
 use crate::library::storage::StorageReport;
-use crate::{Config, Storage};
+use crate::library::test_support::scan_config;
 use std::sync::Arc;
-
-async fn scan_config() -> (tempfile::TempDir, Config, Storage) {
-    let temp = tempfile::tempdir().unwrap();
-    let library_path = temp.path().join("library");
-    std::fs::create_dir(&library_path).unwrap();
-    let db_path = temp.path().join("test.db");
-    std::fs::File::create(&db_path).unwrap();
-    let storage = Storage::new(&format!("sqlite://{}", db_path.display()))
-        .await
-        .unwrap();
-    let config = Config {
-        host: "127.0.0.1".to_string(),
-        port: 0,
-        base_url: "/".to_string(),
-        session_secret: "test".to_string(),
-        library_path,
-        db_path,
-        queue_db_path: temp.path().join("queue.db"),
-        scan_interval_minutes: 0,
-        thumbnail_generation_interval_hours: 0,
-        log_level: "info".to_string(),
-        upload_path: temp.path().join("uploads"),
-        plugin_path: temp.path().join("plugins"),
-        download_timeout_seconds: 30,
-        library_cache_path: temp.path().join("library-cache.bin"),
-        cache_enabled: false,
-        cache_size_mbs: 0,
-        cache_log_enabled: false,
-        disable_login: false,
-        default_username: String::new(),
-        auth_proxy_header_name: String::new(),
-        plugin_update_interval_hours: 24,
-    };
-    (temp, config, storage)
-}
 
 #[tokio::test]
 async fn rescan_detects_changes_and_preserves_ids() {
-    let (_temp, config, storage) = scan_config().await;
+    let (_temp, config, storage) = scan_config(false).await;
     let library_path = &config.library_path;
     let title_path = library_path.join("Series");
     std::fs::create_dir(&title_path).unwrap();
@@ -133,7 +98,7 @@ async fn rescan_detects_changes_and_preserves_ids() {
 
 #[tokio::test]
 async fn rescan_publishes_completed_roots_before_finishing() {
-    let (_temp, config, storage) = scan_config().await;
+    let (_temp, config, storage) = scan_config(false).await;
     let title_path = config.library_path.join("Series");
     std::fs::create_dir(&title_path).unwrap();
     std::fs::write(title_path.join("Chapter.cbz"), b"invalid archive").unwrap();
@@ -185,7 +150,7 @@ async fn rescan_publishes_completed_roots_before_finishing() {
 #[cfg(unix)]
 #[tokio::test]
 async fn moved_archives_keep_ids_from_matching_trailing_paths() {
-    let (_temp, config, storage) = scan_config().await;
+    let (_temp, config, storage) = scan_config(false).await;
     let old_root = config.library_path.join("old");
     let volume = old_root.join("volume-1");
     let other = old_root.join("chapter-2");
@@ -220,7 +185,7 @@ async fn moved_archives_keep_ids_from_matching_trailing_paths() {
 
 #[tokio::test]
 async fn storage_counts_only_indexed_payloads_with_mixed_loose_ownership() {
-    let (_temp, config, storage) = scan_config().await;
+    let (_temp, config, storage) = scan_config(false).await;
     let series = config.library_path.join("Series");
     let volume = series.join("Volume");
     let chapter = volume.join("Chapter");
@@ -270,7 +235,7 @@ async fn storage_counts_only_indexed_payloads_with_mixed_loose_ownership() {
 
 #[tokio::test]
 async fn unknown_cached_sizes_are_remeasured_even_with_unchanged_fingerprints() {
-    let (_temp, config, storage) = scan_config().await;
+    let (_temp, config, storage) = scan_config(false).await;
     let title_path = config.library_path.join("Series");
     std::fs::create_dir(&title_path).unwrap();
     std::fs::write(title_path.join("Zero.cbz"), b"").unwrap();
@@ -308,7 +273,7 @@ async fn unknown_cached_sizes_are_remeasured_even_with_unchanged_fingerprints() 
 
 #[tokio::test]
 async fn failed_refresh_retains_previous_observation_and_marks_it_historical() {
-    let (_temp, config, storage) = scan_config().await;
+    let (_temp, config, storage) = scan_config(false).await;
     std::fs::create_dir(config.library_path.join("Series")).unwrap();
     std::fs::write(config.library_path.join("Series/1.cbz"), b"archive").unwrap();
     let mut previous = Library::new(config.library_path.clone(), storage.clone(), &config);
@@ -356,7 +321,7 @@ async fn failed_refresh_retains_previous_observation_and_marks_it_historical() {
 #[tokio::test]
 async fn symbolic_links_are_followed_and_counted_like_any_other_entry() {
     use std::os::unix::fs::symlink;
-    let (temp, config, storage) = scan_config().await;
+    let (temp, config, storage) = scan_config(false).await;
     let external = temp.path().join("external");
     std::fs::create_dir_all(external.join("Linked Series")).unwrap();
     std::fs::write(external.join("Linked Series/1.cbz"), vec![0; 100]).unwrap();
@@ -388,7 +353,7 @@ async fn symbolic_links_are_followed_and_counted_like_any_other_entry() {
 
 #[tokio::test]
 async fn cache_startup_reports_historical_sizes_without_a_fabricated_timestamp() {
-    let (_temp, mut config, storage) = scan_config().await;
+    let (_temp, mut config, storage) = scan_config(false).await;
     std::fs::create_dir(config.library_path.join("Series")).unwrap();
     std::fs::write(config.library_path.join("Series/1.cbz"), b"archive").unwrap();
     let mut library = Library::new(config.library_path.clone(), storage.clone(), &config);
@@ -411,7 +376,7 @@ async fn cache_startup_reports_historical_sizes_without_a_fabricated_timestamp()
 #[tokio::test]
 async fn unreadable_root_regions_do_not_produce_complete_smaller_reports() {
     use std::os::unix::fs::PermissionsExt;
-    let (_temp, mut config, storage) = scan_config().await;
+    let (_temp, mut config, storage) = scan_config(false).await;
     let title = config.library_path.join("Series");
     std::fs::create_dir(&title).unwrap();
     std::fs::write(title.join("1.cbz"), b"archive").unwrap();
@@ -453,7 +418,7 @@ async fn unreadable_root_regions_do_not_produce_complete_smaller_reports() {
 
 #[tokio::test]
 async fn loose_entries_keep_their_payload_kind_with_archive_named_directories() {
-    let (_temp, config, storage) = scan_config().await;
+    let (_temp, config, storage) = scan_config(false).await;
     let pages = config.library_path.join("Series/Chapter.cbz");
     std::fs::create_dir_all(&pages).unwrap();
     std::fs::write(pages.join("001.png"), b"image").unwrap();
@@ -470,7 +435,7 @@ async fn loose_entries_keep_their_payload_kind_with_archive_named_directories() 
 #[cfg(unix)]
 #[tokio::test]
 async fn distinct_hard_linked_entry_paths_count_separately() {
-    let (_temp, config, storage) = scan_config().await;
+    let (_temp, config, storage) = scan_config(false).await;
     let title = config.library_path.join("Series");
     std::fs::create_dir(&title).unwrap();
     std::fs::write(title.join("1.cbz"), b"archive").unwrap();
@@ -484,4 +449,33 @@ async fn distinct_hard_linked_entry_paths_count_separately() {
     assert_eq!(report.total_bytes, 14);
     assert_eq!(report.titles[0].measured_entries, 2);
     assert!(report.complete);
+}
+
+#[tokio::test]
+async fn scans_save_the_cache_before_returning() {
+    let (_temp, config, storage) = scan_config(true).await;
+    let title = config.library_path.join("Series");
+    std::fs::create_dir(&title).unwrap();
+    std::fs::write(title.join("1.cbz"), b"archive").unwrap();
+    let mut library = Library::new(config.library_path.clone(), storage, &config);
+    scan(&mut library, None, None).await.unwrap();
+    assert!(config.library_cache_path.exists());
+}
+
+#[tokio::test]
+async fn rescan_and_publish_replaces_the_shared_snapshot() {
+    let (_temp, config, storage) = scan_config(false).await;
+    let title = config.library_path.join("Series");
+    std::fs::create_dir(&title).unwrap();
+    std::fs::write(title.join("1.cbz"), b"archive").unwrap();
+    let empty = Library::new(config.library_path.clone(), storage.clone(), &config);
+    let shared = Arc::new(arc_swap::ArcSwap::from_pointee(empty));
+    let guard = super::SCAN_LOCK.lock().await;
+    let stats = super::rescan_and_publish(&shared, &storage, &config, &guard)
+        .await
+        .unwrap();
+    drop(guard);
+    assert_eq!(stats.titles, 1);
+    assert_eq!(stats.entries, 1);
+    assert_eq!(shared.load().get_titles().len(), 1);
 }

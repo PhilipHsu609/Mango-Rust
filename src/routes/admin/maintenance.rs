@@ -29,25 +29,16 @@ pub async fn scan_library(
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<ScanResponse>> {
     let start = Instant::now();
-    let _scan_guard = crate::library::scan::SCAN_LOCK.lock().await;
-
-    // Publish completed roots while building the replacement library.
-    let mut new_lib = crate::library::Library::new(
-        state.config.library_path.clone(),
-        state.storage.clone(),
+    let scan_guard = crate::library::scan::SCAN_LOCK.lock().await;
+    crate::library::scan::rescan_and_publish(
+        &state.library,
+        &state.storage,
         &state.config,
-    );
-    let previous = state.library.load_full();
-    crate::library::scan::scan(
-        &mut new_lib,
-        Some(previous),
-        Some(std::sync::Arc::clone(&state.library)),
+        &scan_guard,
     )
     .await?;
-    let titles = new_lib.get_titles().len();
-
-    // Atomically swap the new library in
-    state.library.store(std::sync::Arc::new(new_lib));
+    // Mango reports root titles only; `LibraryStats::titles` also counts nested ones.
+    let titles = state.library.load().get_titles().len();
 
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
@@ -148,7 +139,7 @@ pub async fn delete_missing_entry(
     Path(id): Path<String>,
 ) -> Json<MissingItemsMutationResponse> {
     match state.storage.delete_missing_entry(&id).await {
-        Ok(()) => Json(MissingItemsMutationResponse {
+        Ok(_) => Json(MissingItemsMutationResponse {
             success: true,
             error: None,
         }),

@@ -106,6 +106,8 @@ pub async fn cache_save_library_api(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<serde_json::Value>> {
+    // Serialize with scans, which also write the cache file.
+    let _scan_guard = crate::library::scan::SCAN_LOCK.lock().await;
     let lib = state.library.load();
 
     let cache = lib.cache().lock().await;
@@ -127,6 +129,8 @@ pub async fn cache_load_library_api(
     State(state): State<AppState>,
     AdminOnly(_username): AdminOnly,
 ) -> Result<Json<serde_json::Value>> {
+    // A scan publishing mid-load would otherwise be overwritten by an older cache.
+    let _scan_guard = crate::library::scan::SCAN_LOCK.lock().await;
     // Build new library instance and try to load from cache
     let mut new_lib = crate::library::Library::new(
         state.config.library_path.clone(),
