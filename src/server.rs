@@ -203,20 +203,16 @@ pub async fn run(config: Config) -> Result<()> {
         let config_clone = config.clone();
         tokio::spawn(async move {
             let start = std::time::Instant::now();
-            let _scan_guard = crate::library::scan::SCAN_LOCK.lock().await;
-            // Build new library instance in background
-            let mut new_lib = Library::new(
-                config_clone.library_path.clone(),
-                storage_clone,
+            let scan_guard = crate::library::scan::SCAN_LOCK.lock().await;
+            match crate::library::scan::rescan_and_publish(
+                &library_clone,
+                &storage_clone,
                 &config_clone,
-            );
-            match crate::library::scan::scan(&mut new_lib, None, Some(Arc::clone(&library_clone)))
-                .await
+                &scan_guard,
+            )
+            .await
             {
-                Ok(_) => {
-                    let stats = new_lib.stats();
-                    // Atomically swap the new library in
-                    library_clone.store(Arc::new(new_lib));
+                Ok(stats) => {
                     tracing::info!(
                         "Background library scan completed in {:.2}s - {} titles, {} entries",
                         start.elapsed().as_secs_f64(),

@@ -410,14 +410,14 @@ async fn scan_inner(
         scan_duration.as_secs_f64()
     );
 
-    // Save library to cache in background (non-blocking)
-    save_to_cache_background(library).await;
+    // Save before the caller releases `SCAN_LOCK`, so saves cannot land out of order.
+    save_to_cache(library).await;
 
     Ok(())
 }
 
-/// Save library to cache in background task (non-blocking)
-async fn save_to_cache_background(library: &Library) {
+/// Save the scanned library to the persistent cache file; failures only log.
+async fn save_to_cache(library: &Library) {
     let file_manager = {
         let cache = library.cache.lock().await;
         if cache.stats().size_limit == 0 {
@@ -425,19 +425,39 @@ async fn save_to_cache_background(library: &Library) {
         }
         cache.file_manager()
     };
-    let path = library.path.clone();
-    let titles = Arc::clone(&library.titles);
     let report = library.storage_report();
-    tokio::spawn(async move {
-        let issues = report
-            .as_ref()
-            .map(|report| report.issues.as_slice())
-            .unwrap_or_default();
-        match file_manager.save_shared(&path, &titles, issues).await {
-            Ok(_) => tracing::info!("Library cache saved successfully in background"),
-            Err(e) => tracing::warn!("Failed to save library cache in background: {}", e),
-        }
-    });
+    let issues = report
+        .as_ref()
+        .map(|report| report.issues.as_slice())
+        .unwrap_or_default();
+    match file_manager
+        .save_shared(&library.path, &library.titles, issues)
+        .await
+    {
+        Ok(_) => tracing::info!("Library cache saved successfully"),
+        Err(e) => tracing::warn!("Failed to save library cache: {}", e),
+    }
+}
+
+/// Scan a replacement for the published library, publishing completed roots as
+/// they finish, then publish the result. `_held` documents, by convention, that
+/// the caller holds `SCAN_LOCK`; the lock is not reentrant.
+pub async fn rescan_and_publish(
+    shared: &SharedLibrary,
+    storage: &Storage,
+    config: &crate::Config,
+    _held: &tokio::sync::MutexGuard<'_, ()>,
+) -> Result<crate::library::LibraryStats> {
+    let mut library = Library::new(config.library_path.clone(), storage.clone(), config);
+    scan(
+        &mut library,
+        Some(shared.load_full()),
+        Some(Arc::clone(shared)),
+    )
+    .await?;
+    let stats = library.stats();
+    shared.store(Arc::new(library));
+    Ok(stats)
 }
 
 /// Refresh metadata while aligning changed title trees with Mango keys.
@@ -531,23 +551,14 @@ pub fn spawn_periodic_scanner(
 
         loop {
             interval.tick().await;
-            let _scan_guard = SCAN_LOCK.lock().await;
+            let scan_guard = SCAN_LOCK.lock().await;
 
             tracing::info!("Starting periodic library scan");
             let periodic_start = std::time::Instant::now();
 
-            // Build new library instance in background (no lock held)
-            let mut new_lib = Library::new(config.library_path.clone(), storage.clone(), &config);
-
-            let previous = library.load_full();
-            match scan(&mut new_lib, Some(previous), Some(Arc::clone(&library))).await {
-                Ok(_) => {
+            match rescan_and_publish(&library, &storage, &config, &scan_guard).await {
+                Ok(stats) => {
                     let periodic_duration = periodic_start.elapsed();
-                    let stats = new_lib.stats();
-
-                    // Publish the completed library snapshot.
-                    library.store(Arc::new(new_lib));
-
                     tracing::info!(
                         "Periodic library scan completed ({:.2}s) - {} titles, {} entries",
                         periodic_duration.as_secs_f64(),

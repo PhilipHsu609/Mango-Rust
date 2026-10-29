@@ -408,18 +408,29 @@ impl Storage {
             .collect())
     }
 
-    /// Delete a specific unavailable entry record.
-    pub async fn delete_missing_entry(&self, id: &str) -> Result<()> {
+    /// Delete a specific unavailable entry record and its cached dimensions.
+    /// Returns the number of entry records deleted (0 if the entry is not missing).
+    pub async fn delete_missing_entry(&self, id: &str) -> Result<u64> {
+        let mut tx = self.pool.begin().await?;
+        // `dimensions` has no foreign key, so it does not cascade like thumbnails.
+        sqlx::query(
+            "DELETE FROM dimensions WHERE entry_id IN \
+             (SELECT id FROM ids WHERE id = ? AND unavailable = 1)",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
         let result = sqlx::query("DELETE FROM ids WHERE id = ? AND unavailable = 1")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
 
         if result.rows_affected() > 0 {
             tracing::info!("Deleted missing entry: {}", id);
         }
 
-        Ok(())
+        Ok(result.rows_affected())
     }
 
     /// Delete a specific unavailable title record.
@@ -447,11 +458,18 @@ impl Storage {
         Ok(rows_affected)
     }
 
-    /// Delete all entries marked unavailable.
+    /// Delete all entries marked unavailable, with their cached dimensions.
     pub async fn delete_all_missing_entries(&self) -> Result<u64> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            "DELETE FROM dimensions WHERE entry_id IN (SELECT id FROM ids WHERE unavailable = 1)",
+        )
+        .execute(&mut *tx)
+        .await?;
         let result = sqlx::query("DELETE FROM ids WHERE unavailable = 1")
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
 
         let rows_affected = result.rows_affected();
         tracing::info!("Deleted {} missing entries", rows_affected);
@@ -751,5 +769,73 @@ mod tests {
 
         assert_eq!(storage.delete_all_missing_entries().await.unwrap(), 1);
         assert!(storage.get_missing_entries().await.unwrap().is_empty());
+    }
+
+    async fn insert_entry_with_cached_rows(storage: &Storage, id: &str, unavailable: bool) {
+        sqlx::query("INSERT INTO ids (id, path, signature, unavailable) VALUES (?, ?, ?, ?)")
+            .bind(id)
+            .bind(format!("Series/{id}.cbz"))
+            .bind(format!("{id}-signature"))
+            .bind(unavailable)
+            .execute(&storage.pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO thumbnails (id, data, filename, mime, size) VALUES (?, x'00', 't.jpg', 'image/jpeg', 1)",
+        )
+        .bind(id)
+        .execute(&storage.pool)
+        .await
+        .unwrap();
+        storage
+            .save_dimensions(id, &[(0, 100, 200), (1, 100, 200)])
+            .await
+            .unwrap();
+    }
+
+    async fn cached_row_counts(storage: &Storage, id: &str) -> (i64, i64, i64) {
+        let count = |table: &'static str, column: &'static str| {
+            let sql = format!("SELECT COUNT(*) FROM {table} WHERE {column} = ?");
+            async move {
+                sqlx::query_scalar::<_, i64>(&sql)
+                    .bind(id)
+                    .fetch_one(&storage.pool)
+                    .await
+                    .unwrap()
+            }
+        };
+        (
+            count("ids", "id").await,
+            count("thumbnails", "id").await,
+            count("dimensions", "entry_id").await,
+        )
+    }
+
+    #[tokio::test]
+    async fn deleting_missing_entries_removes_their_cached_rows_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let database_path = dir.path().join("test.db");
+        std::fs::File::create(&database_path).unwrap();
+        let storage = Storage::new(&format!("sqlite://{}", database_path.display()))
+            .await
+            .unwrap();
+        insert_entry_with_cached_rows(&storage, "missing-one", true).await;
+        insert_entry_with_cached_rows(&storage, "missing-two", true).await;
+        insert_entry_with_cached_rows(&storage, "available", false).await;
+
+        // An available entry is never deleted, and keeps its dimensions.
+        assert_eq!(storage.delete_missing_entry("available").await.unwrap(), 0);
+        assert_eq!(cached_row_counts(&storage, "available").await, (1, 1, 2));
+
+        assert_eq!(
+            storage.delete_missing_entry("missing-one").await.unwrap(),
+            1
+        );
+        assert_eq!(cached_row_counts(&storage, "missing-one").await, (0, 0, 0));
+        assert_eq!(cached_row_counts(&storage, "missing-two").await, (1, 1, 2));
+
+        assert_eq!(storage.delete_all_missing_entries().await.unwrap(), 1);
+        assert_eq!(cached_row_counts(&storage, "missing-two").await, (0, 0, 0));
+        assert_eq!(cached_row_counts(&storage, "available").await, (1, 1, 2));
     }
 }
