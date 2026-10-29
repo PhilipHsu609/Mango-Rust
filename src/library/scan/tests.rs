@@ -416,7 +416,7 @@ async fn unreadable_root_regions_do_not_produce_complete_smaller_reports() {
     std::fs::create_dir(&title).unwrap();
     std::fs::write(title.join("1.cbz"), b"archive").unwrap();
     let permissions = std::fs::metadata(&title).unwrap().permissions();
-    std::fs::set_permissions(&title, std::fs::Permissions::from_mode(0)).unwrap();
+    std::fs::set_permissions(&title, std::fs::Permissions::from_mode(0o000)).unwrap();
     // Privileged test processes can bypass mode bits, so this scenario only
     // applies when the operating system actually refuses the directory read.
     if std::fs::read_dir(&title).is_ok() {
