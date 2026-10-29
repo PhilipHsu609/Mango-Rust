@@ -218,12 +218,110 @@ async fn missing_and_corrupt_metadata_allow_later_persisted_updates() {
         .unwrap();
     let corrupt = store.refresh(directory.path()).await.unwrap();
     assert_eq!(corrupt.get_progress("reader", "Chapter 1"), None);
+    assert!(!directory.path().join("info.json").exists());
+    let backups = malformed_backups(directory.path());
+    assert_eq!(backups.len(), 1);
+    assert_eq!(std::fs::read_to_string(&backups[0]).unwrap(), "not json");
     store
         .save_progress(directory.path(), "reader", "Chapter 1", 3)
         .await
         .unwrap();
     let saved = MetadataStore::new().read(directory.path()).await.unwrap();
     assert_eq!(saved.get_progress("reader", "Chapter 1"), Some(3));
+    assert_eq!(std::fs::read_to_string(&backups[0]).unwrap(), "not json");
+}
+
+fn malformed_backups(directory: &std::path::Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("info.json.malformed-")
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn saves_replace_the_whole_file_and_leave_no_temp_files() {
+    let directory = tempfile::tempdir().unwrap();
+    tokio::fs::write(
+        directory.path().join("info.json"),
+        format!(
+            r#"{{"display_name":"Old","comment":"{}"}}"#,
+            "x".repeat(4096)
+        ),
+    )
+    .await
+    .unwrap();
+    let store = MetadataStore::new();
+    store
+        .update(directory.path(), |info| {
+            info.display_name = "New".to_string();
+            info.comment = "short".to_string();
+        })
+        .await
+        .unwrap();
+    let names: Vec<_> = std::fs::read_dir(directory.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["info.json"]);
+    let saved = MetadataStore::new().read(directory.path()).await.unwrap();
+    assert_eq!(saved.display_name, "New");
+    assert_eq!(saved.comment, "short");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unreadable_metadata_is_an_error_and_is_not_set_aside() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("info.json");
+    std::fs::write(&path, "not json").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // Privileged test processes can bypass mode bits.
+    if std::fs::read(&path).is_ok() {
+        return;
+    }
+    assert!(MetadataStore::new().read(directory.path()).await.is_err());
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(malformed_backups(directory.path()).is_empty());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn failed_saves_keep_the_old_file_and_leave_no_temp_files() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("info.json");
+    std::fs::write(&path, r#"{"display_name":"Old"}"#).unwrap();
+    let permissions = std::fs::metadata(directory.path()).unwrap().permissions();
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+    // Privileged test processes can bypass mode bits.
+    if std::fs::write(directory.path().join("probe"), b"").is_ok() {
+        std::fs::set_permissions(directory.path(), permissions).unwrap();
+        return;
+    }
+    let saved = MetadataStore::new()
+        .update(directory.path(), |info| {
+            info.display_name = "New".to_string()
+        })
+        .await;
+    std::fs::set_permissions(directory.path(), permissions).unwrap();
+    assert!(saved.is_err());
+    let names: Vec<_> = std::fs::read_dir(directory.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["info.json"]);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        r#"{"display_name":"Old"}"#
+    );
 }
 
 #[tokio::test]
